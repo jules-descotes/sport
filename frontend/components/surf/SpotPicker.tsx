@@ -25,8 +25,13 @@ import { useGeolocation } from "@/lib/useGeolocation";
 
 interface SpotPickerProps {
   selectedId: number | null;
-  onSelect: (slug: string) => void;
+  /** Le `slug` sert la navigation ; le `hit` évite un aller-retour de plus
+   *  quand l'appelant a besoin de l'identifiant — c'est le cas des écrans de
+   *  session, qui stockent un `spot_id`. */
+  onSelect: (slug: string, hit: SpotHit) => void;
   onClose: () => void;
+  /** Titre au-dessus de la liste. Par défaut, celui de l'écran Surf. */
+  heading?: string;
 }
 
 function Row({
@@ -35,14 +40,14 @@ function Row({
   selected,
 }: {
   hit: SpotHit;
-  onSelect: (slug: string) => void;
+  onSelect: (slug: string, hit: SpotHit) => void;
   selected: boolean;
 }) {
   return (
     <li className="border-b border-line last:border-0">
       <button
         type="button"
-        onClick={() => onSelect(hit.slug)}
+        onClick={() => onSelect(hit.slug, hit)}
         className="flex min-h-touch w-full items-center gap-3 px-4 py-2.5 text-left"
       >
         {hit.is_home ? (
@@ -168,8 +173,8 @@ export function SpotPicker({ selectedId, onSelect, onClose }: SpotPickerProps) {
               key={hit.id}
               hit={hit}
               selected={hit.id === selectedId}
-              onSelect={(slug) => {
-                onSelect(slug);
+              onSelect={(slug, selectedHit) => {
+                onSelect(slug, selectedHit);
                 onClose();
               }}
             />

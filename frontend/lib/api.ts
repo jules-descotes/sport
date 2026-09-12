@@ -204,13 +204,26 @@ export const api = {
    *  noter (de n'importe quel jour) et celles d'aujourd'hui. */
   sessionJournal: () => request<SessionJournal>("/sessions/today"),
 
-  sessions: (params: {
-    status?: SessionStatus;
-    since?: string;
-    until?: string;
-    limit?: number;
-    offset?: number;
-  } = {}) => request<SurfSession[]>(`/sessions${query(params)}`),
+  sessions: (
+    params: {
+      status?: SessionStatus;
+      since?: string;
+      until?: string;
+      /** Filtre de l'historique : un seul spot. */
+      spot_id?: number;
+      /** Filtre de l'historique : note **de conditions** minimale. */
+      min_rating?: number;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) => request<SurfSession[]>(`/sessions${query(params)}`),
+
+  /** Ce qui est en corbeille, et encore restaurable. */
+  trashedSessions: () => request<SurfSession[]>("/sessions/trash"),
+
+  /** Sort une session de la corbeille, telle qu'elle y est entrée. */
+  restoreSession: (id: number) =>
+    request<SurfSession>(`/sessions/${id}/restore`, { method: "POST" }),
 
   session: (id: number) => request<SurfSession>(`/sessions/${id}`),
 
@@ -239,6 +252,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  /** Met la session à la corbeille — trente jours, puis purge. */
   deleteSession: (id: number) =>
     request<void>(`/sessions/${id}`, { method: "DELETE" }),
 

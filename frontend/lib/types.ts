@@ -271,7 +271,22 @@ export interface SurfSession {
   /** Début deviné par le serveur (fin − 90 min) et pas encore corrigé. */
   start_estimated: boolean;
   conditions_snapshot: ConditionsSnapshot | null;
+  /** Les snapshots remplacés par une correction, du plus ancien au plus
+   *  récent. Jamais écrasés : c'est la seule donnée du projet qu'on ne peut
+   *  pas reconstituer après coup. */
+  snapshot_history: SnapshotVersion[];
+  /** Non nul = en corbeille. Trente jours, puis purge. */
+  deleted_at: string | null;
   created_at: string;
+}
+
+/** Un snapshot mis de côté, avec la raison qui l'a fait refaire. */
+export interface SnapshotVersion {
+  replaced_at: string;
+  reason: string;
+  spot_id: number;
+  started_at: string;
+  snapshot: ConditionsSnapshot;
 }
 
 /** Ce que l'écran Jour demande en un seul aller-retour. */

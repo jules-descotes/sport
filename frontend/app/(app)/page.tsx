@@ -9,7 +9,7 @@ import {
 } from "@/components/session/PendingSessionBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { SeaBlock } from "@/components/surf/SeaBlock";
-import { IconCloudOff, IconSearch } from "@/components/ui/Icons";
+import { IconCloudOff, IconPlus, IconSearch } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useGeolocation } from "@/lib/useGeolocation";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
@@ -142,6 +142,20 @@ export default function JourPage() {
       )}
 
       <DailyLogSwipe />
+
+      {/* Le raccourci iPhone reste le chemin normal ; celui-ci rattrape les
+          sessions qu'il a manquées — téléphone resté dans la voiture, session
+          d'il y a trois semaines. Discret, en pied : ce n'est pas le geste du
+          matin (décidé le 13/09). */}
+      <section className="px-5">
+        <Link
+          href="/sessions/nouvelle"
+          className="flex min-h-touch items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[14px] font-semibold text-ink-2"
+        >
+          <IconPlus className="h-5 w-5" />
+          Ajouter une session
+        </Link>
+      </section>
 
       <section className="flex flex-col gap-3 px-5" aria-label="Le reste de la journée">
         <ComingSlot

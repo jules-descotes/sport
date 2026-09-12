@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
 
-import { IconBack, IconTrash } from "@/components/ui/Icons";
+import { IconBack, IconPencil, IconTrash } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import {
   boardLength,
@@ -167,7 +167,7 @@ export default function SessionDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["session-journal"] });
-      router.replace("/sessions");
+      router.replace("/surf/sessions");
     },
   });
 
@@ -195,7 +195,7 @@ export default function SessionDetailPage() {
       <header className="flex items-center gap-3 px-5 pb-1 pt-4">
         <button
           type="button"
-          onClick={() => router.push("/sessions")}
+          onClick={() => router.push("/surf/sessions")}
           aria-label="Retour à l'historique"
           className="-ml-2 flex h-touch w-touch shrink-0 items-center justify-center rounded-button text-ink-2"
         >
@@ -231,10 +231,25 @@ export default function SessionDetailPage() {
           </Link>
         </section>
       ) : (
-        <section className="flex gap-3 px-5 pb-1">
-          <Note label="Conditions" value={data.rating_conditions} />
-          <Note label="Ressenti" value={data.rating_personal} />
-        </section>
+        <>
+          <section className="flex gap-3 px-5 pb-1">
+            <Note label="Conditions" value={data.rating_conditions} />
+            <Note label="Ressenti" value={data.rating_personal} />
+          </section>
+
+          {/* Tout se corrige : date, spot, notes, planche, vagues, texte,
+              photo (décidé le 13/09). Changer le spot ou l'heure refait le
+              figeage des conditions, et conserve l'ancien. */}
+          <section className="px-5 pt-4">
+            <Link
+              href={`/sessions/${data.id}/noter`}
+              className="flex min-h-touch items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink"
+            >
+              <IconPencil className="h-5 w-5" />
+              Modifier
+            </Link>
+          </section>
+        </>
       )}
 
       {entry ? (
@@ -286,6 +301,41 @@ export default function SessionDetailPage() {
         </>
       ) : null}
 
+      {/* Les versions précédentes du figeage. Elles n'apparaissent que si une
+          correction en a produit — c'est-à-dire rarement, et c'est tant mieux.
+          Quand elles existent, elles disent que la ligne d'apprentissage de
+          cette session a changé, et pourquoi. */}
+      {data.snapshot_history.length > 0 ? (
+        <section className="px-5 pt-6">
+          <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
+            Versions précédentes
+          </h2>
+          <ul className="overflow-hidden rounded-card border border-line bg-card">
+            {[...data.snapshot_history].reverse().map((version) => (
+              <li
+                key={version.replaced_at}
+                className="border-b border-line px-4 py-2.5 last:border-0"
+              >
+                <p className="text-[14px] font-semibold text-ink">
+                  {version.reason}
+                </p>
+                <p className="tabular mt-0.5 text-[12px] text-mute">
+                  remplacée le {shortDate(version.replaced_at)} à{" "}
+                  {clockLabel(version.replaced_at)} · figée pour le{" "}
+                  {shortDate(version.started_at)}{" "}
+                  {clockLabel(version.started_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="pt-2 text-[12px] leading-snug text-mute">
+            Le figeage des conditions est la seule donnée du projet qu&apos;on
+            ne peut pas reconstituer après coup : une correction ne l&apos;écrase
+            jamais, elle l&apos;empile.
+          </p>
+        </section>
+      ) : null}
+
       <section className="px-5 pt-8">
         {confirming ? (
           <div className="flex gap-3">
@@ -302,7 +352,7 @@ export default function SessionDetailPage() {
               onClick={() => remove.mutate()}
               className="min-h-touch flex-1 rounded-button border border-line bg-soft px-4 text-[15px] font-semibold text-ink disabled:opacity-50"
             >
-              {remove.isPending ? "Suppression…" : "Confirmer"}
+              {remove.isPending ? "Suppression…" : "Mettre à la corbeille"}
             </button>
           </div>
         ) : (
@@ -315,6 +365,9 @@ export default function SessionDetailPage() {
             Supprimer la session
           </button>
         )}
+        <p className="pt-2 text-center text-[12px] text-mute">
+          Corbeille de trente jours — restaurable depuis Surf › Sessions.
+        </p>
       </section>
     </main>
   );

@@ -13,9 +13,16 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.config import settings
+from app.db.database import async_session
 from app.services.forecast_ingest import ingest_forecasts
+from app.services.sessions import purge_trashed_sessions
 
 logger = logging.getLogger(__name__)
+
+# La corbeille se vide une fois par jour. Elle retient trente jours : une passe
+# quotidienne suffit largement, et une passe par cycle d'ingestion ferait
+# vingt-quatre requêtes de suppression par jour pour rien.
+TRASH_PURGE_INTERVAL_HOURS = 24
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -25,6 +32,19 @@ async def _forecast_ingest_job() -> None:
         await ingest_forecasts()
     except Exception as exc:  # le job ne doit jamais tuer l'ordonnanceur
         logger.error("forecast_ingest a échoué : %s", exc, exc_info=True)
+
+
+async def _trash_purge_job() -> None:
+    """Détruit ce que la corbeille garde depuis plus de trente jours.
+
+    C'est un job et pas une requête de lecture : une lecture qui écrit est une
+    surprise, et celle-ci détruirait des lignes d'apprentissage.
+    """
+    try:
+        async with async_session() as session:
+            await purge_trashed_sessions(session)
+    except Exception as exc:
+        logger.error("purge de la corbeille échouée : %s", exc, exc_info=True)
 
 
 def start_scheduler() -> None:
@@ -39,10 +59,19 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    _scheduler.add_job(
+        _trash_purge_job,
+        IntervalTrigger(hours=TRASH_PURGE_INTERVAL_HOURS),
+        id="trash_purge",
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info(
-        "Ordonnanceur démarré : forecast_ingest toutes les %d h",
+        "Ordonnanceur démarré : forecast_ingest toutes les %d h, "
+        "purge de la corbeille toutes les %d h",
         settings.forecast_ingest_interval_hours,
+        TRASH_PURGE_INTERVAL_HOURS,
     )
 
 

@@ -214,3 +214,88 @@ def needs_refill(session: SurfSession) -> bool:
     if not snapshot:
         return True
     return not snapshot.get("observed")
+
+
+# ── Historique des snapshots ───────────────────────────────────────────────
+#
+# Le `conditions_snapshot` est la seule donnée irrattrapable du projet
+# (cf. CLAUDE.md, règle 7). Depuis que les sessions se modifient depuis le
+# navigateur (13/09), une correction de bonne foi — « en fait c'était Les
+# Estagnots, pas La Gravière » — refait le figeage. L'ancien est empilé, jamais
+# perdu : on ne sait pas encore lequel des deux dira la vérité au modèle, et on
+# le saura moins encore dans six mois.
+
+# Au-delà, on ne garde que les plus récents : une session corrigée vingt fois
+# est une session qu'on cherche encore, pas une donnée à archiver.
+SNAPSHOT_HISTORY_MAX = 10
+
+# Durée de rétention de la corbeille, en jours.
+TRASH_RETENTION_DAYS = 30
+
+
+def archive_snapshot(
+    session: SurfSession,
+    reason: str,
+    *,
+    spot_id: int,
+    started_at: datetime,
+) -> None:
+    """Empile le `conditions_snapshot` courant avant qu'il soit remplacé.
+
+    `spot_id` et `started_at` sont ceux **pour lesquels le snapshot avait été
+    figé**, pas ceux de la session après correction — l'appelant a déjà écrit
+    les nouvelles valeurs sur l'objet quand il arrive ici, et archiver
+    celles-ci étiquetterait l'ancienne fenêtre avec le nouveau spot. C'est
+    exactement l'erreur que l'historique existe pour empêcher.
+
+    `reason` dit **pourquoi** il a été refait — « spot modifié », « début
+    modifié » — parce qu'un empilement sans motif est illisible au moment où on
+    en a besoin, c'est-à-dire longtemps après.
+    """
+    current = session.conditions_snapshot
+    if not current:
+        return
+
+    history = list(session.snapshot_history or [])
+    history.append(
+        {
+            "replaced_at": datetime.now(UTC).isoformat(),
+            "reason": reason,
+            "spot_id": spot_id,
+            "started_at": (
+                started_at if started_at.tzinfo else started_at.replace(tzinfo=UTC)
+            ).isoformat(),
+            "snapshot": current,
+        }
+    )
+    # Réassignation et pas `.append()` : SQLAlchemy ne voit pas la mutation
+    # d'une liste JSON en place, et la colonne partirait inchangée en base.
+    session.snapshot_history = history[-SNAPSHOT_HISTORY_MAX:]
+
+
+def purge_deadline(now: Optional[datetime] = None) -> datetime:
+    """Au-delà de cette date, une session en corbeille est purgeable."""
+    return (now or datetime.now(UTC)) - timedelta(days=TRASH_RETENTION_DAYS)
+
+
+async def purge_trashed_sessions(
+    db: AsyncSession, now: Optional[datetime] = None
+) -> int:
+    """Supprime définitivement les sessions en corbeille depuis plus de 30 jours.
+
+    Appelée par le job planifié, jamais par une requête de lecture : une
+    lecture qui écrit est une surprise, et celle-ci détruirait des lignes.
+    """
+    deadline = purge_deadline(now)
+    result = await db.execute(
+        select(SurfSession)
+        .where(SurfSession.deleted_at.is_not(None))
+        .where(SurfSession.deleted_at < deadline)
+    )
+    doomed = list(result.scalars().all())
+    for session in doomed:
+        await db.delete(session)
+    if doomed:
+        await db.commit()
+        logger.info("Corbeille : %d session(s) purgée(s)", len(doomed))
+    return len(doomed)

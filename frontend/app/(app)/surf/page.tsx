@@ -9,7 +9,7 @@ import { COL_WIDTH, HourlyTable } from "@/components/surf/HourlyTable";
 import { SlotDetailScreen } from "@/components/surf/SlotDetailScreen";
 import { SpotPicker } from "@/components/surf/SpotPicker";
 import { SurfTabs } from "@/components/surf/SurfTabs";
-import { IconSearch, IconStar } from "@/components/ui/Icons";
+import { IconPlus, IconSearch, IconStar } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
 import { dayLabel, localDayKey } from "@/lib/format";
 
@@ -261,16 +261,23 @@ function SurfScreen() {
             </ul>
           </div>
 
-          {spot ? (
-            <section className="flex gap-3 px-5 pt-5">
+          <section className="flex gap-3 px-5 pt-5">
+            <Link
+              href={`/sessions/nouvelle${spot ? `?spot=${spot.id}` : ""}`}
+              className="flex min-h-touch flex-1 items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink"
+            >
+              <IconPlus className="h-5 w-5" />
+              Ajouter une session
+            </Link>
+            {spot ? (
               <Link
                 href={`/surf/spots/${spot.slug}`}
-                className="flex min-h-touch flex-1 items-center justify-center rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
+                className="flex min-h-touch items-center justify-center rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
               >
-                Fiche du spot
+                Fiche
               </Link>
-            </section>
-          ) : null}
+            ) : null}
+          </section>
 
           {spot ? (
             <section className="px-5 pt-3">

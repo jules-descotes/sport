@@ -4,70 +4,36 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { RatingScale } from "@/components/session/RatingScale";
-import { TimeWheel } from "@/components/session/TimeWheel";
-import { WaveStepper } from "@/components/session/WaveStepper";
 import {
-  IconBack,
-  IconBoard,
-  IconCamera,
-  IconChevronDown,
-  IconCloudOff,
-  IconPin,
-} from "@/components/ui/Icons";
+  PhotoField,
+  SessionForm,
+  type SessionFormValues,
+} from "@/components/session/SessionForm";
+import { IconBack, IconCloudOff } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
 import type { SessionUpdate } from "@/lib/api";
-import {
-  boardLength,
-  distanceLabel,
-  durationLabel,
-  floorToQuarter,
-  minutesBetween,
-  sessionEnd,
-  shortDate,
-} from "@/lib/format";
-import type { Gear, SpotNearby } from "@/lib/types";
+import { floorToQuarter, minutesBetween, sessionEnd } from "@/lib/format";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
 
 /**
- * **Noter la session** — le second temps de la saisie, plein cadre.
+ * **Noter la session**, et la corriger — le second temps de la saisie.
  *
  * Le chemin rapide a fait le plus dur : la session existe, le spot est deviné,
  * les conditions sont figées. Ce qui reste tient en un écran, et tout s'y fait
- * au doigt — cinq boutons, deux molettes, un compteur, des pastilles.
+ * au doigt (cf. `components/session/SessionForm.tsx` pour les règles).
  *
- * **Aucune zone de texte n'est visible sans une action explicite.** La note
- * libre et la photo sont repliées en bas. C'est la règle « zéro saisie clavier
- * pendant l'effort » (`PROJET.md` §1, règle 5) prise au sérieux : un champ de
- * texte visible attire le doigt, ouvre le clavier, mange la moitié de l'écran,
- * et transforme une notation de quinze secondes en formulaire.
+ * Depuis le 13/09, **tous** les champs saisis sont modifiables ici, y compris
+ * la date et le spot cherché dans tout le catalogue — et pas seulement à la
+ * première notation. Changer le spot ou l'heure refait le figeage des
+ * conditions côté serveur, et l'ancien snapshot est **empilé, jamais écrasé** :
+ * c'est la seule donnée du projet qu'on ne peut pas reconstituer après coup.
  *
  * Et tout marche **sans réseau** : si l'envoi échoue faute de réseau, la
- * notation part dans la file IndexedDB et l'écran le dit, sobrement, sans
- * bloquer quoi que ce soit.
+ * notation part dans la file IndexedDB et l'écran le dit, sobrement.
  */
 
 /** Les cinq spots les plus proches, proposés quand le spot deviné est faux. */
 const SPOT_CHOICES = 5;
-
-function Section({
-  title,
-  children,
-}: {
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-t border-line px-5 py-5">
-      {title ? (
-        <h2 className="pb-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-          {title}
-        </h2>
-      ) : null}
-      {children}
-    </section>
-  );
-}
 
 export default function NoterPage() {
   const params = useParams<{ id: string }>();
@@ -87,25 +53,9 @@ export default function NoterPage() {
     queryFn: () => api.gear(false),
   });
 
-  // ── État de saisie ────────────────────────────────────────────────────
-  //
-  // Un formulaire local plutôt qu'un envoi par champ : on écrit une seule
-  // fois, au bouton, et l'écran reste utilisable sans réseau du premier tap
-  // au dernier.
-  const [spotId, setSpotId] = useState<number | null>(null);
-  const [start, setStart] = useState<Date | null>(null);
-  const [end, setEnd] = useState<Date | null>(null);
-  const [conditions, setConditions] = useState<number | null>(null);
-  const [personal, setPersonal] = useState<number | null>(null);
-  const [gearChoice, setGearChoice] = useState<number | null | undefined>(
-    undefined,
-  );
-  const [waves, setWaves] = useState(0);
-  const [notes, setNotes] = useState("");
-  const [extrasOpen, setExtrasOpen] = useState(false);
-  const [spotPickerOpen, setSpotPickerOpen] = useState(false);
+  const [form, setForm] = useState<SessionFormValues | null>(null);
+  const [spotTouched, setSpotTouched] = useState(false);
   const [queued, setQueued] = useState(false);
-  const photoInput = useRef<HTMLInputElement>(null);
 
   // Une seule reprise depuis le serveur : re-remplir à chaque revalidation
   // effacerait la saisie en cours sous les doigts.
@@ -114,14 +64,17 @@ export default function NoterPage() {
     if (!data || loaded.current) return;
     loaded.current = true;
 
-    const startedAt = new Date(data.started_at);
-    setSpotId(data.spot_id);
-    setStart(floorToQuarter(startedAt));
-    setEnd(floorToQuarter(sessionEnd(data.started_at, data.duration_min ?? 90)));
-    setConditions(data.rating_conditions);
-    setPersonal(data.rating_personal);
-    setWaves(data.wave_count ?? 0);
-    setNotes(data.notes ?? "");
+    setForm({
+      spotId: data.spot_id,
+      start: floorToQuarter(new Date(data.started_at)),
+      end: floorToQuarter(sessionEnd(data.started_at, data.duration_min ?? 90)),
+      conditions: data.rating_conditions,
+      personal: data.rating_personal,
+      // `undefined` : la planche n'a pas été touchée, le défaut s'applique.
+      gearId: undefined,
+      waves: data.wave_count ?? 0,
+      notes: data.notes ?? "",
+    });
   }, [data]);
 
   /**
@@ -130,8 +83,8 @@ export default function NoterPage() {
    * dixième.
    *
    * **Dérivée, pas posée dans un effet.** Un défaut n'est pas un état : le
-   * copier dans `useState` au premier rendu obligerait à le recopier quand la
-   * liste du matos arrive, ce qui écraserait un choix fait entre-temps.
+   * copier au premier rendu obligerait à le recopier quand la liste du matos
+   * arrive, ce qui écraserait un choix fait entre-temps.
    */
   const defaultGearId = useMemo(() => {
     if (!data || !gear.data) return null;
@@ -147,25 +100,26 @@ export default function NoterPage() {
     return lastUsed?.id ?? null;
   }, [data, gear.data]);
 
-  // Les cinq spots les plus proches du point d'entrée à l'eau — proposés
-  // seulement quand on ouvre le sélecteur, jamais à l'ouverture de l'écran.
+  // Les cinq spots les plus proches du point d'entrée à l'eau — demandés
+  // seulement quand on touche au sélecteur, jamais à l'ouverture de l'écran.
   const nearby = useQuery({
-    queryKey: ["session-nearby", data?.lat, data?.lon],
+    queryKey: ["session-nearby", data?.lat, data?.lon, data?.spot?.id],
     queryFn: () =>
       api.spotsNearby({
         lat: data?.lat ?? (data?.spot?.lat as number),
         lon: data?.lon ?? (data?.spot?.lon as number),
         radius_km: 25,
       }),
-    enabled:
-      spotPickerOpen &&
-      (data?.lat !== null || data?.spot !== null) &&
-      data !== undefined,
+    enabled: spotTouched && data !== undefined && data.spot !== null,
   });
 
-  const durationMin = useMemo(
-    () => (start && end ? minutesBetween(start, end) : 0),
-    [start, end],
+  const suggestions = useMemo(
+    () =>
+      (nearby.data ?? []).slice(0, SPOT_CHOICES).map((spot) => ({
+        ...spot,
+        is_home: spot.is_home,
+      })),
+    [nearby.data],
   );
 
   const save = useMutation({
@@ -186,6 +140,7 @@ export default function NoterPage() {
       queryClient.invalidateQueries({ queryKey: ["session-journal"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["gear"] });
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
       if (result === null) {
         setQueued(true);
         return;
@@ -201,7 +156,7 @@ export default function NoterPage() {
     },
   });
 
-  if (isPending || !start || !end) {
+  if (isPending || !form) {
     return (
       <main className="px-5 py-10">
         <p className="text-[14px] text-mute">Chargement de la session…</p>
@@ -224,22 +179,17 @@ export default function NoterPage() {
     );
   }
 
-  const spot = data.spot;
-  const chosenSpot =
-    spotId === data.spot_id
-      ? spot
-      : ((nearby.data?.find((item) => item.id === spotId) as
-          | SpotNearby
-          | undefined) ?? spot);
-  const boards: Gear[] = (gear.data ?? []).filter(
-    (item) => item.gear_type === "board",
-  );
-  const gearId = gearChoice === undefined ? defaultGearId : gearChoice;
+  if (queued) return <QueuedConfirmation sessionId={sessionId} />;
+
   // Les deux notes, jamais une seule : le bouton reste inerte tant qu'il en
   // manque une (cf. CLAUDE.md, règle 6).
-  const complete = conditions !== null && personal !== null;
-
-  if (queued) return <QueuedConfirmation sessionId={sessionId} />;
+  const complete = form.conditions !== null && form.personal !== null;
+  const gearId = form.gearId === undefined ? defaultGearId : form.gearId;
+  const alreadyRated = data.status === "rated";
+  const movedSpot = form.spotId !== data.spot_id;
+  const movedHour =
+    new Date(data.started_at).getUTCHours() !== form.start.getUTCHours() ||
+    new Date(data.started_at).toDateString() !== form.start.toDateString();
 
   return (
     <main className="pb-10">
@@ -253,226 +203,57 @@ export default function NoterPage() {
           <IconBack className="h-5 w-5" />
         </button>
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-          Noter la session
+          {alreadyRated ? "Modifier la session" : "Noter la session"}
         </p>
       </header>
 
-      {/* Le spot en tête, modifiable en un tap : le serveur l'a deviné, et il
-          se trompe d'autant plus souvent qu'on est loin de chez soi. */}
-      <section className="px-5 pb-5">
-        <button
-          type="button"
-          onClick={() => setSpotPickerOpen((open) => !open)}
-          className="flex w-full items-center gap-3 text-left"
-        >
-          <IconPin className="h-6 w-6 shrink-0 text-mute" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-display text-[30px] font-bold leading-none uppercase tracking-tight text-ink">
-              {chosenSpot?.name ?? "Spot inconnu"}
-            </span>
-            <span className="mt-1.5 block text-[13px] text-mute">
-              {shortDate(data.started_at)} · appuie pour changer
-            </span>
-          </span>
-          <IconChevronDown
-            className={`h-5 w-5 shrink-0 text-mute transition-transform ${
-              spotPickerOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
+      <div onPointerDownCapture={() => setSpotTouched(true)}>
+        <SessionForm
+          values={{ ...form, gearId }}
+          onChange={setForm}
+          spotName={data.spot?.name ?? null}
+          suggestions={suggestions}
+          suggestionsPending={nearby.isPending && spotTouched}
+          // La date est modifiable ici aussi depuis le 13/09 : une session
+          // ancienne se corrige de bout en bout, pas seulement son heure.
+          showDate={alreadyRated || data.start_estimated}
+          hint={
+            data.start_estimated
+              ? "début estimé par le serveur — corrige si besoin"
+              : undefined
+          }
+          photoSlot={
+            <PhotoField
+              hasPhoto={data.photo_url !== null}
+              pending={photo.isPending}
+              onPick={(file) => photo.mutate(file)}
+              url={data.photo_url}
+              error={
+                photo.error
+                  ? photo.error instanceof ApiError && photo.error.status === 0
+                    ? "Photo impossible sans réseau — la note, elle, part quand même."
+                    : "Photo non enregistrée."
+                  : null
+              }
+            />
+          }
+        />
+      </div>
 
-        {spotPickerOpen ? (
-          <ul className="mt-3 overflow-hidden rounded-card border border-line bg-card">
-            {(nearby.data ?? []).slice(0, SPOT_CHOICES).map((option) => (
-              <li key={option.id} className="border-b border-line last:border-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSpotId(option.id);
-                    setSpotPickerOpen(false);
-                  }}
-                  className="flex min-h-touch w-full items-center gap-3 px-4 py-2.5 text-left"
-                >
-                  <span
-                    className={`min-w-0 flex-1 truncate text-[15px] font-semibold ${
-                      option.id === spotId ? "text-accent" : "text-ink"
-                    }`}
-                  >
-                    {option.name}
-                  </span>
-                  <span className="tabular shrink-0 text-[12px] text-mute">
-                    {distanceLabel(option.distance_km)}
-                  </span>
-                </button>
-              </li>
-            ))}
-            {nearby.isPending ? (
-              <li className="px-4 py-3 text-[14px] text-mute">Recherche…</li>
-            ) : null}
-            {!nearby.isPending && (nearby.data ?? []).length === 0 ? (
-              <li className="px-4 py-3 text-[14px] text-ink-2">
-                Aucun autre spot à proximité.
-              </li>
-            ) : null}
-          </ul>
-        ) : null}
-      </section>
-
-      <Section title="Horaire">
-        <div className="flex gap-3">
-          <TimeWheel label="Début" value={start} onChange={setStart} max={end} />
-          <TimeWheel label="Fin" value={end} onChange={setEnd} min={start} />
-        </div>
-        <p className="tabular mt-2.5 text-[14px] text-ink-2">
-          {durationLabel(durationMin)} à l&apos;eau
-          {data.start_estimated ? (
-            <span className="text-mute"> · début estimé, corrige si besoin</span>
-          ) : null}
+      {/* Changer le spot ou l'heure refait le figeage des conditions. On le
+          dit avant d'enregistrer, pas après : c'est la ligne d'apprentissage
+          de cette session qui change. L'ancienne version est conservée. */}
+      {(movedSpot || movedHour) && data.conditions_snapshot ? (
+        <p className="mx-5 mt-4 rounded-card border border-dashed border-line bg-soft px-4 py-3 text-[13px] leading-snug text-ink-2">
+          {movedSpot && movedHour
+            ? "Spot et heure modifiés"
+            : movedSpot
+              ? "Spot modifié"
+              : "Heure modifiée"}{" "}
+          : les conditions figées vont être refaites. L&apos;ancienne version
+          est conservée dans l&apos;historique de la session.
         </p>
-      </Section>
-
-      {/* Les deux notes, séparées visuellement par un filet et un fond : les
-          confondre est l'erreur que la double note existe pour empêcher. */}
-      <Section>
-        <RatingScale
-          name="Qualité des conditions"
-          label="Qualité des conditions"
-          hint="la mer"
-          value={conditions}
-          onChange={setConditions}
-        />
-      </Section>
-
-      <section className="border-t border-line bg-soft px-5 py-5">
-        <RatingScale
-          name="Mon ressenti"
-          label="Mon ressenti"
-          hint="la forme du jour"
-          value={personal}
-          onChange={setPersonal}
-        />
-      </section>
-
-      <Section title="Planche">
-        {boards.length === 0 ? (
-          <p className="text-[14px] text-ink-2">
-            Pas encore de planche.{" "}
-            <button
-              type="button"
-              onClick={() => router.push("/surf/matos")}
-              className="font-semibold text-accent underline"
-            >
-              Ajoute ton matos
-            </button>
-            .
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {boards.map((board) => {
-              const selected = board.id === gearId;
-              return (
-                <button
-                  key={board.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setGearChoice(selected ? null : board.id)}
-                  className={`flex min-h-touch items-center gap-2 rounded-pill border px-4 text-[15px] font-semibold ${
-                    selected
-                      ? "border-accent bg-accent text-on-accent"
-                      : "border-line bg-card text-ink-2"
-                  }`}
-                >
-                  <IconBoard className="h-4 w-4 shrink-0" />
-                  {board.name}
-                  {board.length_m !== null ? (
-                    <span className="tabular opacity-70">
-                      {boardLength(board.length_m)}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section>
-        <WaveStepper value={waves} onChange={setWaves} />
-      </Section>
-
-      {/* Note libre et photo : repliées, et elles le restent tant qu'on ne les
-          demande pas. C'est le seul endroit de l'écran où un clavier peut
-          apparaître, et il faut un tap délibéré pour cela. */}
-      <Section>
-        <button
-          type="button"
-          onClick={() => setExtrasOpen((open) => !open)}
-          aria-expanded={extrasOpen}
-          className="flex min-h-touch w-full items-center justify-between gap-3 text-left"
-        >
-          <span className="text-[15px] font-semibold text-ink-2">
-            Note libre et photo
-          </span>
-          <IconChevronDown
-            className={`h-5 w-5 shrink-0 text-mute transition-transform ${
-              extrasOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
-
-        {extrasOpen ? (
-          <div className="mt-3 flex flex-col gap-3">
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={3}
-              placeholder="Ce dont tu veux te souvenir"
-              aria-label="Note libre"
-              className="w-full rounded-button border border-line bg-card px-3 py-2.5 text-[16px] text-ink placeholder:text-mute"
-            />
-
-            <input
-              ref={photoInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) photo.mutate(file);
-                event.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => photoInput.current?.click()}
-              disabled={photo.isPending}
-              className="flex min-h-touch items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2 disabled:opacity-50"
-            >
-              <IconCamera className="h-5 w-5" />
-              {photo.isPending
-                ? "Envoi…"
-                : data.photo_url
-                  ? "Remplacer la photo"
-                  : "Ajouter une photo"}
-            </button>
-            {photo.error ? (
-              <p className="text-[13px] text-ink-2">
-                {photo.error instanceof ApiError && photo.error.status === 0
-                  ? "Photo impossible sans réseau — la note, elle, part quand même."
-                  : "Photo non enregistrée."}
-              </p>
-            ) : null}
-            {data.photo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={data.photo_url}
-                alt="Photo de la session"
-                className="w-full rounded-card border border-line"
-              />
-            ) : null}
-          </div>
-        ) : null}
-      </Section>
+      ) : null}
 
       {offline.pending > 0 ? (
         <p className="flex items-center gap-2 px-5 pt-4 text-[13px] text-mute">
@@ -487,14 +268,14 @@ export default function NoterPage() {
           disabled={!complete || save.isPending}
           onClick={() =>
             save.mutate({
-              spot_id: spotId ?? data.spot_id,
-              started_at: start.toISOString(),
-              duration_min: Math.max(15, durationMin),
-              rating_conditions: conditions as number,
-              rating_personal: personal as number,
+              spot_id: form.spotId ?? data.spot_id,
+              started_at: form.start.toISOString(),
+              duration_min: Math.max(15, minutesBetween(form.start, form.end)),
+              rating_conditions: form.conditions as number,
+              rating_personal: form.personal as number,
               ...(gearId !== null ? { gear_id: gearId } : {}),
-              wave_count: waves,
-              notes: notes.trim() || null,
+              wave_count: form.waves,
+              notes: form.notes.trim() || null,
             })
           }
           className="flex min-h-[56px] w-full items-center justify-center rounded-button bg-accent px-5 text-[17px] font-semibold text-on-accent disabled:opacity-40"

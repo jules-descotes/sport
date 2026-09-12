@@ -288,3 +288,32 @@ export function IconLog({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Crayon — modifier une session déjà notée. */
+export function IconPencil({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4.5 19.5h3.2L18.4 8.8a1.7 1.7 0 0 0 0-2.4l-.8-.8a1.7 1.7 0 0 0-2.4 0L4.5 16.3z" />
+      <path d="m14.5 6.8 2.7 2.7" />
+    </svg>
+  );
+}
+
+/** Filtre — l'historique des sessions par spot, mois ou note. */
+export function IconFilter({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 6h16l-6 7v5.5l-4 2V13z" />
+    </svg>
+  );
+}
+
+/** Restaurer — sortir une session de la corbeille. */
+export function IconRestore({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5" />
+      <path d="M4 4v4h4" />
+    </svg>
+  );
+}

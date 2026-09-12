@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import Discipline, SessionStatus
 from app.schemas.gear import GearRead
@@ -82,6 +82,16 @@ class SurfSessionQuick(BaseModel):
 class SurfSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("snapshot_history", mode="before")
+    @classmethod
+    def _history_never_null(cls, value: Any) -> list[dict[str, Any]]:
+        """La colonne est nulle tant qu'aucun snapshot n'a été remplacé.
+
+        Un `null` obligerait chaque écran à retester ; une liste vide se rend
+        toute seule.
+        """
+        return value or []
+
     id: int
     spot_id: int
     # Rendu avec la session : l'historique affiche le nom du spot, et faire une
@@ -108,6 +118,13 @@ class SurfSessionRead(BaseModel):
     start_estimated: bool = False
     # Figé à l'enregistrement, en fenêtre T−2 h / T−1 h / T0, deux volets.
     conditions_snapshot: Optional[dict[str, Any]] = None
+    # Les snapshots remplacés, du plus ancien au plus récent. Rendus en entier
+    # et pas seulement comptés : le détail d'une session les montre, et c'est
+    # le seul moyen de voir qu'une correction a changé ce que le modèle
+    # apprendra de cette ligne.
+    snapshot_history: list[dict[str, Any]] = []
+    # Non nul = en corbeille. Trente jours, puis purge par le job planifié.
+    deleted_at: Optional[UtcDatetime] = None
     created_at: UtcDatetime
 
 

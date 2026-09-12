@@ -44,6 +44,8 @@ class SurfSession(Base):
         # L'écran Jour demande « y a-t-il une session à noter ? » à chaque
         # ouverture : sans cet index, c'est un balayage de tout l'historique.
         Index("ix_surf_sessions_user_status", "user_id", "status"),
+        # L'historique et la corbeille filtrent sur `deleted_at`.
+        Index("ix_surf_sessions_user_deleted", "user_id", "deleted_at"),
         # Idempotence de la file hors ligne : le téléphone peut rejouer le même
         # envoi trois fois au retour du réseau, la base n'en garde qu'un.
         UniqueConstraint("user_id", "client_uuid", name="uq_surf_sessions_client_uuid"),
@@ -119,6 +121,26 @@ class SurfSession(Base):
         JSONVariant, nullable=True
     )
 
+    # La pile des snapshots remplacés, du plus ancien au plus récent, chacun
+    # avec la raison du remplacement et son heure.
+    #
+    # Une session se modifie depuis le navigateur depuis le 13/09 : corriger le
+    # spot ou l'heure **refait** le figeage des conditions. L'ancien n'est
+    # jamais écrasé en silence — c'est la seule donnée du projet qu'on ne peut
+    # pas reconstituer après coup (cf. CLAUDE.md, règle 7), et une correction
+    # faite de bonne foi ne doit pas pouvoir en détruire une version.
+    snapshot_history: Mapped[Optional[list]] = mapped_column(
+        JSONVariant, nullable=True
+    )
+
+    # Corbeille de trente jours. Un doigt mouillé supprime aussi bien qu'il
+    # déclenche le raccourci ; une ligne d'apprentissage ne disparaît pas sur
+    # un tap. La purge est faite par le job planifié, pas par une requête de
+    # lecture — une lecture qui écrit est une surprise.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -135,6 +157,10 @@ class SurfSession(Base):
     # avec son spot et sa planche sans que chaque route ait à y penser.
     spot: Mapped["Spot"] = relationship(lazy="selectin")
     gear: Mapped[Optional["Gear"]] = relationship(lazy="selectin")
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
 
     @property
     def is_rated(self) -> bool:

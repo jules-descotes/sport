@@ -44,9 +44,11 @@ from app.services.auth_service import get_current_active_user
 from app.services.backfill import build_conditions_snapshot
 from app.services.sessions import (
     QUICK_DEFAULT_DURATION_MIN,
+    archive_snapshot,
     create_quick_session,
     find_duplicate,
     needs_refill,
+    purge_deadline,
     quick_start_time,
     resolve_quick_spot,
 )
@@ -77,14 +79,27 @@ def _local_day_bounds(day: date, zone: ZoneInfo) -> tuple[datetime, datetime]:
 
 
 async def _get_session(
-    db: AsyncSession, user_id: int, session_id: int
+    db: AsyncSession,
+    user_id: int,
+    session_id: int,
+    *,
+    include_trashed: bool = False,
 ) -> SurfSession:
-    result = await db.execute(
+    """La session de cet utilisateur, corbeille exclue sauf demande explicite.
+
+    Une session en corbeille n'existe plus du point de vue de l'app : elle ne
+    se lit pas, ne se note pas, ne se modifie pas. Seule la restauration va la
+    chercher.
+    """
+    query = (
         select(SurfSession)
         .where(SurfSession.id == session_id)
         .where(SurfSession.user_id == user_id)
     )
-    session = result.scalar_one_or_none()
+    if not include_trashed:
+        query = query.where(SurfSession.deleted_at.is_(None))
+
+    session = (await db.execute(query)).scalar_one_or_none()
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session introuvable"
@@ -237,6 +252,7 @@ async def today_sessions(
     pending = await db.execute(
         select(SurfSession)
         .where(SurfSession.user_id == current_user.id)
+        .where(SurfSession.deleted_at.is_(None))
         .where(SurfSession.status == SessionStatus.TO_RATE.value)
         .order_by(SurfSession.started_at.desc())
         .limit(5)
@@ -244,6 +260,7 @@ async def today_sessions(
     of_the_day = await db.execute(
         select(SurfSession)
         .where(SurfSession.user_id == current_user.id)
+        .where(SurfSession.deleted_at.is_(None))
         .where(SurfSession.started_at >= start)
         .where(SurfSession.started_at < end)
         .order_by(SurfSession.started_at)
@@ -257,6 +274,34 @@ async def today_sessions(
             SurfSessionRead.model_validate(item) for item in of_the_day.scalars().all()
         ],
     )
+
+
+@router.get("/trash", response_model=list[SurfSessionRead])
+async def list_trashed_sessions(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SurfSessionRead]:
+    """Ce qui est en corbeille, et pour combien de temps encore.
+
+    Route **fixe déclarée avant** `/sessions/{session_id}` (cf. CLAUDE.md) :
+    sans cet ordre, FastAPI lirait « trash » comme un identifiant et renverrait
+    un 422.
+    """
+    # Bornée à la fenêtre de rétention : entre deux passes du job de purge,
+    # une session peut avoir dépassé ses trente jours sans être encore
+    # détruite. La proposer à la restauration serait une promesse qu'on ne
+    # tiendra pas au prochain cycle.
+    result = await db.execute(
+        select(SurfSession)
+        .where(SurfSession.user_id == current_user.id)
+        .where(SurfSession.deleted_at.is_not(None))
+        .where(SurfSession.deleted_at >= purge_deadline())
+        .order_by(SurfSession.deleted_at.desc())
+        .limit(100)
+    )
+    return [
+        SurfSessionRead.model_validate(session) for session in result.scalars().all()
+    ]
 
 
 @router.post("", response_model=SurfSessionRead, status_code=status.HTTP_201_CREATED)
@@ -319,15 +364,33 @@ async def list_sessions(
     session_status: Optional[SessionStatus] = Query(default=None, alias="status"),
     since: Optional[date] = Query(default=None),
     until: Optional[date] = Query(default=None),
+    spot_id: Optional[int] = Query(default=None),
+    min_rating: Optional[int] = Query(default=None, ge=1, le=5),
     limit: int = Query(default=50, gt=0, le=200),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[SurfSessionRead]:
-    """L'historique, du plus récent au plus ancien."""
-    zone = _user_timezone(current_user)
-    query = select(SurfSession).where(SurfSession.user_id == current_user.id)
+    """L'historique, du plus récent au plus ancien. Corbeille exclue.
 
+    `spot_id` et `min_rating` servent les filtres de l'écran Surf ; `since` et
+    `until` le filtre par mois. Tout est optionnel : sans filtre, c'est la
+    liste complète, et c'est le cas courant.
+    """
+    zone = _user_timezone(current_user)
+    query = (
+        select(SurfSession)
+        .where(SurfSession.user_id == current_user.id)
+        .where(SurfSession.deleted_at.is_(None))
+    )
+
+    if spot_id is not None:
+        query = query.where(SurfSession.spot_id == spot_id)
+    if min_rating is not None:
+        # Le filtre porte sur la **note de conditions** : c'est celle qu'on
+        # cherche quand on refait l'historique d'un spot. Le ressenti perso se
+        # lit sur la ligne, il ne sert pas de crible.
+        query = query.where(SurfSession.rating_conditions >= min_rating)
     if session_status is not None:
         query = query.where(SurfSession.status == session_status.value)
     if since is not None:
@@ -384,6 +447,10 @@ async def update_session(
         await _check_gear(db, current_user.id, values["gear_id"])
 
     spot = session.spot
+    # Le spot et le début **d'avant** la correction : c'est pour eux que le
+    # snapshot courant a été figé, et c'est sous ces valeurs-là qu'il doit
+    # entrer dans l'historique.
+    previous_spot_id = session.spot_id
     spot_changed = "spot_id" in values and values["spot_id"] != session.spot_id
     if spot_changed:
         spot = await _get_spot(db, values["spot_id"])
@@ -412,7 +479,29 @@ async def update_session(
         # Le début n'est plus une estimation du serveur dès qu'on y a touché.
         session.start_estimated = False
 
-    if spot_changed or start_changed or needs_refill(session):
+    refill = needs_refill(session)
+    if spot_changed or start_changed or refill:
+        # L'ancien snapshot est empilé, jamais écrasé : c'est la seule donnée
+        # du projet qu'on ne peut pas reconstituer après coup, et une
+        # correction faite de bonne foi ne doit pas pouvoir en détruire une
+        # version (cf. `services/sessions.archive_snapshot`).
+        #
+        # Un rattrapage de volet `observed` vide ne compte pas : il n'y avait
+        # rien à conserver, et empiler un snapshot creux à chaque notation
+        # remplirait l'historique de bruit.
+        if spot_changed or start_changed:
+            reasons = []
+            if spot_changed:
+                reasons.append("spot modifié")
+            if start_changed:
+                reasons.append("début modifié")
+            archive_snapshot(
+                session,
+                ", ".join(reasons),
+                spot_id=previous_spot_id,
+                started_at=previous_start,
+            )
+
         session.conditions_snapshot = await build_conditions_snapshot(
             db, spot, new_start
         )
@@ -466,12 +555,38 @@ async def delete_session(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Supprime une session — un déclenchement de raccourci dans la poche.
+    """Met une session à la corbeille — trente jours, puis purge.
 
-    C'est la seule issue pour une session fantôme, et elle doit exister :
-    sinon l'écran Jour porte pour toujours un bloc « à noter » qu'on ne peut
-    pas noter, et on finit par ne plus le lire du tout.
+    Une suppression doit exister : un déclenchement de raccourci dans la poche
+    laisse sinon l'écran Jour porter pour toujours un bloc « à noter » qu'on ne
+    peut pas noter, et on finit par ne plus le lire du tout.
+
+    Mais elle n'est pas immédiate. Un doigt mouillé supprime aussi bien qu'il
+    déclenche le raccourci, et une session notée est une ligne d'apprentissage
+    — on ne la détruit pas sur un tap. La purge est faite par le job planifié,
+    au-delà de trente jours.
     """
     session = await _get_session(db, current_user.id, session_id)
-    await db.delete(session)
+    session.deleted_at = datetime.now(UTC)
     await db.commit()
+
+
+@router.post("/{session_id}/restore", response_model=SurfSessionRead)
+async def restore_session(
+    session_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SurfSessionRead:
+    """Sort une session de la corbeille, telle qu'elle y est entrée.
+
+    Rien n'est recalculé : ni le statut, ni le snapshot. Une session restaurée
+    doit être **exactement** celle qui a été supprimée, sinon la corbeille ne
+    répare pas l'erreur, elle en fabrique une autre.
+    """
+    session = await _get_session(
+        db, current_user.id, session_id, include_trashed=True
+    )
+    session.deleted_at = None
+    await db.commit()
+    await db.refresh(session)
+    return SurfSessionRead.model_validate(session)
