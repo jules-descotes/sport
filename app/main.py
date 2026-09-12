@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.api.routes.auth import router as auth_router
 from app.core.config import settings
 from app.core.security import hash_password
-from app.db.database import async_session, create_tables
+from app.db.database import async_session
 
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
 # Alembic la cible de l'autogénération).
@@ -74,7 +74,8 @@ async def create_default_user() -> None:
 async def lifespan(app: FastAPI):
     from app.services.scheduler import start_scheduler, stop_scheduler
 
-    await create_tables()
+    # Le schéma est la propriété d'Alembic : `run.py` applique les migrations
+    # avant de lancer uvicorn. Rien n'est créé ici.
     await create_default_user()
     start_scheduler()
     try:

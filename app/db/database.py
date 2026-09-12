@@ -17,8 +17,3 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
-
-
-async def create_tables() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)

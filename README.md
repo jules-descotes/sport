@@ -17,8 +17,7 @@ python -m venv .venv
 .venv/Scripts/activate          # Windows — sous Unix : source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # puis renseigner SECRET_KEY, ADMIN_EMAIL, ADMIN_PASSWORD
-alembic upgrade head
-python run.py
+python run.py                   # applique les migrations, puis démarre uvicorn
 ```
 
 API sur http://localhost:8000 · documentation sur http://localhost:8000/docs
@@ -52,6 +51,9 @@ Les tests tournent sur SQLite en mémoire, sans base ni serveur à démarrer.
 alembic revision --autogenerate -m "message"
 alembic upgrade head
 ```
+
+`run.py` applique `alembic upgrade head` au démarrage : Alembic est seul
+propriétaire du schéma, en local comme sur Railway.
 
 ## Déploiement
 
