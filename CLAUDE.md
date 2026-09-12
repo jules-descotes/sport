@@ -172,9 +172,10 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Lot 1 — spots, ingestion météo, écran d'accueil, webcams — **code terminé le 2026-09-12**, import OSM à lancer en production
 - [x] Lot 1 ter — `run_ts`, spot favori, navigation Jour / Mer / Corps — **code terminé le 2026-09-12**
 - [x] Lot 2 — log de session, matos, notation, hors-ligne — **code terminé le 2026-09-12**, raccourci iPhone à monter sur le téléphone
-- [ ] Lot 3 — reco (règles puis plus proche voisin)
-- [ ] Lot 4 — training
+- [x] Lot 2 ter — navigation à cinq entrées, HTTPS, tableau horaire, sessions au navigateur — **code terminé et en ligne le 2026-09-13**
+- [x] Lot 4 — training : objectifs mesurés, formules, mode séance — **code terminé et en ligne le 2026-09-13**, import d'exercices à lancer en production
 - [ ] Lot 5 — nutrition
+- [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 6 — stats
 
 ### Lot 0 — ce qui est livré (2026-09-12)
@@ -439,3 +440,172 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - **Programmes d'entraînement** : exercices importés depuis des bases **ouvertes** (wger, free-exercise-db) ; les formules sont composées à partir d'eux pour les objectifs du document design. **Aucun scraping de sites commerciaux de programmes** (droits d'auteur, CGU, et la même leçon que `sport=surfing` : vérifier la donnée avant de s'y fier).
 - **HTTPS partout** : HSTS, redirection http → https, `upgrade-insecure-requests`, aucune ressource http (webcams comprises).
 - `OVERPASS_URL` : poser en variable Railway l'instance qui a fonctionné (overpass-api.de bannit l'IP de sortie Railway). `railway.json` est déprécié au profit de `.railway/railway.ts` — migration avant le 2026-12-01.
+
+### Lot 2 ter — ce qui est livré (2026-09-13)
+
+**Navigation à cinq entrées**
+- `lib/navigation.ts` — la liste des onglets vit dans un module à part, testé :
+  cinq entrées, jamais une sixième. **Jour / Surf / Training / Nutrition /
+  Profil**
+- « Mer » devient **Surf** et absorbe l'historique des sessions et le matos ;
+  « Corps » éclate en **Training** et **Nutrition** ; **Profil** sort du menu
+  caché — il n'était atteignable que par une icône en haut de Jour
+- Les anciennes routes **redirigent**, elles ne disparaissent pas : `/mer`,
+  `/corps`, `/sessions`, `/profil/matos`. Le lien profond du raccourci iPhone
+  (`/sessions/{id}/noter`) ne bouge pas — il vit dans les Raccourcis iOS
+
+**HTTPS — ce qui a été trouvé**
+- **Aucune ressource `http:` dans le code.** Les seules occurrences sont des
+  valeurs par défaut de développement (`localhost:3000`, `localhost:8000`) et
+  les `base_url` des tests. Les tuiles de carte étaient déjà en
+  `https://tile.openstreetmap.org`, les polices sont auto-hébergées par
+  `next/font`, le manifest et les icônes sont relatifs, le service worker ne
+  touche à rien d'externe. **S'il reste un avertissement en production, la
+  cause est le certificat ou l'URL tapée, pas une ressource de la page.**
+- Le seul vrai trou était **l'URL de webcam**, saisie libre et non validée :
+  `services/webcams.py` refuse désormais le clair et réécrit en `https:` quand
+  le site le sert, avec la raison du refus sinon
+- En-têtes sur **les deux côtés** — le front (`next.config.ts`) et l'API
+  (`core/security_headers.py`), parce que c'est l'API qui pose le cookie de
+  session : HSTS un an `includeSubDomains`, CSP avec
+  `upgrade-insecure-requests` et `frame-src` limitée aux hôtes de webcam
+  (`lib/webcam-hosts.ts`, **source unique** partagée avec le composant),
+  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy
+  geolocation=(self)`, `frame-ancestors 'none'`
+- CSP de l'API : `default-src 'none'` — une API ne rend que du JSON. `/docs` a
+  sa politique à part (Swagger charge ses scripts depuis jsDelivr)
+- Redirection http → https **explicite** des deux côtés, lue sur
+  `x-forwarded-proto` : Railway et Vercel terminent le TLS en amont, se fier au
+  schéma interne donnerait une boucle infinie. **308 et pas 301** — un 301
+  transformerait le POST du raccourci iPhone en GET
+- Un hôte de webcam hors allowlist est affiché en **lien sortant**, pas en
+  iframe : la CSP le bloquerait sans un mot, et un cadre blanc ment sur
+  l'existence de l'image
+
+**Surf — le tableau horaire**
+- Cinq jours **heure par heure**, colonnes = heures, lignes = variables,
+  défilement horizontal, jours en en-tête collante, colonne des libellés figée
+  (`components/surf/HourlyTable.tsx`)
+- Houle : hauteur, période moyenne, **énergie**, direction en **flèche** ;
+  swell secondaire en ligne repliable ; vent moyen, rafales, direction en
+  flèche **teintée terre / mer** depuis `onshore_dir_deg` ; marée en
+  **mini-courbe continue** sur toute la largeur, extrêmes chiffrés ; eau ;
+  lever / coucher en en-tête de jour ; **nuit grisée, jamais supprimée** ;
+  note 1-5 en ligne du bas, meilleur créneau du jour cerclé d'accent
+- **Deux échelles de couleur qui ne se mélangent jamais** : le séquentiel
+  (l'intensité) sur les hauteurs et les vents, l'échelle 1 → 5 (la qualité) sur
+  la seule ligne de note. Une houle de 3 m est grosse, ce qui n'est pas la même
+  chose que bonne
+- **Énergie** : `geo.wave_energy_kj` = `0,49 × H² × T`, en kJ par seconde et
+  par mètre de crête (kW/m) — la feature 9 du registre avec sa constante
+  physique. `wave_energy` garde la forme brute `H²T` : c'est elle qui entre
+  dans le vecteur de features, et une constante d'affichage ne doit pas
+  déplacer un historique d'apprentissage
+- **Détail d'un créneau** (`GET /spots/{ref}/slot`) : le **seul** endroit où
+  les directions sont des degrés et des lettres. Écart à l'orientation du spot,
+  composante offshore chiffrée, `run_ts` d'origine et **écart avec le run de la
+  veille au soir** — le bénéfice visible de l'historisation des runs
+- Sur **Jour**, les huit créneaux de 3 h portent maintenant hauteur, période,
+  flèche de houle, vent et flèche, note. Un tap ouvre Surf **positionné sur
+  cette heure**
+
+**Sessions depuis le navigateur**
+- `/sessions/nouvelle` et l'écran de notation partagent **un seul**
+  `SessionForm` : deux formulaires divergeraient, et une session saisie à la
+  main finirait par ne plus porter les mêmes champs qu'une session notée
+- Date en molette, spot cherché dans tout le catalogue, les deux notes exigées.
+  Le serveur fait exactement le même travail que pour le raccourci : backfill
+  d'archive, et volet `forecast` **borné aux runs émis avant le début**, dates
+  passées comprises
+- Modifier une session : tous les champs. Changer le spot ou l'heure refait le
+  figeage et **empile** l'ancien dans `snapshot_history` — jamais d'écrasement
+  silencieux. Un cran de quinze minutes n'y touche pas : la fenêtre est calée à
+  l'heure pleine
+- Supprimer = **corbeille 30 jours**, purgée par un job quotidien. Restaurer
+  rend la session telle qu'elle est entrée, rien n'est recalculé
+- Historique dans Surf : filtres **spot / mois / note**, appliqués côté
+  serveur — à 240 sessions par an, un filtre qui ne trie que la page visible
+  ment
+
+**Migration `0006`** — `snapshot_history`, `deleted_at`, index associé.
+**305 tests pytest + 25 vitest verts**, `npm run lint` et `npm run build`
+propres. En-têtes vérifiés en production sur les deux hôtes.
+
+### Lot 4 — ce qui est livré (2026-09-13)
+
+**Objectifs mesurés**
+- Les trois du document design : mains-sol, rotation thoracique, gainage tenu.
+  **Aucune valeur de départ n'est semée** — le départ *est* la première mesure.
+  Un départ tapé au clavier est une estimation qu'on prendrait ensuite pour une
+  mesure
+- `direction` (`up` / `down`) sur l'objectif : « mains-sol » va de −14 cm vers
+  0, donc **vers le haut**. Sans cette colonne, la moitié des jauges liraient
+  un progrès comme un recul
+- Saisie **à la molette**, pas de pavé numérique. Une mesure par jour et par
+  objectif : se remesurer le même jour remplace
+- Rappel « mesurer » quand la fréquence (21 jours) est dépassée — il passe
+  devant tout sur l'écran Training
+
+**Bibliothèque et formules**
+- `services/training_catalog.py` — 30 exercices **rédigés ici, en français**.
+  Les consignes nous appartiennent : c'est ce qui permet de composer des
+  séances sans reprendre le texte de personne
+- `scripts/import_exercises.py` — **bases ouvertes uniquement** : wger (API
+  publique) et free-exercise-db (domaine public, 876 exercices avec images).
+  Rapprochement par `aliases` anglais : l'import **enrichit** la ligne rédigée
+  à la main au lieu d'en créer une deuxième. Source et licence sur chaque ligne
+- `--sample` montre un échantillon et **n'écrit rien** : la leçon de
+  `sport=surfing`, appliquée. Le classement en trois catégories est **grossier
+  et on le sait** — on le relit avant de l'écrire
+- ⚠️ **wger a renommé `exercisebaseinfo` en `exerciseinfo`** ; l'ancien rend un
+  404 (vérifié le 13/09). Un échec de source est journalisé, l'autre continue
+- **15 formules** : les cinq du design plus deux variantes chacune. Les
+  variantes ne sont pas cosmétiques — une séance faite tous les matins pendant
+  six mois se fait de moins en moins bien, puis plus du tout. L'avancement
+  hebdo se compte **par famille**
+- Chaque formule porte **le principe qui la justifie**, en une ligne. C'est ce
+  qui la distingue d'un programme recopié, et ce qui la rend corrigible
+
+**Proposition du jour**
+- Une seule, remplaçable en un tap : la formule qui sert l'objectif le plus en
+  retard, pondérée par ce qui a déjà été fait cette semaine et par les sessions
+  de surf. **Trois jours de surf d'affilée → Post-surf ou Réveil, jamais
+  Renfo**
+- Les alternatives sont **une par famille** : remplacer doit proposer autre
+  chose, pas une variante de la même séance
+- Une phrase dit pourquoi celle-ci. Une proposition qu'on ne comprend pas se
+  remplace au hasard, et on finit par ne plus la lire
+
+**Mode séance** (plein écran, modal)
+- Exercice en cours très grand, image, minuteur de repos géant, Fait / Passer /
+  +30 s, progression en tête. **Zéro clavier**
+- **Screen Wake Lock**, repris au retour d'onglet ; **vibration et bip
+  synthétisé** en fin de repos — pas de fichier audio, donc rien à charger
+- Les comptes à rebours sont des **échéances**, pas des compteurs décrémentés :
+  un onglet en arrière-plan ralentit `setInterval`, et un repos de 45 s
+  finirait par en durer 70
+- **Écourter est compté à part**, et c'est le serveur qui tranche à partir des
+  séries réellement faites (seuil 80 %). Une séance de 28 min arrêtée à la
+  sixième est un renseignement sur la formule ; la compter comme faite
+  effacerait exactement ce qui permettrait de la corriger — et la proposition
+  du jour continuerait de la servir
+- Ressenti 1-5 à la fin, un écran, un tap
+
+**Migration `0007`** — sept tables. Le **contenu** est semé par l'application,
+pas par la migration : il évoluera, et on n'écrit pas une migration par
+correction de tempo. Semis idempotent, au premier accès à l'écran Training.
+
+**338 tests pytest + 25 vitest verts**, `npm run lint` et `npm run build`
+propres. Schéma de production vérifié à la révision `0007`.
+
+### Lot 2 ter et lot 4 — ce qui reste (hors code)
+- [ ] Lancer `python -m scripts.import_exercises --sample` puis, si les
+      catégories tiennent, `python -m scripts.import_exercises` en production
+      (depuis le conteneur Railway). Sans lui, les exercices n'ont pas
+      d'image — les séances marchent quand même
+- [ ] Poser la première mesure de chacun des trois objectifs, sinon les jauges
+      restent vides et la proposition du jour se rabat sur le défaut
+- [ ] Saisir les URL de webcams des spots maison depuis la fiche spot (le
+      formulaire existe maintenant, et refuse le http)
+- [ ] Vérifier le tableau horaire **au soleil, à bout de bras** — c'est le seul
+      test qui compte pour cet écran

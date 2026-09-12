@@ -284,13 +284,14 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 | ✅ | **1** | Catalogue OSM + orientation de côte, tiers d'ingestion, Open-Meteo/MFWAM, `daily_log`, score cold start, accueil / comparateur / fiche spot / carte / profil | 3 j | fait |
 | ✅ | **1 ter** | **`run_ts`** dans `forecasts` (migration) · **navigation Jour / Mer / Corps** · **spot favori** dans le profil · bloc de mer enrichi sur Jour (prévision du favori) · écran Mer = explorateur en liste dense (grille 5 j × 8 créneaux pour le spot choisi, recherche / favoris / autour de moi) · écran Corps en coquille | 1,5 j | fait |
 | ✅ | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | fait |
-| 1 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
-| 2 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
-| 3 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
-| 4 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
+| ✅ | **2 ter** | **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil · **HTTPS** (HSTS, CSP, redirection 308, webcams en https) · **tableau horaire** 5 j heure par heure avec énergie et flèches · **sessions créées et modifiées depuis le navigateur**, historique des snapshots, corbeille 30 j | 2 j | fait |
+| ✅ | **4** | Training : objectifs mesurés, bibliothèque d'exercices depuis des bases ouvertes, 15 formules, proposition du jour, mode séance plein écran avec timer | 2,5 j | fait |
+| 1 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
+| 2 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
+| 3 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
 | — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-≈ **15 jours de dev effectif**, dont 8 déjà faits.
+≈ **17 jours de dev effectif**, dont 12,5 déjà faits.
 
 > **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente. *(Fait le 12/09 : migration `0003`, clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. `run_ts` est arrondi à l'heure — sans quoi chaque redémarrage à froid de Railway écrirait un run de plus pour la même prévision.)*
 
@@ -348,7 +349,7 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 - [x] **Ordre des lots** — 1 ter → 2 → 4 → 5 → 3 → 6 (décidé le 12/09 soir)
 - [x] **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil, et **prévision heure par heure façon Windguru** sur l'écran Surf (flèches de direction, énergie de houle), résumé 3 h sur Jour (décidé le 13/09 après première utilisation en ligne)
 - [x] **Sessions créables et modifiables depuis le navigateur**, pas seulement via le raccourci iPhone (13/09)
-- [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09)
+- [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09). *Fait : consignes rédigées en français dans `services/training_catalog.py`, images et groupes musculaires importés par `scripts/import_exercises.py`, source et licence sur chaque ligne.*
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 
