@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+import { MOVED_ROUTES } from "./lib/navigation";
 import { frameSrcSources } from "./lib/webcam-hosts";
 
 /**
@@ -91,6 +92,30 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  /**
+   * Les destinations renommées le 13/09, en vraie redirection HTTP.
+   *
+   * Une page qui appellerait `redirect()` rendrait un 200 de douze kilo-octets
+   * qui ne redirige qu'une fois React hydraté : c'est un aller-retour et un
+   * rendu pour rien, sur le seul chemin qu'emprunte un raccourci mis sur
+   * l'écran d'accueil du téléphone. Ici c'est un 308 servi par l'edge, sans
+   * page du tout.
+   *
+   * 308 et pas 301 : la méthode est conservée. Et `permanent: true` se mérite —
+   * ces chemins-là ne reviendront pas.
+   *
+   * La source est exacte : `/sessions` redirige, `/sessions/{id}` et
+   * `/sessions/{id}/noter` ne bougent pas. Le lien profond du raccourci iPhone
+   * en dépend.
+   */
+  async redirects() {
+    return Object.entries(MOVED_ROUTES).map(([source, destination]) => ({
+      source,
+      destination,
+      permanent: true,
+    }));
+  },
+
   async headers() {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },

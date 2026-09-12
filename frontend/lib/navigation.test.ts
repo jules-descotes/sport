@@ -56,15 +56,20 @@ describe("barre basse", () => {
 });
 
 describe("anciennes routes", () => {
-  it("redirigent au lieu de disparaître", () => {
-    for (const [from, to] of Object.entries(MOVED_ROUTES)) {
-      const file = pageFor(from);
-      expect(existsSync(file), `${from} devrait encore être servie`).toBe(true);
+  it("redirigent, et vers une page qui existe", () => {
+    // Redirections **HTTP**, déclarées dans `next.config.ts` : une page qui
+    // appellerait `redirect()` rendrait un 200 de douze kilo-octets qui ne
+    // redirige qu'une fois React hydraté.
+    const config = readFileSync(join(__dirname, "..", "next.config.ts"), "utf-8");
+    expect(config).toContain("MOVED_ROUTES");
+    expect(config).toContain("async redirects()");
 
-      const source = readFileSync(file, "utf-8");
-      expect(source, `${from} devrait rediriger vers ${to}`).toContain(
-        `redirect("${to}")`,
+    for (const [from, to] of Object.entries(MOVED_ROUTES)) {
+      // L'ancien chemin n'a plus de page : c'est l'edge qui répond.
+      expect(existsSync(pageFor(from)), `${from} ne devrait plus être une page`).toBe(
+        false,
       );
+      expect(existsSync(pageFor(to)), `${to} devrait exister`).toBe(true);
     }
   });
 

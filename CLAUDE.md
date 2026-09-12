@@ -450,9 +450,12 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - « Mer » devient **Surf** et absorbe l'historique des sessions et le matos ;
   « Corps » éclate en **Training** et **Nutrition** ; **Profil** sort du menu
   caché — il n'était atteignable que par une icône en haut de Jour
-- Les anciennes routes **redirigent**, elles ne disparaissent pas : `/mer`,
-  `/corps`, `/sessions`, `/profil/matos`. Le lien profond du raccourci iPhone
-  (`/sessions/{id}/noter`) ne bouge pas — il vit dans les Raccourcis iOS
+- Les anciennes routes **redirigent en 308**, elles ne disparaissent pas :
+  `/mer`, `/corps`, `/sessions`, `/profil/matos`. Redirections déclarées dans
+  `next.config.ts` depuis `MOVED_ROUTES` — une page qui appellerait
+  `redirect()` rendrait un 200 de douze kilo-octets qui ne redirige qu'une fois
+  React hydraté. Le lien profond du raccourci iPhone (`/sessions/{id}/noter`)
+  ne bouge pas — il vit dans les Raccourcis iOS
 
 **HTTPS — ce qui a été trouvé**
 - **Aucune ressource `http:` dans le code.** Les seules occurrences sont des
