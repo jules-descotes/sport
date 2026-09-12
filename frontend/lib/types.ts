@@ -357,3 +357,128 @@ export interface ApiToken {
 export interface ApiTokenCreated extends ApiToken {
   token: string;
 }
+
+// ── Training ─────────────────────────────────────────────────────────────
+
+export interface Measurement {
+  id: number;
+  /** Date locale — on ne mesure pas sa souplesse à la seconde près. */
+  measured_on: string;
+  value: number;
+  note: string | null;
+}
+
+/**
+ * Une jauge : départ, aujourd'hui, cible.
+ *
+ * `start_value` est la **première mesure**, jamais une valeur saisie. Tant
+ * qu'il n'y a aucune mesure, tout est nul et l'écran le dit — une jauge à
+ * moitié pleine se lirait comme un relevé.
+ */
+export interface Objective {
+  id: number;
+  slug: string;
+  name: string;
+  measure: string;
+  /** Unité de base : `cm`, `deg`, `s`. Le « 2:10 » est un affichage. */
+  unit: string;
+  /** `up` = plus c'est haut, mieux c'est. `down` = l'inverse. */
+  direction: "up" | "down";
+  target_value: number | null;
+  start_value: number | null;
+  current_value: number | null;
+  /** 0 au départ, 1 sur la cible. Nul tant qu'il manque une borne. */
+  ratio: number | null;
+  last_measured_on: string | null;
+  measure_every_days: number;
+  /** Vrai quand la fréquence est dépassée, ou qu'aucune mesure n'existe. */
+  needs_measurement: boolean;
+  measurements: Measurement[];
+}
+
+export type ExerciseCategory = "mobility" | "strength" | "core";
+
+export interface Exercise {
+  id: number;
+  slug: string;
+  name: string;
+  category: ExerciseCategory;
+  muscle_group: string | null;
+  instructions: string | null;
+  image_url: string | null;
+  /** Toujours renseignés : `builtin`, `wger`, `free-exercise-db`. */
+  source: string;
+  license: string | null;
+  source_url: string | null;
+}
+
+export interface FormulaItem {
+  id: number;
+  position: number;
+  sets: number;
+  /** L'un **ou** l'autre : un gainage se tient, une rotation se compte. */
+  reps: number | null;
+  duration_s: number | null;
+  tempo: string | null;
+  rest_s: number;
+  note: string | null;
+  exercise: Exercise;
+}
+
+export interface Formula {
+  id: number;
+  slug: string;
+  name: string;
+  duration_min: number;
+  weekly_target: number;
+  /** La ligne qui justifie la formule — pas de la décoration. */
+  principle: string;
+  objective_slugs: string[];
+  tags: string[];
+  variant_of: string | null;
+  family: string;
+  items: FormulaItem[];
+  /** Séances complètes cette semaine, comptées **par famille**. */
+  done_this_week: number;
+}
+
+export interface WorkoutSet {
+  id: number;
+  position: number;
+  exercise_name: string;
+  reps: number | null;
+  duration_s: number | null;
+  /** Passé au suivant. Distinct d'une série absente. */
+  skipped: boolean;
+}
+
+export interface Workout {
+  id: number;
+  formula_id: number | null;
+  formula_name: string;
+  formula_family: string | null;
+  started_at: string;
+  ended_at: string | null;
+  completed: boolean;
+  /** Comptée à part, jamais confondue avec une séance faite. */
+  cut_short: boolean;
+  feeling: number | null;
+  notes: string | null;
+  duration_min: number | null;
+  sets: WorkoutSet[];
+}
+
+export interface Proposal {
+  formula: Formula | null;
+  reason: string;
+  alternatives: Formula[];
+  /** Jours de surf d'affilée. Au-delà de trois, le renfo est écarté. */
+  surf_streak: number;
+}
+
+export interface TrainingOverview {
+  objectives: Objective[];
+  formulas: Formula[];
+  proposal: Proposal;
+  recent: Workout[];
+}

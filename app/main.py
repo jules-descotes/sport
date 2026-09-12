@@ -14,6 +14,7 @@ from app.api.routes.gear import router as gear_router
 from app.api.routes.recommend import router as recommend_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.spots import router as spots_router
+from app.api.routes.training import router as training_router
 from app.core.config import settings
 from app.core.security import hash_password
 from app.core.security_headers import SecurityHeadersMiddleware
@@ -23,12 +24,19 @@ from app.db.database import async_session
 # Alembic la cible de l'autogénération).
 from app.models.api_token import ApiToken  # noqa: F401
 from app.models.daily_log import DailyLog  # noqa: F401
+from app.models.exercise import Exercise  # noqa: F401
 from app.models.forecast import Forecast, Observation  # noqa: F401
+from app.models.formula import Formula, FormulaItem  # noqa: F401
 from app.models.gear import Gear  # noqa: F401
+from app.models.objective import (  # noqa: F401
+    Objective,
+    ObjectiveMeasurement,
+)
 from app.models.profile import Profile  # noqa: F401
 from app.models.spot import Spot, SpotPreference  # noqa: F401
 from app.models.surf_session import SurfSession  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.workout import WorkoutSession, WorkoutSet  # noqa: F401
 
 # Les journaux applicatifs doivent remonter dans les logs Railway.
 logging.basicConfig(
@@ -126,6 +134,7 @@ app.include_router(recommend_router, prefix="/api/v1")
 app.include_router(daily_log_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(gear_router, prefix="/api/v1")
+app.include_router(training_router, prefix="/api/v1")
 
 
 if settings.storage_backend == "local":

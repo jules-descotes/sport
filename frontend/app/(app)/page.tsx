@@ -8,6 +8,7 @@ import {
   PendingSessionBlock,
 } from "@/components/session/PendingSessionBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
+import { DayProposal } from "@/components/training/DayProposal";
 import { SeaBlock } from "@/components/surf/SeaBlock";
 import { IconCloudOff, IconPlus, IconSearch } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
@@ -158,11 +159,10 @@ export default function JourPage() {
       </section>
 
       <section className="flex flex-col gap-3 px-5" aria-label="Le reste de la journée">
-        <ComingSlot
-          title="Séance"
-          hint="Mobilité, renfo, gainage"
-          lot="lot 4"
-        />
+        {/* La séance du jour, lançable sur place : partir sur Training,
+            choisir, revenir, ce sont trois écrans pour un geste qui en vaut
+            zéro. */}
+        <DayProposal />
         <ComingSlot
           title="Repas"
           hint="Cible calorique et journal"

@@ -5,8 +5,12 @@ import type {
   DailyLogStatus,
   DailyLogToday,
   Discipline,
+  Exercise,
+  ExerciseCategory,
   GearType,
   GearWithUsage,
+  Objective,
+  Proposal,
   Recommendation,
   SessionJournal,
   SessionStatus,
@@ -17,7 +21,9 @@ import type {
   SpotNearby,
   SpotPreferences,
   SurfSession,
+  TrainingOverview,
   User,
+  Workout,
 } from "./types";
 
 const API_URL =
@@ -328,6 +334,67 @@ export const api = {
 
   revokeToken: (id: number) =>
     request<void>(`/auth/tokens/${id}`, { method: "DELETE" }),
+
+  // ── Training ──────────────────────────────────────────────────────────
+
+  /** Tout l'écran Training en un aller-retour. Sème le catalogue au premier
+   *  appel : le conteneur Railway redémarre à froid, on ne fait pas ce
+   *  travail à chaque démarrage. */
+  trainingOverview: () => request<TrainingOverview>("/training/overview"),
+
+  /** La proposition du jour, seule — ce que l'écran Jour affiche. */
+  trainingToday: () => request<Proposal>("/training/today"),
+
+  /** Une mesure d'objectif. Une par jour : re-mesurer remplace. */
+  addMeasurement: (
+    objectiveId: number,
+    data: { value: number; measured_on?: string; note?: string },
+  ) =>
+    request<Objective>(`/training/objectives/${objectiveId}/measurements`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** La bibliothèque, consultable. Source et licence sur chaque ligne. */
+  exercises: (params: { q?: string; category?: ExerciseCategory } = {}) =>
+    request<Exercise[]>(`/training/exercises${query(params)}`),
+
+  /** Ouvre une séance. Le nom de la formule est figé à cet instant. */
+  startWorkout: (formulaId: number) =>
+    request<Workout>("/training/workouts", {
+      method: "POST",
+      body: JSON.stringify({ formula_id: formulaId }),
+    }),
+
+  /** Clôt une séance. **Le serveur** décide si elle est complète, à partir
+   *  des séries réellement faites — jamais le client. */
+  finishWorkout: (
+    id: number,
+    data: {
+      feeling?: number;
+      notes?: string;
+      sets: {
+        position: number;
+        exercise_id?: number;
+        formula_item_id?: number;
+        exercise_name: string;
+        reps?: number | null;
+        duration_s?: number | null;
+        skipped: boolean;
+      }[];
+    },
+  ) =>
+    request<Workout>(`/training/workouts/${id}/finish`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** Supprime une séance ouverte par erreur. */
+  deleteWorkout: (id: number) =>
+    request<void>(`/training/workouts/${id}`, { method: "DELETE" }),
+
+  workouts: (limit = 50) =>
+    request<Workout[]>(`/training/workouts${query({ limit })}`),
 
   // ── Journal quotidien ─────────────────────────────────────────────────
 
