@@ -1,0 +1,14 @@
+# Fins de ligne normalisées en LF dans le dépôt : le CI tourne sous Linux,
+# le dev sous Windows.
+* text=auto eol=lf
+
+# Binaires : autocrlf ne doit jamais les réécrire.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.zip binary

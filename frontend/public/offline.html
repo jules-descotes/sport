@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Hors ligne — Sport</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 0 20px;
+        text-align: center;
+        background: #eef2f4;
+        color: #10202b;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+      }
+      h1 {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+      p { margin: 0; font-size: 14px; color: #46596a; max-width: 28ch; }
+      @media (min-width: 1024px) {
+        :root { color-scheme: dark; }
+        body { background: #0d171e; color: #e7edf0; }
+        p { color: #a7b6bf; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hors ligne</h1>
+    <p>Pas de réseau pour le moment. L'app se recharge dès que la connexion revient.</p>
+  </body>
+</html>

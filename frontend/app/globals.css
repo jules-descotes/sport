@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Jetons de design — instrument de bord marin, Atlantique en hiver.
+   Mobile en mode clair, desktop en mode sombre : le même jeu de variables
+   bascule au-dessus de 1024 px, aucune classe conditionnelle à écrire.
+   Source : CLAUDE.md § Design tokens.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces */
+  --sport-bg: #eef2f4;
+  --sport-card: #ffffff;
+  --sport-card-2: #f6f8f9;
+  --sport-soft: #f6f8f9;
+  --sport-line: #d8e0e5;
+  --sport-sand: #e8e1d6;
+
+  /* Texte */
+  --sport-ink: #10202b;
+  --sport-ink-2: #46596a;
+  --sport-mute: #62737f;
+
+  /* Action principale, et elle seule */
+  --sport-accent: #d97a2b;
+  --sport-on-accent: #ffffff;
+
+  /* Échelle de score 1 → 5, fil rouge identique partout */
+  --sport-score-1: #cdd5da;
+  --sport-score-2: #a9bfcb;
+  --sport-score-3: #6c9ab2;
+  --sport-score-4: #e6a05a;
+  --sport-score-5: #d97a2b;
+
+  /* Séquentiel — heatmaps d'analyse (magnitude) */
+  --sport-seq-1: #e3ecf1;
+  --sport-seq-2: #b9cfdc;
+  --sport-seq-3: #86aec4;
+  --sport-seq-4: #5a8fab;
+  --sport-seq-5: #3a7191;
+  --sport-seq-6: #245572;
+
+  color-scheme: light;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sport-bg: #0d171e;
+    --sport-card: #13222b;
+    --sport-card-2: #182a34;
+    --sport-soft: #182a34;
+    --sport-line: #22343f;
+    --sport-sand: #22343f;
+
+    --sport-ink: #e7edf0;
+    --sport-ink-2: #a7b6bf;
+    --sport-mute: #7f92a0;
+
+    --sport-accent: #e48a3a;
+    --sport-on-accent: #10202b;
+
+    --sport-score-1: #2b3a45;
+    --sport-score-2: #3e5a6c;
+    --sport-score-3: #5c8fab;
+    --sport-score-4: #c98a48;
+    --sport-score-5: #e48a3a;
+
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--sport-bg);
+  --color-card: var(--sport-card);
+  --color-card-2: var(--sport-card-2);
+  --color-soft: var(--sport-soft);
+  --color-line: var(--sport-line);
+  --color-sand: var(--sport-sand);
+
+  --color-ink: var(--sport-ink);
+  --color-ink-2: var(--sport-ink-2);
+  --color-mute: var(--sport-mute);
+
+  --color-accent: var(--sport-accent);
+  --color-on-accent: var(--sport-on-accent);
+
+  --color-score-1: var(--sport-score-1);
+  --color-score-2: var(--sport-score-2);
+  --color-score-3: var(--sport-score-3);
+  --color-score-4: var(--sport-score-4);
+  --color-score-5: var(--sport-score-5);
+
+  --color-seq-1: var(--sport-seq-1);
+  --color-seq-2: var(--sport-seq-2);
+  --color-seq-3: var(--sport-seq-3);
+  --color-seq-4: var(--sport-seq-4);
+  --color-seq-5: var(--sport-seq-5);
+  --color-seq-6: var(--sport-seq-6);
+
+  --font-display: var(--font-barlow-condensed), "Barlow Condensed", system-ui,
+    sans-serif;
+  --font-body: var(--font-ibm-plex-sans), "IBM Plex Sans", system-ui, sans-serif;
+
+  /* Rayons */
+  --radius-chip: 8px;
+  --radius-cell: 10px;
+  --radius-button: 14px;
+  --radius-card: 16px;
+  --radius-pill: 999px;
+
+  /* Cible tactile minimale — jamais en dessous */
+  --spacing-touch: 44px;
+}
+
+@layer base {
+  html {
+    /* Pas de zoom automatique iOS sur les champs : 16 px minimum. */
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--sport-bg);
+    color: var(--sport-ink);
+    font-family: var(--font-ibm-plex-sans), "IBM Plex Sans", system-ui, sans-serif;
+    /* L'app est plein écran une fois installée : jamais de rebond de page. */
+    overscroll-behavior-y: none;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-barlow-condensed), "Barlow Condensed", system-ui,
+      sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  /* Les chiffres sont lus en un coup d'œil : chasse fixe, pas de sautillement. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sport-accent);
+    outline-offset: 2px;
+  }
+}

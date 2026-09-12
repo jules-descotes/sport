@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.env
+.env.local
+.venv
+venv
+*.db
+frontend/
+tests/
+.git/
+.github/

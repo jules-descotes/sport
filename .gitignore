@@ -1,0 +1,37 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# ── Base de données locale ────────────────────────────────────────────────────
+*.db
+*.db-journal
+*.sqlite3
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+build/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
+
+# ── Outils et OS ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.claude/
+Thumbs.db
+.DS_Store
