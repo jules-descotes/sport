@@ -11,9 +11,12 @@ Le catalogue est mondial, l'ingestion ne l'est pas (cf. PROJET.md §6) :
   appel tant que personne ne regarde.
 - **catalog** — le reste du monde. Jamais interrogé.
 
-L'écriture est idempotente (`ON CONFLICT (spot_id, ts, source) DO UPDATE`) :
-le conteneur Railway redémarre à froid, le job repart du début, et il ne
-duplique jamais une heure déjà ingérée.
+L'écriture est idempotente **et historisée** : la clé porte `run_ts`, et le
+conflit est un `DO NOTHING`. Deux passes successives sur le même créneau
+coexistent donc au lieu de s'écraser — c'est ce qui rend possible l'écart
+« depuis hier soir » et la calibration prévision ↔ mesure (cf. PROJET.md §7.3).
+Le conteneur Railway redémarre à froid, le job repart du début dans la même
+heure, et il retombe sur le même run plutôt que de dupliquer la passe.
 """
 from __future__ import annotations
 
@@ -41,30 +44,6 @@ from app.services.openmeteo import (
 
 logger = logging.getLogger(__name__)
 
-# Colonnes de données écrasées à chaque rejeu. `spot_id`, `ts` et `source`
-# forment la clé et ne sont évidemment pas dedans.
-_DATA_COLUMNS = (
-    "model",
-    "model_version",
-    "wave_height_m",
-    "wave_direction_deg",
-    "wave_period_s",
-    "wave_peak_period_s",
-    "swell_height_m",
-    "swell_direction_deg",
-    "swell_period_s",
-    "swell_peak_period_s",
-    "secondary_swell_height_m",
-    "secondary_swell_direction_deg",
-    "secondary_swell_period_s",
-    "wind_speed_kt",
-    "wind_gust_kt",
-    "wind_direction_deg",
-    "sea_level_m",
-    "water_temperature_c",
-    "fetched_at",
-)
-
 # SQLite plafonne le nombre de paramètres liés d'une requête. Vingt colonnes
 # par ligne : cent lignes tiennent partout, et c'est déjà quatre jours.
 _CHUNK_SIZE = 100
@@ -78,24 +57,45 @@ def cache_ttl() -> timedelta:
     return timedelta(hours=settings.forecast_cache_hours)
 
 
+def run_timestamp(moment: Optional[datetime] = None) -> datetime:
+    """Identifiant du run d'ingestion : l'heure pleine de la passe, en UTC.
+
+    Arrondir n'est pas de la coquetterie. Le service Railway redémarre à froid
+    et le job repart du début : sans arrondi, chaque redémarrage écrirait un run
+    de plus — cent vingt lignes par spot — pour la même prévision. À l'heure
+    pleine, un rejeu dans la même heure retombe sur le run déjà écrit et le
+    `DO NOTHING` fait le reste.
+    """
+    moment = moment or datetime.now(UTC)
+    return moment.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+
 async def upsert_forecast_rows(
     db: AsyncSession,
     spot_id: int,
     bundle: HourlyBundle,
     fetched_at: Optional[datetime] = None,
+    run_ts: Optional[datetime] = None,
     source: str = "open-meteo",
 ) -> int:
-    """Écrit les lignes horaires en écrasant les doublons. Renvoie le nombre écrit."""
+    """Écrit les lignes horaires d'un run. Renvoie le nombre de lignes soumises.
+
+    `ON CONFLICT DO NOTHING` : une prévision déjà écrite pour ce run n'est
+    jamais retouchée, et une prévision d'un run antérieur n'est jamais écrasée.
+    Une passe **ajoute** une prévision plus récente, elle n'en remplace aucune.
+    """
     rows = bundle.sorted_rows()
     if not rows:
         return 0
 
     fetched_at = fetched_at or datetime.now(UTC)
+    run_ts = run_ts or run_timestamp(fetched_at)
     payload = [
         {
             "spot_id": spot_id,
             "ts": ts,
             "source": source,
+            "run_ts": run_ts,
             "model": settings.forecast_wave_model,
             "model_version": settings.forecast_model_version,
             "fetched_at": fetched_at,
@@ -110,17 +110,8 @@ async def upsert_forecast_rows(
     written = 0
     for start in range(0, len(payload), _CHUNK_SIZE):
         chunk = payload[start : start + _CHUNK_SIZE]
-        statement = insert(Forecast).values(chunk)
-        # Une variable absente d'un chunk ne doit pas écraser par `NULL` une
-        # valeur déjà en base : on ne met à jour que ce que le chunk porte.
-        present = {
-            column
-            for column in _DATA_COLUMNS
-            if any(column in row for row in chunk)
-        }
-        statement = statement.on_conflict_do_update(
-            index_elements=["spot_id", "ts", "source"],
-            set_={column: getattr(statement.excluded, column) for column in present},
+        statement = insert(Forecast).values(chunk).on_conflict_do_nothing(
+            index_elements=["spot_id", "ts", "source", "run_ts"]
         )
         await db.execute(statement)
         written += len(chunk)
@@ -130,6 +121,11 @@ async def upsert_forecast_rows(
 
 
 async def last_fetched_at(db: AsyncSession, spot_id: int) -> Optional[datetime]:
+    """Fraîcheur du cache — `fetched_at`, à la minute, jamais `run_ts`.
+
+    `run_ts` est arrondi à l'heure : s'en servir ici ferait paraître périmée,
+    à 12 h 00, une passe terminée à 10 h 59.
+    """
     result = await db.execute(
         select(func.max(Forecast.fetched_at)).where(Forecast.spot_id == spot_id)
     )
@@ -181,6 +177,11 @@ async def refresh_spots(
     budget = budget or CallBudget(limit=settings.forecast_call_cap)
     done = 0
 
+    # Un seul `run_ts` pour toute la passe : les vingt spots maison d'un même
+    # cycle appartiennent au même run, même si la passe dure dix minutes. Les
+    # comparer entre eux n'aurait aucun sens autrement.
+    run_ts = run_timestamp()
+
     async with OpenMeteoClient(budget=budget) as client:
         for spot in spots:
             try:
@@ -196,7 +197,7 @@ async def refresh_spots(
                 )
                 continue
 
-            written = await upsert_forecast_rows(db, spot.id, bundle)
+            written = await upsert_forecast_rows(db, spot.id, bundle, run_ts=run_ts)
             done += 1
             logger.info("%s : %d heures écrites", spot.slug, written)
 

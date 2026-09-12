@@ -23,6 +23,7 @@ from app.models.enums import SpotTier
 from app.models.forecast import Forecast
 from app.models.spot import Spot, SpotPreference
 from app.services.forecast_ingest import ensure_fresh
+from app.services.forecast_reads import latest_forecasts_select
 from app.services.geo import bounding_box, haversine_m
 from app.services.scoring import (
     Conditions,
@@ -126,16 +127,19 @@ async def candidate_spots(
 async def load_forecast_rows(
     db: AsyncSession, spot_ids: Sequence[int], start: datetime, end: datetime
 ) -> dict[int, list[tuple[datetime, dict[str, Optional[float]]]]]:
-    """Charge les prévisions de la fenêtre, groupées par spot."""
+    """Charge les prévisions de la fenêtre, groupées par spot.
+
+    Une heure porte autant de lignes que de passes d'ingestion depuis que
+    `run_ts` est dans la clé : on ne garde que le dernier run, sinon la grille
+    afficherait la prévision d'avant-hier une cellule sur deux.
+    """
     if not spot_ids:
         return {}
 
     result = await db.execute(
-        select(Forecast)
-        .where(Forecast.spot_id.in_(list(spot_ids)))
-        .where(Forecast.ts >= start)
-        .where(Forecast.ts <= end)
-        .order_by(Forecast.spot_id, Forecast.ts)
+        latest_forecasts_select(spot_ids, start, end).order_by(
+            Forecast.spot_id, Forecast.ts
+        )
     )
 
     rows: dict[int, list[tuple[datetime, dict[str, Optional[float]]]]] = {}

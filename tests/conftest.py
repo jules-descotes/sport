@@ -156,6 +156,7 @@ def make_forecast(db_session):
         start: Optional[datetime] = None,
         hours: int = 48,
         fetched_at: Optional[datetime] = None,
+        run_ts: Optional[datetime] = None,
         wave_height_m: float = 1.4,
         wave_period_s: float = 12.0,
         wave_direction_deg: float = 285.0,
@@ -166,6 +167,9 @@ def make_forecast(db_session):
             minute=0, second=0, microsecond=0
         )
         fetched_at = fetched_at or datetime.now(UTC)
+        # Même convention que l'ingestion : le run est l'heure pleine de la
+        # passe. Les tests qui font coexister deux runs le passent en clair.
+        run_ts = run_ts or fetched_at.replace(minute=0, second=0, microsecond=0)
 
         rows: list[Forecast] = []
         for hour in range(hours):
@@ -176,6 +180,7 @@ def make_forecast(db_session):
             forecast = Forecast(
                 spot_id=spot.id,
                 ts=ts,
+                run_ts=run_ts,
                 source="open-meteo",
                 model="meteofrance_wave",
                 model_version="mfwam-2025",

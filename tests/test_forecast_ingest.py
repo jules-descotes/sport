@@ -19,6 +19,7 @@ from app.services.forecast_ingest import (
     ensure_fresh,
     ingest_forecasts,
     refresh_spots,
+    run_timestamp,
     stale_spot_ids,
     upsert_forecast_rows,
 )
@@ -31,6 +32,9 @@ from app.services.openmeteo import (
 )
 
 TS = datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+# Deux runs d'ingestion : celui de la veille au soir, celui de ce matin.
+RUN_YESTERDAY = datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
+RUN_TODAY = datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
 
 
 def bundle(hours: int = 3, wave_height_m: float = 1.4) -> HourlyBundle:
@@ -77,17 +81,71 @@ async def test_upsert_is_idempotent(db_session, make_spot) -> None:
     assert await _count(db_session) == 5
 
 
-async def test_upsert_updates_revised_values(db_session, make_spot) -> None:
-    """Une prévision révisée écrase l'ancienne, elle ne s'ajoute pas à côté."""
+async def test_two_runs_coexist_on_the_same_slot(db_session, make_spot) -> None:
+    """Le cœur du lot 1 ter : une passe **ajoute** un run, elle n'en écrase aucun.
+
+    Sans ça, la passe du matin détruit la prévision émise la veille au soir, et
+    chaque jour d'ingestion est perdu définitivement (cf. PROJET.md §7.3).
+    """
     spot = await make_spot()
 
-    await upsert_forecast_rows(db_session, spot.id, bundle(wave_height_m=1.4))
-    await upsert_forecast_rows(db_session, spot.id, bundle(wave_height_m=2.1))
+    await upsert_forecast_rows(
+        db_session, spot.id, bundle(hours=3, wave_height_m=1.4), run_ts=RUN_YESTERDAY
+    )
+    await upsert_forecast_rows(
+        db_session, spot.id, bundle(hours=3, wave_height_m=2.1), run_ts=RUN_TODAY
+    )
 
+    assert await _count(db_session) == 6
     heights = (
         (await db_session.execute(select(Forecast.wave_height_m))).scalars().all()
     )
-    assert set(heights) == {2.1}
+    assert set(heights) == {1.4, 2.1}
+
+
+async def test_replaying_the_same_run_changes_nothing(db_session, make_spot) -> None:
+    """`DO NOTHING` : un rejeu du même run ne duplique ni ne retouche rien.
+
+    C'est le scénario Railway — le conteneur redémarre, le job repart du début.
+    Une valeur déjà écrite pour ce run reste telle quelle : deux lignes du même
+    run ne doivent pas se contredire.
+    """
+    spot = await make_spot()
+
+    await upsert_forecast_rows(
+        db_session, spot.id, bundle(hours=3, wave_height_m=1.4), run_ts=RUN_TODAY
+    )
+    await upsert_forecast_rows(
+        db_session, spot.id, bundle(hours=3, wave_height_m=2.1), run_ts=RUN_TODAY
+    )
+
+    assert await _count(db_session) == 3
+    heights = (
+        (await db_session.execute(select(Forecast.wave_height_m))).scalars().all()
+    )
+    assert set(heights) == {1.4}
+
+
+async def test_run_timestamp_is_rounded_to_the_hour() -> None:
+    """Un redémarrage à froid dix minutes après la passe retombe sur le même run."""
+    first = run_timestamp(datetime(2026, 9, 12, 6, 2, 31, tzinfo=UTC))
+    second = run_timestamp(datetime(2026, 9, 12, 6, 47, 8, tzinfo=UTC))
+
+    assert first == second == datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+
+
+async def test_a_pass_writes_one_run_for_every_spot(
+    db_session, make_spot, fake_openmeteo
+) -> None:
+    """Vingt spots d'un même cycle appartiennent au même run, même sur dix minutes."""
+    fake_openmeteo()
+    first = await make_spot(name="Un", slug="un")
+    second = await make_spot(name="Deux", slug="deux", lat=43.70)
+
+    await refresh_spots(db_session, [first, second])
+
+    runs = (await db_session.execute(select(Forecast.run_ts))).scalars().all()
+    assert len({run for run in runs}) == 1
 
 
 async def test_upsert_stores_source_and_model_version(db_session, make_spot) -> None:
@@ -102,7 +160,7 @@ async def test_upsert_stores_source_and_model_version(db_session, make_spot) -> 
 
 
 async def test_two_spots_do_not_collide(db_session, make_spot) -> None:
-    """La clé est (spot, heure, source) : deux spots à la même heure coexistent."""
+    """La clé porte le spot : deux spots à la même heure coexistent."""
     first = await make_spot(name="La Gravière", slug="la-graviere")
     second = await make_spot(name="Les Culs Nus", slug="les-culs-nus", lat=43.70)
 

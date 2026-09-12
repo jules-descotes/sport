@@ -114,4 +114,7 @@ class SpotForecastResponse(BaseModel):
     # la base et le complément arrive derrière.
     refreshing: bool = False
     fetched_at: Optional[datetime] = None
+    # Heure d'émission du run servi. Distincte de `fetched_at` : elle dit de
+    # quelle prévision on parle, là où `fetched_at` ne dit que l'âge du cache.
+    run_ts: Optional[datetime] = None
     points: list[ForecastPoint] = []

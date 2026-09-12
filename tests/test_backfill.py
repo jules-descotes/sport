@@ -24,6 +24,9 @@ from app.services.forecast_ingest import upsert_forecast_rows
 from app.services.openmeteo import HourlyBundle
 
 SESSION_START = datetime(2026, 9, 12, 8, 30, tzinfo=UTC)
+# Le run qu'on avait sous les yeux avant d'aller à l'eau, et celui d'après.
+RUN_BEFORE_SESSION = datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
+RUN_AFTER_SESSION = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
 def archive_bundle(start: datetime, hours: int = 48) -> HourlyBundle:
@@ -161,6 +164,7 @@ async def test_forecast_panel_comes_from_the_ingested_rows(
                 for ts in window_timestamps(SESSION_START)
             }
         ),
+        run_ts=RUN_BEFORE_SESSION,
     )
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -169,6 +173,40 @@ async def test_forecast_panel_comes_from_the_ingested_rows(
     assert all(entry["wave_height_m"] == 0.9 for entry in snapshot["forecast"])
     # Les deux volets restent distincts : prévision et constat ne se mélangent pas.
     assert snapshot["observed"][0]["wave_height_m"] != 0.9
+
+
+async def test_forecast_panel_ignores_runs_emitted_after_the_session(
+    db_session, make_spot, fake_archive
+) -> None:
+    """Une passe postérieure à la session est un constat déguisé, pas une prévision.
+
+    La retenir donnerait au modèle une information dont il ne disposait pas au
+    moment de prédire — le décalage train/serve de PROJET.md §7.1, dans sa
+    version la plus discrète, celle qui ne se voit qu'en production.
+    """
+    fake_archive()
+    spot = await make_spot()
+
+    rows = {
+        ts: {"wave_height_m": 0.9, "wind_speed_kt": 4.0}
+        for ts in window_timestamps(SESSION_START)
+    }
+    await upsert_forecast_rows(
+        db_session, spot.id, HourlyBundle(rows=rows), run_ts=RUN_BEFORE_SESSION
+    )
+    await upsert_forecast_rows(
+        db_session,
+        spot.id,
+        HourlyBundle(
+            rows={ts: {"wave_height_m": 2.6} for ts in window_timestamps(SESSION_START)}
+        ),
+        run_ts=RUN_AFTER_SESSION,
+    )
+
+    snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
+
+    assert len(snapshot["forecast"]) == 3
+    assert all(entry["wave_height_m"] == 0.9 for entry in snapshot["forecast"])
 
 
 # ── Tendances ──────────────────────────────────────────────────────────────

@@ -32,6 +32,7 @@ from app.schemas.spot import (
 )
 from app.services.auth_service import get_current_active_user
 from app.services.forecast_ingest import ensure_fresh, last_fetched_at
+from app.services.forecast_reads import latest_forecasts_select, latest_run_ts
 from app.services.geo import bounding_box, haversine_m
 from app.services.scoring import (
     TideContext,
@@ -247,10 +248,13 @@ async def spot_forecast(
     refreshing = await ensure_fresh(db, [spot])
 
     now = datetime.now(UTC)
+    # Dernier run seulement : depuis que `run_ts` est dans la clé, une heure
+    # porte autant de lignes que de passes d'ingestion.
     result = await db.execute(
-        select(Forecast)
-        .where(Forecast.spot_id == spot.id)
-        .where(Forecast.ts >= now.replace(minute=0, second=0, microsecond=0))
+        latest_forecasts_select(
+            [spot.id],
+            start=now.replace(minute=0, second=0, microsecond=0),
+        )
         .order_by(Forecast.ts)
         .limit(days * 24)
     )
@@ -306,6 +310,7 @@ async def spot_forecast(
         spot=SpotRead.model_validate(spot),
         refreshing=bool(refreshing),
         fetched_at=await last_fetched_at(db, spot.id),
+        run_ts=await latest_run_ts(db, spot.id),
         points=points,
     )
 

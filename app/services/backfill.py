@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.forecast import Forecast
 from app.models.spot import Spot
+from app.services.forecast_reads import latest_forecasts_select
 from app.services.openmeteo import HourlyBundle, OpenMeteoClient
 from app.services.scoring import TideContext
 
@@ -105,11 +106,19 @@ def _trends(entries: list[dict[str, Any]]) -> dict[str, Optional[float]]:
 async def _forecast_panel(
     db: AsyncSession, spot_id: int, timestamps: list[datetime]
 ) -> list[dict[str, Any]]:
-    """Volet `forecast` : ce que la base avait annoncé pour ces heures-là."""
+    """Volet `forecast` : ce qui était annoncé **avant** la session.
+
+    Le dernier run émis au plus tard au début de la session, et pas le dernier
+    run tout court : une passe d'ingestion postérieure à la session est un
+    constat déguisé, pas une prévision. Les mélanger reviendrait à donner au
+    modèle une information qu'il n'avait pas au moment de prédire — le décalage
+    train/serve de PROJET.md §7.1, dans sa version la plus discrète.
+    """
+    reference = max(timestamps)
     result = await db.execute(
-        select(Forecast)
-        .where(Forecast.spot_id == spot_id)
-        .where(Forecast.ts.in_(timestamps))
+        latest_forecasts_select(
+            [spot_id], at_or_before=reference
+        ).where(Forecast.ts.in_(timestamps))
     )
 
     by_ts: dict[datetime, dict[str, Optional[float]]] = {}

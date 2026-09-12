@@ -32,9 +32,18 @@ class Forecast(Base):
 
     __tablename__ = "forecasts"
     __table_args__ = (
-        # Le cœur de l'idempotence : le conteneur Railway redémarre, le job
-        # repart du début, et il ne duplique jamais une heure déjà ingérée.
-        UniqueConstraint("spot_id", "ts", "source", name="uq_forecasts_spot_ts_source"),
+        # `run_ts` est **dans la clé**, et c'est tout l'objet du lot 1 ter : sans
+        # lui, la passe du matin écrase la prévision émise la veille au soir, et
+        # chaque jour d'ingestion est perdu définitivement (cf. PROJET.md §7.3).
+        # Deux runs sur le même créneau coexistent donc, et la lecture
+        # « dernière prévision » prend le `run_ts` max.
+        UniqueConstraint(
+            "spot_id",
+            "ts",
+            "source",
+            "run_ts",
+            name="uq_forecasts_spot_ts_source_run",
+        ),
         # Lecture type : « les 5 prochains jours de ce spot ».
         Index("ix_forecasts_spot_ts", "spot_id", "ts"),
     )
@@ -45,7 +54,17 @@ class Forecast(Base):
         ForeignKey("spots.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Heure prévue.
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Heure d'**émission** de la prévision, en UTC, arrondie à l'heure pleine.
+    #
+    # Open-Meteo ne publie pas l'heure de run de MFWAM : `run_ts` est donc
+    # l'heure à laquelle *on* a capté cette prévision, ce qui est la grandeur
+    # utile ici — elle date ce qu'on savait, et quand on le savait. L'arrondi à
+    # l'heure garde l'idempotence intacte : le conteneur Railway redémarre, la
+    # passe repart du début dix minutes plus tard, et elle retombe sur le même
+    # run au lieu de dupliquer cent vingt lignes par spot.
+    run_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     source: Mapped[str] = mapped_column(String, nullable=False, default="open-meteo")
     model: Mapped[str] = mapped_column(
@@ -88,7 +107,9 @@ class Forecast(Base):
     sea_level_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     water_temperature_c: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # Sert de cache : au-delà de trois heures, la ligne est réinterrogée.
+    # Sert de cache, et rien d'autre : au-delà de trois heures, on réinterroge.
+    # Distinct de `run_ts`, qui est arrondi : la fraîcheur du cache se juge à la
+    # minute, l'identité d'un run à l'heure.
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
