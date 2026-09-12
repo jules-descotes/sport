@@ -3,28 +3,36 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { IconBody, IconDay, IconWave } from "@/components/ui/Icons";
+import {
+  IconDay,
+  IconDumbbell,
+  IconPlate,
+  IconUser,
+  IconWave,
+} from "@/components/ui/Icons";
+import { TABS, type TabIcon, activeTab } from "@/lib/navigation";
 
 /**
- * Trois destinations, et trois seulement (décidé le 12/09 au soir,
- * cf. PROJET.md §1) :
+ * Cinq entrées : **Jour / Surf / Training / Nutrition / Profil**.
  *
- * - **Jour** — la journée en cours, tous domaines mêlés ;
- * - **Mer** — l'explorateur : la prévision de n'importe quel spot du catalogue ;
- * - **Corps** — objectifs, formules, composition.
+ * La liste elle-même vit dans `lib/navigation.ts` — voir son commentaire pour
+ * le pourquoi de chaque entrée. Ici, rien que le rendu.
  *
- * Elles remplacent les quatre onglets Surf / Training / Nutrition / Stats,
- * dont deux affichaient « arrive au lot 4 ». Le training et la nutrition
- * entrent désormais par la porte « Corps », qui existe dès le premier jour.
+ * À 390 px, cinq cibles de 78 px de large : au-dessus des 44 px exigés, et le
+ * libellé le plus long (« Nutrition ») tient à 12 px sans césure.
  */
-const TABS = [
-  { href: "/", label: "Jour", Icon: IconDay },
-  { href: "/mer", label: "Mer", Icon: IconWave },
-  { href: "/corps", label: "Corps", Icon: IconBody },
-] as const;
+const ICONS: Record<TabIcon, (props: { className?: string }) => React.ReactNode> =
+  {
+    day: IconDay,
+    wave: IconWave,
+    dumbbell: IconDumbbell,
+    plate: IconPlate,
+    user: IconUser,
+  };
 
 export function BottomNav() {
   const pathname = usePathname();
+  const current = activeTab(pathname);
 
   return (
     <nav
@@ -33,15 +41,15 @@ export function BottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-2xl">
-        {TABS.map(({ href, label, Icon }) => {
-          const active =
-            href === "/" ? pathname === "/" : pathname.startsWith(href);
+        {TABS.map(({ href, label, icon }) => {
+          const Icon = ICONS[icon];
+          const active = current === href;
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-touch flex-col items-center justify-center gap-1 px-2 py-2 text-[12px] font-medium transition-colors ${
+                className={`flex min-h-touch flex-col items-center justify-center gap-1 px-1 py-2 text-[12px] font-medium transition-colors ${
                   active ? "text-accent" : "text-mute"
                 }`}
               >

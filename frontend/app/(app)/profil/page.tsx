@@ -29,7 +29,7 @@ import { useGeolocation } from "@/lib/useGeolocation";
  *
  * Le **rayon** ne décide plus de ce qui est ingéré — plus rien n'est interrogé
  * sans qu'on l'ait ouvert. Il ne sert qu'à cadrer la recherche « autour de
- * moi » de l'écran Mer.
+ * moi » de l'écran Surf.
  */
 const RADIUS_STEPS = [10, 20, 30, 40, 60, 80, 100];
 
@@ -115,28 +115,30 @@ export default function ProfilPage() {
         subtitle={me.data?.email ?? undefined}
       />
 
-      {/* Les trois portes du lot 2 : ce qu'on emporte à l'eau, ce qu'on en a
-          rapporté, et ce qui fait marcher le raccourci iPhone. */}
+      {/* Le matos et l'historique sont passés dans Surf le 13/09 : le profil
+          redevient ce qu'il doit être, des réglages. Les deux lignes restent
+          ici parce qu'on y arrive par le raisonnement « c'est à moi », pas
+          parce qu'elles y vivent. */}
       <section className="px-5 pb-6">
         <ul className="overflow-hidden rounded-card border border-line bg-card">
           {[
-            {
-              href: "/profil/matos",
-              label: "Matos",
-              hint: "Planches et combinaisons",
-              Icon: IconBoard,
-            },
-            {
-              href: "/sessions",
-              label: "Sessions",
-              hint: "L'historique, et ce qui reste à noter",
-              Icon: IconLog,
-            },
             {
               href: "/profil/jetons",
               label: "Raccourci iPhone",
               hint: "Jeton Bearer, révocable",
               Icon: IconKey,
+            },
+            {
+              href: "/surf/matos",
+              label: "Matos",
+              hint: "Planches et combinaisons — dans Surf",
+              Icon: IconBoard,
+            },
+            {
+              href: "/surf/sessions",
+              label: "Sessions",
+              hint: "L'historique, et ce qui reste à noter — dans Surf",
+              Icon: IconLog,
             },
           ].map(({ href, label, hint, Icon }) => (
             <li key={href} className="border-b border-line last:border-0">
@@ -283,7 +285,7 @@ export default function ProfilPage() {
           ))}
         </div>
         <p className="mt-2 text-[12px] text-mute">
-          Cadre la recherche « autour de moi » sur l&apos;écran Mer. Aucun de
+          Cadre la recherche « autour de moi » sur l&apos;écran Surf. Aucun de
           ces spots n&apos;est interrogé tant que tu ne l&apos;ouvres pas.
         </p>
       </section>

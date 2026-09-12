@@ -60,7 +60,7 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 - Unités en base : mètres, secondes, degrés, nœuds, kilocalories. Aucune unité composite.
 
 ## Règles produit non négociables
-1. **Mobile d'abord** — on dessine le 390 px, le desktop suit. Barre de navigation basse à **trois destinations : Jour / Mer / Corps** (plus de Surf / Training / Nutrition / Stats). Cibles ≥ 44 px, police ≥ 14 px.
+1. **Mobile d'abord** — on dessine le 390 px, le desktop suit. Barre de navigation basse à **cinq entrées : Jour / Surf / Training / Nutrition / Profil** (décision du 13/09 ; remplace Jour / Mer / Corps). Les stats vivent dans chaque onglet et sur desktop, pas dans le menu. Cibles ≥ 44 px, police ≥ 14 px.
 2. **Zéro saisie clavier pendant l'effort** — boutons, curseurs, molettes. Le clavier ne sert qu'aux notes libres optionnelles.
 3. **Hors-ligne réel** — enregistrer une session sans réseau, file IndexedDB synchronisée au retour.
 4. **Écran d'accueil « Jour » = la journée dans l'ordre où elle se vit** : bloc de mer enrichi (une seule info en grand), séance proposée, repas, pesée. Rendu plein cadre (V4) pour Jour et Corps, liste dense (V2) pour Mer. Référence : `docs/DESIGN-EXPLORATION.md` et le canvas « Sport — exploration ergonomique ».
@@ -431,4 +431,11 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - **Une seule prévision par défaut : celle du spot favori du profil**, affichée sur Jour. **Mer** est un explorateur : la même grille pour n'importe quel autre spot du catalogue, par recherche, favoris ou position, ingérée à la demande. La section « Sort du produit » de `docs/DESIGN-EXPLORATION.md` n'est appliquée **qu'à l'écran** : catalogue OSM, tiers d'ingestion et `spots/nearby` restent en place et alimentent Mer ; la carte et le comparateur multi-spots disparaissent de la navigation.
 - **`run_ts`** dans la clé de `forecasts`, en premier dans le lot 1 ter.
 - Ordre des lots : **1 ter → 2 → 4 → 5 → 3 → 6**.
+
+### Décidé le 13/09 après première utilisation en ligne
+- **Navigation à cinq entrées** : Jour / Surf / Training / Nutrition / Profil. « Mer » → « Surf » ; « Corps » → Training + Nutrition ; Profil visible.
+- **Écran Surf = Windguru en plus moderne** : pour le spot choisi, tableau **heure par heure** sur 5 jours — houle (hauteur, période, **énergie ∝ H²·T**, direction en **flèche**), vent (moyen, rafales, direction en flèche, terre/mer), marée, température de l'eau, score — les flèches deviennent des degrés uniquement dans le détail d'un créneau. Sur Jour, résumé **toutes les 3 h**.
+- **Sessions** : création manuelle et modification des anciennes **depuis le navigateur**, pas seulement le raccourci.
+- **Programmes d'entraînement** : exercices importés depuis des bases **ouvertes** (wger, free-exercise-db) ; les formules sont composées à partir d'eux pour les objectifs du document design. **Aucun scraping de sites commerciaux de programmes** (droits d'auteur, CGU, et la même leçon que `sport=surfing` : vérifier la donnée avant de s'y fier).
+- **HTTPS partout** : HSTS, redirection http → https, `upgrade-insecure-requests`, aucune ressource http (webcams comprises).
 - `OVERPASS_URL` : poser en variable Railway l'instance qui a fonctionné (overpass-api.de bannit l'IP de sortie Railway). `railway.json` est déprécié au profit de `.railway/railway.ts` — migration avant le 2026-12-01.

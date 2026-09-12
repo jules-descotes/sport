@@ -10,7 +10,7 @@ import type { SpotHit } from "@/lib/types";
 import { useGeolocation } from "@/lib/useGeolocation";
 
 /**
- * Le sélecteur de spot de l'écran Mer : recherche par nom, favoris, autour de
+ * Le sélecteur de spot de l'écran Surf : recherche par nom, favoris, autour de
  * moi.
  *
  * **Aucun de ces trois chemins n'ingère quoi que ce soit.** Chercher

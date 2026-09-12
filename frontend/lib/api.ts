@@ -135,7 +135,7 @@ export const api = {
 
   spot: (ref: string | number) => request<Spot>(`/spots/${ref}`),
 
-  /** `step_hours: 3` sert la grille 5 jours × 8 créneaux de l'écran Mer :
+  /** `step_hours: 3` sert la grille 5 jours × 8 créneaux de l'écran Surf :
    *  quarante points au lieu de cent vingt, sur un réseau de parking de plage. */
   spotForecast: (ref: string | number, days = 5, stepHours = 1) =>
     request<SpotForecast>(

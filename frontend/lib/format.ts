@@ -112,7 +112,7 @@ export function tideLabel(rising: boolean | null | undefined): string {
 
 /**
  * Les huit créneaux d'une journée, toutes les trois heures, en **heure
- * locale**. La bande de l'écran Jour et la grille de l'écran Mer sont des
+ * locale**. La bande de l'écran Jour et la grille de l'écran Surf sont des
  * matrices : les colonnes sont fixes, et une heure sans prévision s'éteint au
  * lieu de disparaître, sinon toute la lecture se décale.
  */

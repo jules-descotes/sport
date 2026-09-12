@@ -43,6 +43,7 @@ from app.services.scoring import (
     score_conditions,
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
+from app.services.webcams import WebcamUrlError, normalize_webcam_url
 from app.services.sun import is_daylight
 from app.services.spot_tiers import (
     HOME_MAX,
@@ -53,6 +54,21 @@ from app.services.spot_tiers import (
 )
 
 router = APIRouter(prefix="/spots", tags=["spots"])
+
+
+async def _checked_webcam(url: Optional[str]) -> Optional[str]:
+    """Valide une URL de webcam, ou répond 422 avec la raison.
+
+    Le refus est explicite et lisible : « cette webcam n'est servie qu'en
+    http » est une information exploitable, là où un cadre vide dans l'app ne
+    l'est pas.
+    """
+    try:
+        return await normalize_webcam_url(url)
+    except WebcamUrlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
 
 
 # ── Routes fixes ───────────────────────────────────────────────────────────
@@ -265,6 +281,8 @@ async def create_spot(
             detail=f"Type de spot inconnu : {spot_type}",
         )
 
+    webcam_url = await _checked_webcam(data.webcam_url)
+
     spot = Spot(
         slug=await unique_slug(db, data.name, fallback=f"{data.lat:.3f}-{data.lon:.3f}"),
         name=data.name.strip(),
@@ -273,7 +291,7 @@ async def create_spot(
         country_code=(data.country_code or "").upper() or None,
         spot_type=spot_type,
         source=SpotSource.USER.value,
-        webcam_url=data.webcam_url,
+        webcam_url=webcam_url,
     )
     db.add(spot)
     await db.commit()
@@ -322,8 +340,18 @@ async def update_spot(
     rejeu mensuel réécrira le nom d'amont, ce qui est le comportement voulu.
     """
     spot = await _get_spot(db, spot_ref)
-    for field, value in data.model_dump(exclude_none=True).items():
-        setattr(spot, field, value)
+    values = data.model_dump(exclude_unset=True)
+
+    # Une URL en clair est refusée, ou réécrite en https si le site le sert :
+    # encadrée dans une page en HTTPS, elle serait bloquée comme contenu mixte
+    # et ne montrerait qu'un cadre blanc (cf. `services/webcams.py`).
+    if "webcam_url" in values:
+        spot.webcam_url = await _checked_webcam(values.pop("webcam_url"))
+
+    for field, value in values.items():
+        if value is not None:
+            setattr(spot, field, value)
+
     await db.commit()
     await db.refresh(spot)
     return SpotRead.model_validate(spot)

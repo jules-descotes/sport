@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { use } from "react";
+import { use, useState } from "react";
 
 import { SwellChart } from "@/components/surf/SwellChart";
+import { Webcam } from "@/components/surf/Webcam";
 import { IconBack, IconCamera, IconEyeOff, IconStar } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
 import { compass, num, scoreClass } from "@/lib/format";
@@ -14,11 +15,11 @@ import { compass, num, scoreClass } from "@/lib/format";
  * favori secondaire et masquage.
  *
  * Ce n'est pas une destination — la barre basse en compte trois, et elle n'en
- * comptera pas quatre. C'est le détail d'un spot, ouvert depuis l'écran Mer
+ * comptera pas quatre. C'est le détail d'un spot, ouvert depuis l'écran Surf
  * pour ce que la grille ne montre pas : la webcam et la forme de la houle sur
  * cinq jours.
  *
- * Le favori **du profil** se définit sur Mer : c'est lui qui porte l'écran
+ * Le favori **du profil** se définit sur Surf : c'est lui qui porte l'écran
  * Jour. Le bouton ci-dessous ajoute un favori *secondaire* — vingt au maximum,
  * ingérés en planifié eux aussi.
  */
@@ -68,8 +69,8 @@ export default function SpotPage({
         <p className="text-[16px] text-ink">
           {missing ? "Ce spot n'existe pas." : "Prévisions indisponibles."}
         </p>
-        <Link href="/mer" className="mt-4 inline-block text-[14px] text-accent">
-          Retour à Mer
+        <Link href="/surf" className="mt-4 inline-block text-[14px] text-accent">
+          Retour à Surf
         </Link>
       </main>
     );
@@ -84,7 +85,7 @@ export default function SpotPage({
     <main className="pb-6">
       <header className="flex items-start gap-2 px-4 pb-3 pt-4">
         <Link
-          href="/mer"
+          href="/surf"
           aria-label="Retour"
           className="flex h-touch w-touch shrink-0 items-center justify-center rounded-button text-ink-2"
         >
@@ -113,25 +114,11 @@ export default function SpotPage({
       </header>
 
       {/* Webcam : iframe ou lien sortant, jamais de ré-hébergement du flux
-          (droits et bande passante, cf. PROJET.md §10). */}
+          (droits et bande passante, cf. PROJET.md §10). Le choix entre les
+          deux est dans `components/surf/Webcam.tsx`. */}
       <section className="px-5">
-        {spot.webcam_url ? (
-          <div className="overflow-hidden rounded-card border border-line bg-soft">
-            <iframe
-              src={spot.webcam_url}
-              title={`Webcam ${spot.name}`}
-              className="aspect-video w-full"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              allowFullScreen
-            />
-          </div>
-        ) : (
-          <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-soft text-mute">
-            <IconCamera className="h-7 w-7" />
-            <p className="text-[13px]">Pas de webcam pour ce spot</p>
-          </div>
-        )}
+        <Webcam url={spot.webcam_url} name={spot.name} />
+        <WebcamForm slug={slug} current={spot.webcam_url} />
       </section>
 
       <section className="px-5 pt-5">
@@ -215,5 +202,99 @@ export default function SpotPage({
         </p>
       ) : null}
     </main>
+  );
+}
+
+/**
+ * Saisie de l'URL de webcam d'un spot.
+ *
+ * Repliée : c'est un geste qu'on fait une fois par spot maison, pas tous les
+ * matins. Le back refuse le `http:` et réécrit en `https:` quand le site le
+ * sert — le message d'erreur qu'il rend est affiché tel quel, parce qu'il dit
+ * exactement quoi faire.
+ */
+function WebcamForm({
+  slug,
+  current,
+}: {
+  slug: string;
+  current: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState(current ?? "");
+
+  const save = useMutation({
+    mutationFn: (value: string) =>
+      api.updateSpot(slug, { webcam_url: value.trim() || null }),
+    onSuccess: () => {
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["spot-forecast", slug] });
+    },
+  });
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 flex min-h-touch w-full items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[14px] font-semibold text-ink-2"
+      >
+        <IconCamera className="h-5 w-5" />
+        {current ? "Changer la webcam" : "Ajouter une webcam"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-card border border-line bg-card p-4">
+      <label
+        htmlFor="webcam-url"
+        className="block pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute"
+      >
+        Adresse de la webcam
+      </label>
+      <input
+        id="webcam-url"
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        value={url}
+        onChange={(event) => setUrl(event.target.value)}
+        placeholder="https://…"
+        className="min-h-touch w-full rounded-button border border-line bg-soft px-3 text-[16px] text-ink placeholder:text-mute"
+      />
+      <p className="mt-2 text-[12px] leading-snug text-mute">
+        En https uniquement : une webcam en clair est bloquée comme contenu
+        mixte, et ne montrerait qu&apos;un cadre blanc.
+      </p>
+
+      {save.error instanceof ApiError ? (
+        <p role="alert" className="mt-2 text-[13px] leading-snug text-accent">
+          {save.error.message}
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setUrl(current ?? "");
+            setOpen(false);
+          }}
+          className="min-h-touch flex-1 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
+        >
+          Annuler
+        </button>
+        <button
+          type="button"
+          disabled={save.isPending}
+          onClick={() => save.mutate(url)}
+          className="min-h-touch flex-1 rounded-button bg-accent px-4 text-[15px] font-semibold text-on-accent disabled:opacity-50"
+        >
+          {save.isPending ? "Vérification…" : "Enregistrer"}
+        </button>
+      </div>
+    </div>
   );
 }

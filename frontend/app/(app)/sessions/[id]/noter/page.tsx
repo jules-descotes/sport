@@ -359,7 +359,7 @@ export default function NoterPage() {
             Pas encore de planche.{" "}
             <button
               type="button"
-              onClick={() => router.push("/profil/matos")}
+              onClick={() => router.push("/surf/matos")}
               className="font-semibold text-accent underline"
             >
               Ajoute ton matos

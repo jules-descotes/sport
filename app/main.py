@@ -16,6 +16,7 @@ from app.api.routes.sessions import router as sessions_router
 from app.api.routes.spots import router as spots_router
 from app.core.config import settings
 from app.core.security import hash_password
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.database import async_session
 
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
@@ -111,6 +112,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ajouté **après** CORS, donc exécuté avant lui : Starlette empile les
+# middlewares à l'envers de leur déclaration. C'est ce qu'on veut — les
+# en-têtes de sécurité se posent sur toutes les réponses, y compris les
+# préflights auxquels CORS répond sans descendre plus bas, et la redirection
+# http → https tombe avant tout le reste.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(spots_router, prefix="/api/v1")

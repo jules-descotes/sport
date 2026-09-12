@@ -27,7 +27,7 @@ Le site est **utilisé sur téléphone, debout, souvent mouillé, parfois sans r
 
 1. **PWA installable** — manifest + service worker, ajout à l'écran d'accueil iOS, plein écran sans barre Safari. Pas d'app native, pas de store.
 2. **Mobile-first strict** — on dessine l'écran 390 px d'abord, le desktop est un bonus. **Aucun parcours quotidien qui n'existe qu'en desktop** ; les vues d'analyse profonde, elles, peuvent n'exister que là.
-3. **Navigation par barre basse fixe, trois destinations** : **Jour** (la journée en cours, tous domaines mêlés — le bloc de mer y est **la prévision du spot favori du profil**) · **Mer** (l'explorateur : la même grille pour **n'importe quel autre spot**, par recherche, favoris ou position) · **Corps** (objectifs, formules d'entraînement, table, composition). Zone du pouce. Pas de menu hamburger sur les parcours quotidiens. *(Décision du 12/09 soir, issue de l'exploration design — remplace les 4 onglets Surf / Training / Nutrition / Stats.)*
+3. **Navigation par barre basse fixe, cinq entrées** : **Jour** (la journée en cours, tous domaines mêlés — le bloc de mer y est la prévision du spot favori, résumée toutes les 3 h) · **Surf** (prévision détaillée heure par heure du spot choisi, sessions, matos) · **Training** (objectifs mesurés, formules, séances) · **Nutrition** · **Profil**. Zone du pouce. Pas de menu hamburger sur les parcours quotidiens. *(Décision du 13/09 après première utilisation en ligne — remplace les trois destinations Jour / Mer / Corps du 12/09 soir : « Mer » devient « Surf », « Corps » éclate en Training et Nutrition, le Profil sort du menu caché.)*
 4. **Cibles tactiles ≥ 44 px**, espacées. Aucun contrôle à moins de 16 px d'un bord.
 5. **Zéro saisie clavier pendant l'effort** — la notation d'une session et le suivi d'une série se font en boutons, curseurs et molettes. Le clavier n'apparaît que pour les notes libres, optionnelles.
 6. **Mode hors-ligne réel** — on doit pouvoir enregistrer une session sans réseau sur le parking de la plage. File d'attente locale (IndexedDB) synchronisée au retour du réseau.
@@ -346,6 +346,9 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 - [x] **Architecture d'écrans** — trois destinations Jour / Mer / Corps, hybride plein cadre (Jour, Corps) + liste dense (Mer), objectifs mesurés pour le training (décidé le 12/09 soir, cf. `docs/DESIGN-EXPLORATION.md`)
 - [x] **Périmètre géographique** — **une seule prévision par défaut, celle du spot favori du profil** (bloc de mer sur Jour). L'onglet **Mer** sert à interroger n'importe quel autre spot du catalogue (recherche, favoris, position), à la demande. Le catalogue mondial et les tiers d'ingestion restent, mais le tier « maison » se réduit au(x) favori(s) et le reste ne s'ingère que quand on le regarde (décidé le 12/09 soir, remplace la lecture « monde + géoloc partout »)
 - [x] **Ordre des lots** — 1 ter → 2 → 4 → 5 → 3 → 6 (décidé le 12/09 soir)
+- [x] **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil, et **prévision heure par heure façon Windguru** sur l'écran Surf (flèches de direction, énergie de houle), résumé 3 h sur Jour (décidé le 13/09 après première utilisation en ligne)
+- [x] **Sessions créables et modifiables depuis le navigateur**, pas seulement via le raccourci iPhone (13/09)
+- [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09)
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

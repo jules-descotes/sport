@@ -9,11 +9,11 @@ import type { SurfSession } from "@/lib/types";
 /**
  * Une ligne d'historique — traitement **liste dense** (V2 de l'exploration).
  *
- * C'est la deuxième vue dense du produit, après la grille de l'écran Mer, et
+ * C'est la deuxième vue dense du produit, après la grille de l'écran Surf, et
  * elle l'est pour la même raison : on ne lit pas un historique une information
  * à la fois, on le balaie pour retrouver une journée. Date, spot, durée, les
  * **deux** notes, la planche — tout tient sur une ligne, et les deux notes
- * gardent les couleurs de l'échelle, les mêmes que sur Jour et sur Mer.
+ * gardent les couleurs de l'échelle, les mêmes que sur Jour et sur Surf.
  *
  * Les deux notes côte à côte ne sont pas un détail d'affichage : c'est le
  * seul endroit du produit où l'on voit d'un coup d'œil les jours où la mer

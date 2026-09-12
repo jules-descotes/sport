@@ -10,7 +10,7 @@ import type { Recommendation, Slot } from "@/lib/types";
  * Grille heures × spots — **hors navigation depuis le lot 1 ter**.
  *
  * Le comparateur multi-spots sort du produit à l'écran : Jour porte un seul
- * spot, Mer en porte un à la fois (décidé le 12/09 au soir). Ce composant n'est
+ * spot, Surf en porte un à la fois (décidé le 12/09 au soir). Ce composant n'est
  * plus routé ; il est conservé parce que `/recommend` sait toujours rendre la
  * grille multi-spots, et qu'un jour de trip il redeviendra la bonne réponse.
  *

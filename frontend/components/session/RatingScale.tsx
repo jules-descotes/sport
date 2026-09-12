@@ -6,7 +6,7 @@ import { scoreClass } from "@/lib/format";
  * Cinq grands boutons, de 1 à 5, aux couleurs de l'échelle de score.
  *
  * L'échelle est **le fil rouge du produit** : la même du 1 au 5 sur Jour, sur
- * Mer, sur la fiche spot et ici. Une note 4 posée à la main doit avoir
+ * Surf, sur la fiche spot et ici. Une note 4 posée à la main doit avoir
  * exactement la couleur d'une note 4 calculée par le moteur, sinon la
  * comparaison « ce que j'ai mis » / « ce qui était prévu » ne se fait plus à
  * l'œil, et c'est toute la promesse des statistiques du lot 6.

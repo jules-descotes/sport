@@ -222,7 +222,7 @@ export function SeaBlock({ data }: { data: Recommendation }) {
           />
         </div>
 
-        {/* Deux lignes qui évitent d'ouvrir l'écran Mer neuf fois sur dix. */}
+        {/* Deux lignes qui évitent d'ouvrir l'écran Surf neuf fois sur dix. */}
         <footer className="mt-4 border-t border-line bg-soft px-5 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-mute">
             {fullDayLabel(tomorrow.toISOString())}
@@ -245,7 +245,7 @@ export function SeaBlock({ data }: { data: Recommendation }) {
       </article>
 
       <Link
-        href={`/mer?spot=${spot.slug}`}
+        href={`/surf?spot=${spot.slug}`}
         className="mt-3 flex min-h-touch items-center justify-center rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
       >
         Les cinq jours, et les autres spots

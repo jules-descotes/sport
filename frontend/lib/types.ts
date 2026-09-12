@@ -51,7 +51,7 @@ export interface SpotNearby extends Spot {
   is_home: boolean;
 }
 
-/** Résultat du sélecteur de spot de l'écran Mer. Aucune prévision : chercher
+/** Résultat du sélecteur de spot de l'écran Surf. Aucune prévision : chercher
  *  un spot n'ingère rien, la prévision arrive quand on l'ouvre. */
 export interface SpotHit extends Spot {
   distance_km: number | null;

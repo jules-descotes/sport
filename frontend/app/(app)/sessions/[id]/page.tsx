@@ -68,7 +68,7 @@ function Note({ label, value }: { label: string; value: number | null }) {
 /**
  * Un volet de la fenêtre, en matrice : trois colonnes fixes, T−2 h / T−1 h /
  * T0. Une heure manquante s'éteint au lieu de disparaître — une colonne en
- * moins décalerait toute la lecture, exactement comme sur la grille de Mer.
+ * moins décalerait toute la lecture, exactement comme sur la grille de Surf.
  */
 function Window({
   title,

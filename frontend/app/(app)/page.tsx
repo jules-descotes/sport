@@ -9,12 +9,7 @@ import {
 } from "@/components/session/PendingSessionBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { SeaBlock } from "@/components/surf/SeaBlock";
-import {
-  IconCloudOff,
-  IconLog,
-  IconSearch,
-  IconUser,
-} from "@/components/ui/Icons";
+import { IconCloudOff, IconSearch } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useGeolocation } from "@/lib/useGeolocation";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
@@ -115,26 +110,7 @@ export default function JourPage() {
   }
 
   return (
-    <main className="flex flex-col gap-4 pb-6 pt-3">
-      {/* Barre de service : le profil n'est dans aucune des trois destinations,
-          et c'est là que vivent le matos et le raccourci iPhone. */}
-      <nav className="flex items-center justify-end gap-1 px-4" aria-label="Outils">
-        <Link
-          href="/sessions"
-          aria-label="Historique des sessions"
-          className="flex h-touch w-touch items-center justify-center rounded-button text-mute"
-        >
-          <IconLog className="h-5 w-5" />
-        </Link>
-        <Link
-          href="/profil"
-          aria-label="Profil"
-          className="flex h-touch w-touch items-center justify-center rounded-button text-mute"
-        >
-          <IconUser className="h-5 w-5" />
-        </Link>
-      </nav>
-
+    <main className="flex flex-col gap-4 pb-6 pt-5">
       {/* Devant tout le reste tant qu'elle n'est pas notée. */}
       {toRate.map((session) => (
         <PendingSessionBlock key={session.id} session={session} />
@@ -152,10 +128,10 @@ export default function JourPage() {
             </h2>
             <p className="mt-3 text-[15px] leading-snug text-ink-2">
               Jour affiche la prévision d&apos;un seul spot : le tien. Les autres
-              se consultent depuis Mer, quand tu les regardes.
+              se consultent depuis Surf, quand tu les regardes.
             </p>
             <Link
-              href="/mer"
+              href="/surf"
               className="mt-4 flex min-h-touch items-center justify-center gap-2 rounded-button bg-accent px-4 text-[16px] font-semibold text-on-accent"
             >
               <IconSearch className="h-5 w-5" />
