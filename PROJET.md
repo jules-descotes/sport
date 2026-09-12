@@ -280,17 +280,17 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 |---|---|---|---|---|
 | ✅ | **0** | Repo, infra, auth JWT, coquille PWA, déployé | 1 j | fait |
 | ✅ | **1** | Catalogue OSM + orientation de côte, tiers d'ingestion, Open-Meteo/MFWAM, `daily_log`, score cold start, accueil / comparateur / fiche spot / carte / profil | 3 j | fait |
-| 1 | **1 ter** | **`run_ts`** dans `forecasts` (migration) · **navigation Jour / Mer / Corps** · **spot favori** dans le profil · bloc de mer enrichi sur Jour (prévision du favori) · écran Mer = explorateur en liste dense (grille 5 j × 8 créneaux pour le spot choisi, recherche / favoris / autour de moi) · écran Corps en coquille | 1,5 j | à faire |
-| 2 | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | à faire |
-| 3 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
-| 4 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
-| 5 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
-| 6 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
+| ✅ | **1 ter** | **`run_ts`** dans `forecasts` (migration) · **navigation Jour / Mer / Corps** · **spot favori** dans le profil · bloc de mer enrichi sur Jour (prévision du favori) · écran Mer = explorateur en liste dense (grille 5 j × 8 créneaux pour le spot choisi, recherche / favoris / autour de moi) · écran Corps en coquille | 1,5 j | fait |
+| 1 | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | à faire |
+| 2 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
+| 3 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
+| 4 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
+| 5 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
 | — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-≈ **15 jours de dev effectif**, dont 4 déjà faits.
+≈ **15 jours de dev effectif**, dont 5,5 déjà faits.
 
-> **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente.
+> **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente. *(Fait le 12/09 : migration `0003`, clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. `run_ts` est arrondi à l'heure — sans quoi chaque redémarrage à froid de Railway écrirait un run de plus pour la même prévision.)*
 
 ---
 

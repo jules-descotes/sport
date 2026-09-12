@@ -168,6 +168,7 @@ NEXT_PUBLIC_APP_NAME=Sport
 ## État d'avancement
 - [x] Lot 0 — repo, infra, auth, coquille PWA — **code terminé le 2026-09-12**, mise en ligne à faire
 - [x] Lot 1 — spots, ingestion météo, écran d'accueil, webcams — **code terminé le 2026-09-12**, import OSM à lancer en production
+- [x] Lot 1 ter — `run_ts`, spot favori, navigation Jour / Mer / Corps — **code terminé le 2026-09-12**
 - [ ] Lot 2 — log de session, matos, notation, hors-ligne
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 4 — training
@@ -256,6 +257,73 @@ Parlementia NO, Ciboure N dans sa baie), rejeu de l'import idempotent,
 - [ ] Valider `sea_level_height_msl` contre l'annuaire SHOM sur quelques marées
 - [ ] Saisir les URL de webcams des spots maison (`PATCH /spots/{ref}`)
 - [ ] Relancer l'import tous les mois (à la main, ou cron Railway plus tard)
+
+### Lot 1 ter — ce qui est livré (2026-09-12)
+**`run_ts` — fait en premier, avant tout le reste**
+- `forecasts.run_ts` (heure d'émission, UTC, **arrondie à l'heure**) entre dans
+  la clé unique `(spot_id, ts, source, run_ts)`, et le conflit devient
+  `ON CONFLICT DO NOTHING`. Une passe **ajoute** une prévision plus récente,
+  elle n'en écrase plus aucune
+- L'arrondi à l'heure préserve l'idempotence : le conteneur Railway redémarre,
+  la passe repart dans la même heure et retombe sur le même run au lieu de
+  dupliquer 120 lignes par spot. `fetched_at` reste exact et ne sert plus qu'au
+  cache de trois heures
+- Un seul `run_ts` par passe : les vingt spots maison d'un même cycle
+  appartiennent au même run, même si la passe dure dix minutes
+- `services/forecast_reads.py` — **seul endroit** où est écrite la règle
+  « dernière prévision = `run_ts` max par `(spot_id, ts, source)` ». Y passent
+  la reco, `/spots/{ref}/forecast` et le `conditions_snapshot`
+- `forecast_delta(spot, ts)` — écart entre le dernier run et celui de la veille
+  au soir (20 h **locale**, convertie en UTC), directions repliées par le court
+  chemin (350° → 10° = +20°)
+- Le volet `forecast` d'une session ne lit que les runs **émis avant** le début
+  de la session : une passe postérieure est un constat déguisé, et la retenir
+  serait du décalage train/serve (§7.1)
+- Migration `0003` : `run_ts = fetched_at` sur l'existant — c'est exactement ce
+  que `fetched_at` portait jusque-là. Aller-retour vérifié sur SQLite avec des
+  données
+
+**Spot favori**
+- `profiles.home_spot_id` (migration `0004`). Le tier `home` part de lui, plus
+  les favoris secondaires, plafond de 20 inchangé. Un favori à 300 km reste
+  `home` : c'est celui qu'on regarde tous les matins
+- **Plus aucun chemin n'ingère un spot qu'on n'a pas regardé.** `/recommend`
+  rafraîchissait jusqu'à douze spots du rayon à chaque ouverture ; il ne
+  rafraîchit plus que le favori, et zéro appel tant qu'aucun favori n'est
+  choisi. Seul `/spots/{ref}/forecast` ingère encore — le spot qu'on ouvre
+- `GET /spots/search` (nom, préfixes en tête) et `GET /spots/favorites`
+  n'ingèrent rien
+- Les créneaux portent `daylight`, la position dans la marée, le marnage, la
+  composante offshore signée et les raisons de la note. `step_hours=3` sert la
+  grille en 40 points au lieu de 120, notes toujours calculées sur **toutes**
+  les heures — la marée se lit sur les extrêmes du jour
+
+**Écrans**
+- Barre basse **Jour / Mer / Corps**. Carte et comparateur multi-spots sortent
+  de la navigation ; `Comparator.tsx` reste dans l'arbre, non routé
+- **Jour** (plein cadre) : bloc de mer du favori — note et fenêtre du meilleur
+  créneau en grand, houle, vent et rafales avec mention terre / mer, marée
+  (sens, PM, marnage), eau, bande des huit créneaux, deux lignes « demain ».
+  Puis le swipe `daily_log` et deux emplacements « séance » et « repas »
+- **Mer** (liste dense) : sélecteur (recherche, favoris, autour de moi), grille
+  5 j × 8 créneaux entière sur un écran, tap = détail du créneau, bouton
+  « définir comme favori ». Ouvrir un spot déclenche son ingestion
+- **Corps** : trois jauges vides et « à définir », contenu au lot 4
+- **Profil** : choix du spot favori par recherche, domicile, rayon
+- **218 tests pytest verts**, `npm run lint` et `npm run build` propres
+
+> Le **coefficient de marée** n'est pas affiché : il se calcule par rapport au
+> marnage de vive-eau moyen d'un port de référence, que ni Open-Meteo ni nous
+> n'avons. Le marnage du jour est affiché à la place — c'est la grandeur qu'on
+> a vraiment (feature 8 du registre). Ne pas l'inventer à partir du niveau.
+
+### Lot 1 ter — ce qui reste (hors code)
+- [ ] Appliquer les migrations `0003` et `0004` en production (automatique au
+      déploiement : `run.py` fait `alembic upgrade head` avant uvicorn)
+- [ ] Poser `FORECAST_WAVE_MODEL` et `FORECAST_MODEL_VERSION` sur Railway avant
+      la première passe d'ingestion historisée
+- [ ] Choisir le spot favori depuis le profil dès la première connexion en
+      production — sans lui, le job planifié n'interroge rien
 
 ### Décidé le 12/09 pour le lot 1 (cf. PROJET.md §11)
 - Spots : **catalogue mondial OpenStreetMap** (`sport=surfing`, Overpass), affichage filtré par **géolocalisation en direct + rayon du profil**, ajout manuel depuis la carte. Jamais de scraping de sites de prévi.
