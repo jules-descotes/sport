@@ -88,8 +88,39 @@ def wave_energy(height_m: float, period_s: float) -> float:
     """Énergie de la houle, proportionnelle à H²T (feature 9 du registre).
 
     Sans constante physique : seul l'ordre de grandeur relatif sert au modèle.
+    C'est cette forme brute qui entre dans le vecteur de features — jamais la
+    valeur mise à l'échelle de `wave_energy_kj`, qui n'est qu'un affichage.
     """
     return height_m * height_m * period_s
+
+
+# Flux d'énergie d'une houle en eau profonde, par mètre de crête :
+#
+#     P = ρ g² H² T / (64 π)
+#
+# avec ρ = 1025 kg/m³ (eau de mer) et g = 9,81 m/s². Le coefficient vaut
+# 1025 × 9,81² / (64 π) ≈ 490 W/m pour H en mètres et T en secondes, soit
+# **0,49 kilojoule par seconde et par mètre de crête** — ce que les
+# océanographes écrivent kW/m.
+#
+# C'est la mise à l'échelle physique de la feature 9 (∝ H²T) : la forme est
+# exactement celle du registre, la constante ne fait que lui donner une unité
+# lisible. Sur la côte landaise, 0,5 m / 7 s donne ~0,9 ; 1,4 m / 12 s ~11,5 ;
+# 2,5 m / 15 s ~46. Un chiffre qui se lit à bout de bras.
+WAVE_ENERGY_COEFFICIENT_KJ = 0.49
+
+
+def wave_energy_kj(height_m: float, period_s: float) -> float:
+    """Flux d'énergie de la houle, en kJ par seconde et par mètre de crête.
+
+    Même grandeur que `wave_energy` — proportionnelle à H²T — avec sa
+    constante physique, pour être affichée plutôt que donnée à un modèle.
+
+    Deux vagues d'un mètre ne se valent pas : à 7 s de période elle porte
+    2,4 kJ/s/m, à 15 s elle en porte 7,4. C'est ce rapport de trois que la
+    seule hauteur ne dit pas, et c'est pour ça que la ligne existe.
+    """
+    return WAVE_ENERGY_COEFFICIENT_KJ * height_m * height_m * period_s
 
 
 def compass_label(direction_deg: float) -> str:

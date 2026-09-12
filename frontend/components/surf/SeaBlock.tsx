@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { SlotBand } from "@/components/surf/SlotBand";
 import {
@@ -93,6 +94,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function SeaBlock({ data }: { data: Recommendation }) {
+  const router = useRouter();
   const spot = data.home_spot;
   const entry = data.spots.find((item) => item.spot.id === spot?.id);
   const slots = entry?.slots ?? [];
@@ -213,12 +215,21 @@ export function SeaBlock({ data }: { data: Recommendation }) {
           <Row label="Eau">{num(best.water_temperature_c, 0)} °C</Row>
         </dl>
 
-        <div className="border-t border-line px-5 pt-3">
+        {/* Les huit créneaux de la journée, toutes les trois heures : hauteur,
+            période, flèche de houle, vent et flèche, note (décidé le 13/09).
+            Un tap ouvre Surf **positionné sur cette heure** — le résumé et le
+            tableau horaire sont deux échelles de la même chose. */}
+        <div className="border-t border-line px-4 pb-1 pt-3">
           <SlotBand
             slots={slots}
             day={now}
             bestTs={best.ts}
             label="Les huit créneaux d'aujourd'hui"
+            onSelect={(ts) =>
+              router.push(
+                `/surf?spot=${spot.slug}&ts=${encodeURIComponent(ts)}`,
+              )
+            }
           />
         </div>
 
@@ -248,7 +259,7 @@ export function SeaBlock({ data }: { data: Recommendation }) {
         href={`/surf?spot=${spot.slug}`}
         className="mt-3 flex min-h-touch items-center justify-center rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
       >
-        Les cinq jours, et les autres spots
+        Le tableau heure par heure, et les autres spots
       </Link>
     </section>
   );

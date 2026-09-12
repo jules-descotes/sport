@@ -10,6 +10,7 @@ import type {
   Recommendation,
   SessionJournal,
   SessionStatus,
+  SlotDetail,
   Spot,
   SpotForecast,
   SpotHit,
@@ -141,6 +142,11 @@ export const api = {
     request<SpotForecast>(
       `/spots/${ref}/forecast${query({ days, step_hours: stepHours })}`,
     ),
+
+  /** Le détail d'un créneau. N'ingère rien : le créneau vient d'un tableau
+   *  déjà affiché, donc d'une prévision déjà en base. */
+  spotSlot: (ref: string | number, ts: string) =>
+    request<SlotDetail>(`/spots/${ref}/slot${query({ ts })}`),
 
   /** Recherche par nom dans le catalogue. N'ingère rien. */
   searchSpots: (

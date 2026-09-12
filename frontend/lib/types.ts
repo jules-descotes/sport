@@ -82,6 +82,10 @@ export interface ForecastPoint {
   swell_height_m: number | null;
   swell_direction_deg: number | null;
   swell_period_s: number | null;
+  /** Train secondaire — features 16 et 17 du registre. Ligne repliable. */
+  secondary_swell_height_m: number | null;
+  secondary_swell_direction_deg: number | null;
+  secondary_swell_period_s: number | null;
   wind_speed_kt: number | null;
   wind_gust_kt: number | null;
   wind_direction_deg: number | null;
@@ -93,11 +97,42 @@ export interface ForecastPoint {
   tide_range_m: number | null;
   /** Composante offshore signée, en nœuds. Positive = vent de terre. */
   wind_offshore_kt: number | null;
+  /** Flux d'énergie de la houle en kJ/s par mètre de crête — ∝ H²·T
+   *  (feature 9). Un mètre à 15 s porte trois fois l'énergie d'un mètre à 7 s,
+   *  et c'est ce que la hauteur seule ne dit pas. */
+  wave_energy_kj: number | null;
+  /** Écart angulaire houle ↔ orientation du spot (feature 10). */
+  swell_alignment_deg: number | null;
   score: number | null;
   score_level: number | null;
   reasons: string[];
   /** Faux la nuit : la cellule s'éteint, elle ne disparaît pas. */
   daylight: boolean;
+}
+
+/** Lever et coucher d'une journée, en UTC. Le tableau horaire grise la nuit
+ *  d'un trait plutôt que d'éteindre chaque cellule. */
+export interface SunDay {
+  day: string;
+  sunrise: string | null;
+  sunset: string | null;
+}
+
+/** Le détail d'un créneau — le seul endroit où les directions sont chiffrées. */
+export interface SlotDetail {
+  point: ForecastPoint;
+  spot: Spot;
+  wave_direction_label: string | null;
+  wind_direction_label: string | null;
+  secondary_swell_direction_label: string | null;
+  onshore_direction_label: string | null;
+  sunrise: string | null;
+  sunset: string | null;
+  run_ts: string | null;
+  previous_run_ts: string | null;
+  /** Écarts signés depuis le run de la veille au soir. Directions repliées
+   *  par le court chemin : 350° → 10° vaut +20°. */
+  delta: Record<string, number>;
 }
 
 export interface SpotForecast {
@@ -107,6 +142,8 @@ export interface SpotForecast {
   fetched_at: string | null;
   /** Heure d'émission du run servi — « prévision de 6 h ». */
   run_ts: string | null;
+  /** Une entrée par journée rendue, dans l'ordre. */
+  sun: SunDay[];
   points: ForecastPoint[];
 }
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -110,6 +110,13 @@ class ForecastPoint(BaseModel):
     swell_height_m: Optional[float] = None
     swell_direction_deg: Optional[float] = None
     swell_period_s: Optional[float] = None
+    # Train secondaire — features 16 et 17 du registre. Rendu parce que la
+    # ligne repliable de l'écran Surf l'affiche : une houle secondaire de 1 m
+    # croisée avec la primaire explique une mer désordonnée que la seule
+    # hauteur totale ne raconte pas.
+    secondary_swell_height_m: Optional[float] = None
+    secondary_swell_direction_deg: Optional[float] = None
+    secondary_swell_period_s: Optional[float] = None
     wind_speed_kt: Optional[float] = None
     wind_gust_kt: Optional[float] = None
     wind_direction_deg: Optional[float] = None
@@ -123,12 +130,35 @@ class ForecastPoint(BaseModel):
     tide_range_m: Optional[float] = None
     # Composante offshore signée du vent, en nœuds. Positive = de terre.
     wind_offshore_kt: Optional[float] = None
+    # Flux d'énergie de la houle, en kJ/s par mètre de crête (feature 9 du
+    # registre, mise à l'échelle physique — cf. `geo.wave_energy_kj`). C'est
+    # la ligne « ÉNERGIE » du tableau horaire : elle dit ce que la hauteur
+    # seule ne dit pas, à savoir qu'un mètre à 15 s porte trois fois l'énergie
+    # d'un mètre à 7 s.
+    wave_energy_kj: Optional[float] = None
+    # Écart angulaire houle ↔ orientation du spot (feature 10). Nul quand
+    # l'orientation de côte est inconnue : on ne devine pas.
+    swell_alignment_deg: Optional[float] = None
     score: Optional[float] = None
     score_level: Optional[int] = None
     reasons: list[str] = []
     # Faux la nuit : la grille 5 jours × 8 créneaux éteint la cellule au lieu
     # de la supprimer, sinon la matrice se décale d'une colonne.
     daylight: bool = True
+
+
+class SunDay(BaseModel):
+    """Lever et coucher d'une journée, en UTC.
+
+    Calculés localement (`services/sun.py`), pas demandés à Open-Meteo : c'est
+    de l'astronomie, ça tient en trente lignes, et ça ne consomme pas le budget
+    d'appels. Le tableau horaire s'en sert pour griser la nuit d'un trait, au
+    lieu d'éteindre chaque cellule une par une.
+    """
+
+    day: date
+    sunrise: Optional[datetime] = None
+    sunset: Optional[datetime] = None
 
 
 class SpotForecastResponse(BaseModel):
@@ -140,4 +170,44 @@ class SpotForecastResponse(BaseModel):
     # Heure d'émission du run servi. Distincte de `fetched_at` : elle dit de
     # quelle prévision on parle, là où `fetched_at` ne dit que l'âge du cache.
     run_ts: Optional[datetime] = None
+    # Une entrée par journée rendue, dans l'ordre.
+    sun: list[SunDay] = []
     points: list[ForecastPoint] = []
+
+
+class SlotDetail(BaseModel):
+    """Le détail d'un créneau — **le seul endroit où les directions sont des
+    nombres**.
+
+    Partout ailleurs (tableau horaire, bande de l'écran Jour) une direction est
+    une flèche : à bout de bras, au soleil, « 292° » ne se lit pas et « ONO »
+    demande une traduction mentale. Une flèche se lit sans réfléchir. Le degré
+    reste utile quand on veut comprendre *pourquoi* la note est ce qu'elle est,
+    et c'est exactement ce qu'on vient chercher ici.
+
+    Y vit aussi ce qui n'a aucune place dans une grille : l'écart à
+    l'orientation du spot, la composante offshore chiffrée, le `run_ts` qui a
+    produit ces valeurs et ce qui a changé depuis la veille au soir.
+    """
+
+    point: ForecastPoint
+    spot: SpotRead
+
+    # Provenances en lettres, pour doubler les degrés sans les remplacer.
+    wave_direction_label: Optional[str] = None
+    wind_direction_label: Optional[str] = None
+    secondary_swell_direction_label: Optional[str] = None
+    # Direction dans laquelle le spot regarde la mer — la référence des deux
+    # écarts ci-dessus.
+    onshore_direction_label: Optional[str] = None
+
+    sunrise: Optional[datetime] = None
+    sunset: Optional[datetime] = None
+
+    # Run qui a produit ces valeurs, et celui de la veille au soir (20 h
+    # locale) auquel on le compare.
+    run_ts: Optional[datetime] = None
+    previous_run_ts: Optional[datetime] = None
+    # Écarts signés depuis ce run-là. Les directions sont repliées par le court
+    # chemin : 350° → 10° vaut +20°, pas −340°.
+    delta: dict[str, float] = {}

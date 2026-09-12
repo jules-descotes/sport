@@ -252,3 +252,85 @@ export function floorToQuarter(date: Date): Date {
   rounded.setMinutes(Math.floor(rounded.getMinutes() / 15) * 15, 0, 0);
   return rounded;
 }
+
+/**
+ * Teinte d'intensité — le séquentiel du CLAUDE.md, six paliers.
+ *
+ * **Ce n'est pas l'échelle de score**, et la distinction est le cœur de la
+ * lisibilité du tableau horaire : l'échelle 1 → 5 dit « c'est bon », le
+ * séquentiel dit « c'est gros ». Les teinter pareil ferait lire une houle de
+ * 3 m comme une bonne nouvelle, alors qu'elle peut être injouable.
+ *
+ * Les cellules de hauteur et de vent portent donc le séquentiel ; seule la
+ * ligne du bas porte l'échelle de score (règle C.1 du 13/09).
+ */
+const SEQ_CLASSES = [
+  "seq-1",
+  "seq-2",
+  "seq-3",
+  "seq-4",
+  "seq-5",
+  "seq-6",
+] as const;
+
+function seqClass(
+  value: number | null | undefined,
+  steps: readonly number[],
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "seq-empty";
+  }
+  let level = 0;
+  for (const step of steps) {
+    if (value >= step) level += 1;
+  }
+  return SEQ_CLASSES[Math.min(level, SEQ_CLASSES.length - 1)];
+}
+
+/** Paliers de hauteur de houle, en mètres. Calés sur la côte landaise :
+ *  en dessous de 40 cm il ne se passe rien, au-dessus de 3 m c'est du gros. */
+const WAVE_STEPS = [0.4, 0.8, 1.3, 2.0, 3.0] as const;
+
+/** Paliers de vent, en nœuds. 4 kt = mer lisse, 25 kt = coup de vent. */
+const WIND_STEPS = [4, 9, 14, 20, 27] as const;
+
+export function waveHeightClass(height_m: number | null | undefined): string {
+  return seqClass(height_m, WAVE_STEPS);
+}
+
+export function windSpeedClass(speed_kt: number | null | undefined): string {
+  return seqClass(speed_kt, WIND_STEPS);
+}
+
+/** « de terre » / « de mer », en une lettre pour une cellule étroite. */
+export function windSideShort(
+  offshoreKt: number | null | undefined,
+): "terre" | "mer" | "travers" | null {
+  if (offshoreKt === null || offshoreKt === undefined) return null;
+  if (offshoreKt > 2) return "terre";
+  if (offshoreKt < -2) return "mer";
+  return "travers";
+}
+
+/** Un écart signé, avec son signe explicite : « +0,3 », « −20 ». */
+export function signed(
+  value: number | null | undefined,
+  decimals = 1,
+  unit = "",
+): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  // Le vrai signe moins typographique, pas le trait d'union du clavier.
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  const body = Math.abs(value).toFixed(decimals).replace(".", ",");
+  return `${sign}${body}${unit}`;
+}
+
+/** La clé de jour d'une date locale — « 2026-09-13 ». Sert d'ancre au
+ *  défilement du tableau horaire. */
+export function localDayKey(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}

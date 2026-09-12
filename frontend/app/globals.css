@@ -176,6 +176,45 @@
     color: #10202b;
   }
 
+  /* Séquentiel — **l'intensité, pas la qualité**. Le tableau horaire teinte
+     les hauteurs de houle et les vitesses de vent avec cette échelle-là, et
+     jamais avec celle des scores : une houle de 3 m est grosse, ce qui n'est
+     pas la même chose que bonne.
+
+     Le texte bascule sur l'encre claire à partir du quatrième palier, où le
+     fond devient trop sombre pour porter l'encre foncée — dans les deux
+     thèmes, puisque le séquentiel ne bascule pas avec eux. */
+  .seq-1 {
+    background-color: var(--sport-seq-1);
+    color: #10202b;
+  }
+  .seq-2 {
+    background-color: var(--sport-seq-2);
+    color: #10202b;
+  }
+  .seq-3 {
+    background-color: var(--sport-seq-3);
+    color: #10202b;
+  }
+  .seq-4 {
+    background-color: var(--sport-seq-4);
+    color: #ffffff;
+  }
+  .seq-5 {
+    background-color: var(--sport-seq-5);
+    color: #ffffff;
+  }
+  .seq-6 {
+    background-color: var(--sport-seq-6);
+    color: #ffffff;
+  }
+  /* Pas de donnée : une case creuse, pas un palier bas — un palier bas se
+     lirait comme « petit », alors qu'on ne sait rien. */
+  .seq-empty {
+    background-color: var(--sport-soft);
+    color: var(--sport-mute);
+  }
+
   :focus-visible {
     outline: 2px solid var(--sport-accent);
     outline-offset: 2px;

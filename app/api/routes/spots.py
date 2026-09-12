@@ -6,9 +6,9 @@ sinon FastAPI tente de lire « nearby » comme un identifiant et renvoie 422.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from typing import Optional
+from typing import Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -24,6 +24,7 @@ from app.schemas.spot import (
     ForecastPoint,
     HideRequest,
     PositionUpdate,
+    SlotDetail,
     SpotCreate,
     SpotForecastResponse,
     SpotHit,
@@ -32,11 +33,21 @@ from app.schemas.spot import (
     SpotPreferenceUpdate,
     SpotRead,
     SpotUpdate,
+    SunDay,
 )
 from app.services.auth_service import get_current_active_user
 from app.services.forecast_ingest import ensure_fresh, last_fetched_at
-from app.services.forecast_reads import latest_forecasts_select, latest_run_ts
-from app.services.geo import bounding_box, haversine_m
+from app.services.forecast_reads import (
+    forecast_delta,
+    latest_forecasts_select,
+    latest_run_ts,
+)
+from app.services.geo import (
+    bounding_box,
+    compass_label,
+    haversine_m,
+    wave_energy_kj,
+)
 from app.services.scoring import (
     TideContext,
     build_conditions,
@@ -44,7 +55,7 @@ from app.services.scoring import (
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
 from app.services.webcams import WebcamUrlError, normalize_webcam_url
-from app.services.sun import is_daylight
+from app.services.sun import is_daylight, sun_events
 from app.services.spot_tiers import (
     HOME_MAX,
     get_or_create_preferences,
@@ -357,6 +368,120 @@ async def update_spot(
     return SpotRead.model_validate(spot)
 
 
+# ── Assemblage d'un créneau ────────────────────────────────────────────────
+#
+# Trois lecteurs de la même donnée : le tableau horaire, le résumé de l'écran
+# Jour et le détail d'un créneau. Ils doivent rendre exactement les mêmes
+# chiffres — une note qui change entre la cellule et son détail détruirait la
+# confiance dans les deux.
+
+
+def _utc(value: datetime) -> datetime:
+    """SQLite rend des datetimes naïfs ; on recolle l'UTC qui a été écrit."""
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _label(direction_deg: Optional[float]) -> Optional[str]:
+    return None if direction_deg is None else compass_label(direction_deg)
+
+
+async def _forecast_window(
+    db: AsyncSession, spot: Spot, now: datetime, days: int
+) -> tuple[list[Forecast], TideContext]:
+    """Les prévisions du dernier run sur `days` jours, et la marée qui va avec.
+
+    La marée est construite sur **toutes** les heures chargées, jamais sur les
+    seuls créneaux rendus : la pleine et la basse mer sont des extrêmes du
+    jour, et une heure sur trois ne suffit pas à les trouver.
+    """
+    result = await db.execute(
+        latest_forecasts_select(
+            [spot.id], start=now.replace(minute=0, second=0, microsecond=0)
+        )
+        .order_by(Forecast.ts)
+        .limit(days * 24)
+    )
+    forecasts = list(result.scalars().all())
+    tide = TideContext.from_levels(
+        {_utc(row.ts): row.sea_level_m for row in forecasts}
+    )
+    return forecasts, tide
+
+
+def _build_point(spot: Spot, forecast: Forecast, tide: TideContext) -> ForecastPoint:
+    """Une ligne de `forecasts` devient un créneau noté et prêt à l'écran."""
+    ts = _utc(forecast.ts)
+    values = {
+        "wave_height_m": forecast.wave_height_m,
+        "wave_direction_deg": forecast.wave_direction_deg,
+        "wave_period_s": forecast.wave_period_s,
+        "wave_peak_period_s": forecast.wave_peak_period_s,
+        "wind_speed_kt": forecast.wind_speed_kt,
+        "wind_gust_kt": forecast.wind_gust_kt,
+        "wind_direction_deg": forecast.wind_direction_deg,
+        "sea_level_m": forecast.sea_level_m,
+        "water_temperature_c": forecast.water_temperature_c,
+    }
+    conditions = build_conditions(ts, values, tide)
+    score = score_conditions(conditions, spot.onshore_dir_deg)
+
+    # Énergie sur la **période moyenne**, la seule que MFWAM serve et la seule
+    # sur laquelle la note est calculée (cf. `scoring.build_conditions`).
+    energy = (
+        wave_energy_kj(forecast.wave_height_m, forecast.wave_period_s)
+        if forecast.wave_height_m is not None and forecast.wave_period_s is not None
+        else None
+    )
+
+    return ForecastPoint(
+        ts=ts,
+        wave_height_m=forecast.wave_height_m,
+        wave_direction_deg=forecast.wave_direction_deg,
+        wave_period_s=forecast.wave_period_s,
+        wave_peak_period_s=forecast.wave_peak_period_s,
+        swell_height_m=forecast.swell_height_m,
+        swell_direction_deg=forecast.swell_direction_deg,
+        swell_period_s=forecast.swell_period_s,
+        secondary_swell_height_m=forecast.secondary_swell_height_m,
+        secondary_swell_direction_deg=forecast.secondary_swell_direction_deg,
+        secondary_swell_period_s=forecast.secondary_swell_period_s,
+        wind_speed_kt=forecast.wind_speed_kt,
+        wind_gust_kt=forecast.wind_gust_kt,
+        wind_direction_deg=forecast.wind_direction_deg,
+        sea_level_m=forecast.sea_level_m,
+        water_temperature_c=forecast.water_temperature_c,
+        tide_position=conditions.tide_position,
+        tide_rising=conditions.rising,
+        tide_range_m=conditions.tide_range_m,
+        wind_offshore_kt=score.components.get("offshore_kt"),
+        wave_energy_kj=None if energy is None else round(energy, 1),
+        swell_alignment_deg=score.components.get("alignment_deg"),
+        score=score.value,
+        score_level=score.level,
+        reasons=score.reasons,
+        daylight=is_daylight(ts, spot.lat, spot.lon),
+    )
+
+
+def _sun_days(spot: Spot, points: Sequence[ForecastPoint]) -> list[SunDay]:
+    """Lever et coucher de chaque journée rendue, dans l'ordre.
+
+    Le tableau horaire grise la nuit d'un seul trait plutôt que d'éteindre
+    quarante cellules une par une : il lui faut les deux bornes, pas un
+    booléen par heure.
+    """
+    days: list[SunDay] = []
+    seen: set[date] = set()
+    for point in points:
+        day = point.ts.date()
+        if day in seen:
+            continue
+        seen.add(day)
+        sunrise, sunset = sun_events(day, spot.lat, spot.lon)
+        days.append(SunDay(day=day, sunrise=sunrise, sunset=sunset))
+    return days
+
+
 @router.get("/{spot_ref}/forecast", response_model=SpotForecastResponse)
 async def spot_forecast(
     spot_ref: str,
@@ -372,88 +497,97 @@ async def spot_forecast(
     Open-Meteo dépasse cinq secondes, la réponse part avec ce que la base a et
     `refreshing` à `True` : un écran qui met huit secondes ne sera pas rouvert.
 
-    `step_hours=3` sert la grille 5 jours × 8 créneaux de l'écran Mer : quarante
-    points au lieu de cent vingt, sur un réseau de parking de plage. Les notes
-    et la marée restent calculées sur **toutes** les heures — la position dans
-    la marée se lit sur les extrêmes du jour, et une heure sur trois ne suffit
-    pas à les trouver.
+    `step_hours=1` sert le **tableau horaire** de l'écran Surf — heure par
+    heure sur cinq jours, façon Windguru (décidé le 13/09). `step_hours=3`
+    sert le résumé de l'écran Jour, en huit créneaux. Dans les deux cas les
+    notes et la marée sont calculées sur **toutes** les heures : la position
+    dans la marée se lit sur les extrêmes du jour, et une heure sur trois ne
+    suffit pas à les trouver.
     """
     spot = await _get_spot(db, spot_ref)
 
     refreshing = await ensure_fresh(db, [spot])
 
     now = datetime.now(UTC)
-    # Dernier run seulement : depuis que `run_ts` est dans la clé, une heure
-    # porte autant de lignes que de passes d'ingestion.
-    result = await db.execute(
-        latest_forecasts_select(
-            [spot.id],
-            start=now.replace(minute=0, second=0, microsecond=0),
-        )
-        .order_by(Forecast.ts)
-        .limit(days * 24)
-    )
-    forecasts = list(result.scalars().all())
+    forecasts, tide = await _forecast_window(db, spot, now, days)
 
-    rows = [
-        (
-            forecast.ts if forecast.ts.tzinfo else forecast.ts.replace(tzinfo=UTC),
-            {
-                "wave_height_m": forecast.wave_height_m,
-                "wave_direction_deg": forecast.wave_direction_deg,
-                "wave_period_s": forecast.wave_period_s,
-                "wave_peak_period_s": forecast.wave_peak_period_s,
-                "wind_speed_kt": forecast.wind_speed_kt,
-                "wind_gust_kt": forecast.wind_gust_kt,
-                "wind_direction_deg": forecast.wind_direction_deg,
-                "sea_level_m": forecast.sea_level_m,
-                "water_temperature_c": forecast.water_temperature_c,
-            },
-        )
+    points = [
+        _build_point(spot, forecast, tide)
         for forecast in forecasts
+        if not (step_hours > 1 and _utc(forecast.ts).hour % step_hours)
     ]
-    tide = TideContext.from_levels(
-        {ts: values.get("sea_level_m") for ts, values in rows}
-    )
-
-    points: list[ForecastPoint] = []
-    for (ts, values), forecast in zip(rows, forecasts):
-        if step_hours > 1 and ts.hour % step_hours:
-            continue
-        conditions = build_conditions(ts, values, tide)
-        score = score_conditions(conditions, spot.onshore_dir_deg)
-        points.append(
-            ForecastPoint(
-                ts=ts,
-                wave_height_m=forecast.wave_height_m,
-                wave_direction_deg=forecast.wave_direction_deg,
-                wave_period_s=forecast.wave_period_s,
-                wave_peak_period_s=forecast.wave_peak_period_s,
-                swell_height_m=forecast.swell_height_m,
-                swell_direction_deg=forecast.swell_direction_deg,
-                swell_period_s=forecast.swell_period_s,
-                wind_speed_kt=forecast.wind_speed_kt,
-                wind_gust_kt=forecast.wind_gust_kt,
-                wind_direction_deg=forecast.wind_direction_deg,
-                sea_level_m=forecast.sea_level_m,
-                water_temperature_c=forecast.water_temperature_c,
-                tide_position=conditions.tide_position,
-                tide_rising=conditions.rising,
-                tide_range_m=conditions.tide_range_m,
-                wind_offshore_kt=score.components.get("offshore_kt"),
-                score=score.value,
-                score_level=score.level,
-                reasons=score.reasons,
-                daylight=is_daylight(ts, spot.lat, spot.lon),
-            )
-        )
 
     return SpotForecastResponse(
         spot=SpotRead.model_validate(spot),
         refreshing=bool(refreshing),
         fetched_at=await last_fetched_at(db, spot.id),
         run_ts=await latest_run_ts(db, spot.id),
+        sun=_sun_days(spot, points),
         points=points,
+    )
+
+
+@router.get("/{spot_ref}/slot", response_model=SlotDetail)
+async def spot_slot(
+    spot_ref: str,
+    ts: datetime = Query(description="Heure du créneau, en UTC"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SlotDetail:
+    """Le détail d'un créneau — le seul écran où les directions sont chiffrées.
+
+    N'ingère rien : le créneau demandé vient d'un tableau déjà affiché, donc
+    d'une prévision déjà en base. Rafraîchir ici rendrait un détail qui ne
+    correspondrait plus à la cellule qu'on vient de toucher.
+
+    L'écart avec le run de la veille au soir vient de `forecast_reads`, seul
+    endroit où est écrite la règle « dernière prévision = `run_ts` max ».
+    """
+    spot = await _get_spot(db, spot_ref)
+    target = ts.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+    # La journée entière, et pas la seule heure demandée : la position dans la
+    # marée et le marnage se lisent sur les extrêmes du jour.
+    day_start = target.replace(hour=0)
+    result = await db.execute(
+        latest_forecasts_select(
+            [spot.id], start=day_start, end=day_start + timedelta(days=1)
+        ).order_by(Forecast.ts)
+    )
+    forecasts = list(result.scalars().all())
+
+    forecast = next((row for row in forecasts if _utc(row.ts) == target), None)
+    if forecast is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pas de prévision pour ce créneau.",
+        )
+
+    tide = TideContext.from_levels(
+        {_utc(row.ts): row.sea_level_m for row in forecasts}
+    )
+    point = _build_point(spot, forecast, tide)
+
+    profile = current_user.profile
+    timezone = profile.timezone if profile else "Europe/Paris"
+    delta = await forecast_delta(db, spot, target, timezone=timezone)
+
+    sunrise, sunset = sun_events(target.date(), spot.lat, spot.lon)
+
+    return SlotDetail(
+        point=point,
+        spot=SpotRead.model_validate(spot),
+        wave_direction_label=_label(forecast.wave_direction_deg),
+        wind_direction_label=_label(forecast.wind_direction_deg),
+        secondary_swell_direction_label=_label(
+            forecast.secondary_swell_direction_deg
+        ),
+        onshore_direction_label=_label(spot.onshore_dir_deg),
+        sunrise=sunrise,
+        sunset=sunset,
+        run_ts=delta.run_ts or _utc(forecast.run_ts),
+        previous_run_ts=delta.previous_run_ts,
+        delta=delta.changes,
     )
 
 
