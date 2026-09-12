@@ -1,9 +1,15 @@
-"""Reco surf — « je vais à l'eau, oui ou non, et où ? ».
+"""Reco surf — « je vais à l'eau, oui ou non ? ».
 
-Un seul appel sert l'écran d'accueil *et* le comparateur : le verdict, le
-meilleur créneau, et la grille heures × spots. Deux requêtes pour deux écrans
-qui s'ouvrent l'un après l'autre coûteraient une seconde de plus sur le parking
-de la plage, pour la même donnée.
+Depuis le lot 1 ter, cet appel sert l'écran **Jour**, et il porte par défaut sur
+**un seul spot : le favori du profil** (décidé le 12/09 au soir, cf. PROJET.md
+§11). Verdict, meilleur créneau, et la journée créneau par créneau.
+
+Sans favori choisi, il se rabat sur les spots du rayon — mais **sans jamais
+déclencher d'ingestion** : le rafraîchissement à la demande ne concerne que le
+spot qu'on regarde vraiment. C'est la règle « zéro appel tant que personne ne
+regarde » prise au mot, spot par spot et non plus rayon par rayon. La grille
+multi-spots que renvoie encore ce service alimente le comparateur, qui sort de
+la navigation mais reste dans le code.
 
 Au lot 1 la note vient des règles génériques de `scoring.py`. Au lot 3 elle
 viendra d'une régression, puis du plus proche voisin — la forme de la réponse
@@ -82,6 +88,10 @@ class Recommendation:
     verdict: str
     sentence: str
     refreshing: list[int]
+    # Le favori du profil, s'il y en a un. Distinct de `headline_spot` : un
+    # favori sans prévision n'a pas de créneau vedette, et l'écran doit quand
+    # même pouvoir écrire son nom.
+    home_spot: Optional[Spot] = None
 
 
 async def candidate_spots(
@@ -247,16 +257,22 @@ async def recommend(
     timezone: str = "Europe/Paris",
     now: Optional[datetime] = None,
     refresh: bool = True,
+    home_spot: Optional[Spot] = None,
 ) -> Recommendation:
-    """Verdict, meilleur créneau et grille complète, en un appel."""
+    """Verdict et créneaux du spot favori — ou, à défaut, des spots du rayon."""
     now = now or datetime.now(UTC)
 
-    # Position : celle du téléphone si elle est là, le domicile sinon. Un refus
-    # de géolocalisation ne doit jamais donner un écran vide.
+    # Position : celle du téléphone si elle est là, le domicile sinon, le spot
+    # favori en dernier recours. Un refus de géolocalisation ne doit jamais
+    # donner un écran vide — et quand le favori est choisi, la position ne sert
+    # plus qu'à afficher une distance.
     position_source = "device"
     if lat is None or lon is None:
         lat, lon = preferences.home_lat, preferences.home_lon
         position_source = "home"
+    if (lat is None or lon is None) and home_spot is not None:
+        lat, lon = home_spot.lat, home_spot.lon
+        position_source = "spot"
     if lat is None or lon is None:
         return Recommendation(
             generated_at=now,
@@ -272,14 +288,26 @@ async def recommend(
         )
 
     radius_km = preferences.radius_km or DEFAULT_RADIUS_KM
-    pairs = await candidate_spots(
-        db, lat, lon, radius_km, preferences.hidden_spot_ids or []
-    )
-    spots = [spot for spot, _ in pairs]
 
     refreshing: list[int] = []
-    if refresh and spots:
-        refreshing = await ensure_fresh(db, spots)
+    if home_spot is not None:
+        # Une seule prévision par défaut, et c'est la sienne. C'est aussi le
+        # seul spot que cet appel a le droit d'ingérer : ouvrir l'app ne doit
+        # pas interroger quinze spots qu'on ne regardera pas.
+        distance_km = (
+            haversine_m(lat, lon, home_spot.lat, home_spot.lon) / 1000.0
+        )
+        pairs = [(home_spot, distance_km)]
+        if refresh:
+            refreshing = await ensure_fresh(db, [home_spot])
+    else:
+        # Pas encore de favori : on montre ce que la base a déjà, sans passer
+        # un seul appel. L'écran Jour invite à en choisir un.
+        pairs = await candidate_spots(
+            db, lat, lon, radius_km, preferences.hidden_spot_ids or []
+        )
+
+    spots = [spot for spot, _ in pairs]
 
     rows_by_spot = await load_forecast_rows(
         db,
@@ -337,4 +365,5 @@ async def recommend(
         verdict=headline.score.verdict if headline else "NON",
         sentence=build_sentence(headline_spot, headline, now, timezone),
         refreshing=refreshing,
+        home_spot=home_spot,
     )

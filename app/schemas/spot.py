@@ -31,6 +31,17 @@ class SpotNearby(SpotRead):
     distance_km: float
     is_favorite: bool = False
     is_hidden: bool = False
+    # Le favori du profil — celui dont la prévision s'affiche sur Jour.
+    is_home: bool = False
+
+
+class SpotHit(SpotRead):
+    """Résultat de recherche de l'écran Mer. Aucune prévision : chercher un spot
+    ne doit rien ingérer. La prévision arrive quand on l'ouvre."""
+
+    distance_km: Optional[float] = None
+    is_favorite: bool = False
+    is_home: bool = False
 
 
 class SpotCreate(BaseModel):
@@ -104,8 +115,17 @@ class ForecastPoint(BaseModel):
     wind_direction_deg: Optional[float] = None
     sea_level_m: Optional[float] = None
     water_temperature_c: Optional[float] = None
+    # Position dans la marée du jour : 0 = basse mer, 1 = pleine mer. Nulle
+    # quand le marnage est négligeable (Méditerranée, lac) — la marée ne dit
+    # alors rien, et mieux vaut se taire qu'afficher un chiffre creux.
+    tide_position: Optional[float] = None
+    tide_rising: Optional[bool] = None
+    tide_range_m: Optional[float] = None
+    # Composante offshore signée du vent, en nœuds. Positive = de terre.
+    wind_offshore_kt: Optional[float] = None
     score: Optional[float] = None
     score_level: Optional[int] = None
+    reasons: list[str] = []
 
 
 class SpotForecastResponse(BaseModel):

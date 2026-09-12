@@ -33,6 +33,17 @@ class Profile(Base):
     height_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     level: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Le spot favori — **une seule prévision par défaut**, c'est la sienne qui
+    # s'affiche sur Jour (décidé le 12/09 soir, cf. PROJET.md §11). C'est aussi
+    # lui qui définit le niveau d'ingestion `home` : le job planifié ne connaît
+    # que ce spot et les favoris secondaires. Tout le reste du catalogue ne
+    # s'interroge que lorsqu'on le regarde, depuis l'écran Mer.
+    #
+    # `SET NULL` plutôt que `CASCADE` : supprimer un spot ne doit pas emporter
+    # le profil, il doit juste rendre l'app muette jusqu'au prochain choix.
+    home_spot_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("spots.id", ondelete="SET NULL"), nullable=True
+    )
     # Liste de valeurs de `Discipline` — surf seul au départ, foil ensuite.
     disciplines: Mapped[list[str]] = mapped_column(
         JSONVariant, nullable=False, default=lambda: [Discipline.SURF.value]

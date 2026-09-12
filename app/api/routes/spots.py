@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -24,6 +26,7 @@ from app.schemas.spot import (
     PositionUpdate,
     SpotCreate,
     SpotForecastResponse,
+    SpotHit,
     SpotNearby,
     SpotPreferenceRead,
     SpotPreferenceUpdate,
@@ -43,6 +46,7 @@ from app.services.spot_catalog import resolve_spot, unique_slug
 from app.services.spot_tiers import (
     HOME_MAX,
     get_or_create_preferences,
+    home_spot_id,
     recompute_tiers,
     record_position,
 )
@@ -72,6 +76,7 @@ async def spots_nearby(
     preferences = await get_or_create_preferences(db, current_user.id)
     favorites = set(preferences.favorite_spot_ids or [])
     hidden = set(preferences.hidden_spot_ids or [])
+    home_id = await home_spot_id(db, current_user.id)
 
     min_lat, max_lat, min_lon, max_lon = bounding_box(lat, lon, radius_km)
     result = await db.execute(
@@ -94,11 +99,104 @@ async def spots_nearby(
                 distance_km=round(distance_m / 1000.0, 2),
                 is_favorite=spot.id in favorites,
                 is_hidden=spot.id in hidden,
+                is_home=spot.id == home_id,
             )
         )
 
     nearby.sort(key=lambda item: item.distance_km)
     return nearby[:limit]
+
+
+@router.get("/search", response_model=list[SpotHit])
+async def search_spots(
+    q: str = Query(min_length=2, max_length=80),
+    lat: Optional[float] = Query(default=None, ge=-90, le=90),
+    lon: Optional[float] = Query(default=None, ge=-180, le=180),
+    limit: int = Query(default=25, gt=0, le=100),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SpotHit]:
+    """Recherche par nom dans le catalogue mondial — le sélecteur de l'écran Mer.
+
+    **Ne déclenche aucune ingestion.** Chercher « Lafitenia » ne doit pas coûter
+    trois appels Open-Meteo ; la prévision se récupère quand on ouvre le spot.
+
+    Les spots sont classés par pertinence grossière : ceux dont le nom
+    *commence* par la recherche d'abord, les autres ensuite, puis par distance
+    quand la position est connue. Un `LIKE` suffit à cette échelle — le
+    catalogue tient dans un index et il n'y a qu'un utilisateur.
+    """
+    needle = q.strip().lower()
+    if not needle:
+        return []
+
+    preferences = await get_or_create_preferences(db, current_user.id)
+    hidden = set(preferences.hidden_spot_ids or [])
+    favorites = set(preferences.favorite_spot_ids or [])
+    home_id = await home_spot_id(db, current_user.id)
+
+    result = await db.execute(
+        select(Spot)
+        .where(func.lower(Spot.name).like(f"%{needle}%"))
+        .limit(limit * 4)
+    )
+
+    hits: list[tuple[int, float, SpotHit]] = []
+    for spot in result.scalars().all():
+        # Un spot masqué reste cherchable : on peut vouloir le rouvrir pour le
+        # démasquer. Il passe simplement après les autres.
+        distance_km = (
+            round(haversine_m(lat, lon, spot.lat, spot.lon) / 1000.0, 1)
+            if lat is not None and lon is not None
+            else None
+        )
+        rank = 0 if spot.name.lower().startswith(needle) else 1
+        if spot.id in hidden:
+            rank += 2
+        hits.append(
+            (
+                rank,
+                distance_km if distance_km is not None else 0.0,
+                SpotHit(
+                    **SpotRead.model_validate(spot).model_dump(),
+                    distance_km=distance_km,
+                    is_favorite=spot.id in favorites,
+                    is_home=spot.id == home_id,
+                ),
+            )
+        )
+
+    hits.sort(key=lambda item: (item[0], item[1], item[2].name))
+    return [hit for _, _, hit in hits[:limit]]
+
+
+@router.get("/favorites", response_model=list[SpotHit])
+async def list_favorites(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SpotHit]:
+    """Les spots maison, le favori du profil en tête. Aucune ingestion non plus."""
+    preferences = await get_or_create_preferences(db, current_user.id)
+    home_id = await home_spot_id(db, current_user.id)
+
+    ids = [int(spot_id) for spot_id in (preferences.favorite_spot_ids or [])]
+    if home_id is not None and home_id not in ids:
+        ids.insert(0, home_id)
+    if not ids:
+        return []
+
+    result = await db.execute(select(Spot).where(Spot.id.in_(ids)))
+    by_id = {spot.id: spot for spot in result.scalars().all()}
+
+    return [
+        SpotHit(
+            **SpotRead.model_validate(by_id[spot_id]).model_dump(),
+            is_favorite=True,
+            is_home=spot_id == home_id,
+        )
+        for spot_id in ids
+        if spot_id in by_id
+    ]
 
 
 @router.get("/preferences", response_model=SpotPreferenceRead)
@@ -234,14 +332,22 @@ async def update_spot(
 async def spot_forecast(
     spot_ref: str,
     days: int = Query(default=5, gt=0, le=7),
+    step_hours: int = Query(default=1, ge=1, le=6),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> SpotForecastResponse:
-    """Prévision d'un spot, notée créneau par créneau.
+    """Prévision d'un spot, notée créneau par créneau. **Le seul chemin d'ingestion
+    à la demande** : on n'interroge que le spot qu'on regarde.
 
     Déclenche une récupération si le cache a plus de trois heures. Si
     Open-Meteo dépasse cinq secondes, la réponse part avec ce que la base a et
     `refreshing` à `True` : un écran qui met huit secondes ne sera pas rouvert.
+
+    `step_hours=3` sert la grille 5 jours × 8 créneaux de l'écran Mer : quarante
+    points au lieu de cent vingt, sur un réseau de parking de plage. Les notes
+    et la marée restent calculées sur **toutes** les heures — la position dans
+    la marée se lit sur les extrêmes du jour, et une heure sur trois ne suffit
+    pas à les trouver.
     """
     spot = await _get_spot(db, spot_ref)
 
@@ -283,9 +389,10 @@ async def spot_forecast(
 
     points: list[ForecastPoint] = []
     for (ts, values), forecast in zip(rows, forecasts):
-        score = score_conditions(
-            build_conditions(ts, values, tide), spot.onshore_dir_deg
-        )
+        if step_hours > 1 and ts.hour % step_hours:
+            continue
+        conditions = build_conditions(ts, values, tide)
+        score = score_conditions(conditions, spot.onshore_dir_deg)
         points.append(
             ForecastPoint(
                 ts=ts,
@@ -301,8 +408,13 @@ async def spot_forecast(
                 wind_direction_deg=forecast.wind_direction_deg,
                 sea_level_m=forecast.sea_level_m,
                 water_temperature_c=forecast.water_temperature_c,
+                tide_position=conditions.tide_position,
+                tide_rising=conditions.rising,
+                tide_range_m=conditions.tide_range_m,
+                wind_offshore_kt=score.components.get("offshore_kt"),
                 score=score.value,
                 score_level=score.level,
+                reasons=score.reasons,
             )
         )
 

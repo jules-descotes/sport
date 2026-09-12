@@ -277,6 +277,9 @@ async def test_stale_forecast_does_not_block_the_response(
 
     spot = await make_spot(lat=HOSSEGOR_LAT + 0.01, tier=SpotTier.HOME.value)
     await make_forecast(spot, fetched_at=datetime.now(UTC) - timedelta(hours=4))
+    # Depuis le lot 1 ter, `/recommend` n'ingère que le spot favori : sans lui,
+    # l'appel ne déclenche plus rien du tout — et c'est exactement le but.
+    await auth_client.put("/api/v1/auth/me/profile", json={"home_spot_id": spot.id})
 
     async def _slow(spot_ids):
         await asyncio.sleep(0.5)

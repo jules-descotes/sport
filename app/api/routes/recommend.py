@@ -4,9 +4,11 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
+from app.models.spot import Spot
 from app.models.user import User
 from app.schemas.recommend import RecommendResponse, SlotRead, SpotSlots
 from app.schemas.spot import SpotRead
@@ -35,7 +37,13 @@ def _slot_read(slot: Slot) -> SlotRead:
         sea_level_m=conditions.sea_level_m,
         tide_position=conditions.tide_position,
         tide_rising=conditions.rising,
+        tide_range_m=conditions.tide_range_m,
         water_temperature_c=conditions.water_temperature_c,
+        # Composante offshore signée (feature 11 du registre) : positive, le
+        # vent vient de la terre. C'est elle qui permet d'écrire « de terre » ou
+        # « de mer » à l'écran sans refaire le calcul côté front, qui ne connaît
+        # pas l'orientation de la côte.
+        wind_offshore_kt=slot.score.components.get("offshore_kt"),
         line=conditions_line(conditions),
     )
 
@@ -47,23 +55,36 @@ async def get_recommendation(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> RecommendResponse:
-    """Verdict du jour, meilleur créneau, et grille complète heures × spots.
+    """L'écran Jour : le verdict du spot favori et sa journée créneau par créneau.
 
-    `lat` / `lon` viennent de `navigator.geolocation`. Absents — géoloc refusée
-    ou indisponible —, on se rabat sur le domicile du profil : l'écran d'accueil
-    ne doit jamais être vide.
+    `lat` / `lon` viennent de `navigator.geolocation`, et ne servent plus qu'à
+    afficher une distance et à tenir la position courante à jour. Le spot, lui,
+    vient du profil.
+
+    **C'est le seul spot que cet appel ingère.** Ouvrir l'app n'interroge pas le
+    rayon : tout autre spot n'est récupéré que depuis l'écran Mer, quand on le
+    regarde.
     """
     preferences = await get_or_create_preferences(db, current_user.id)
 
-    # Une position fraîche peut ouvrir des spots « potentiels » : on l'enregistre
-    # avant de chercher les candidats, sinon le mode trip a un tour de retard.
+    # Une position fraîche étiquette les spots « potentiels » autour de nous :
+    # elle ne déclenche plus aucun appel, elle prépare la recherche « autour de
+    # moi » de l'écran Mer.
     if lat is not None and lon is not None:
         await record_position(db, preferences, lat, lon)
 
-    timezone = (
-        current_user.profile.timezone if current_user.profile else "Europe/Paris"
+    profile = current_user.profile
+    timezone = profile.timezone if profile else "Europe/Paris"
+
+    home_spot = None
+    if profile is not None and profile.home_spot_id is not None:
+        home_spot = (
+            await db.execute(select(Spot).where(Spot.id == profile.home_spot_id))
+        ).scalar_one_or_none()
+
+    result = await recommend(
+        db, preferences, lat, lon, timezone=timezone, home_spot=home_spot
     )
-    result = await recommend(db, preferences, lat, lon, timezone=timezone)
 
     return RecommendResponse(
         generated_at=result.generated_at,
@@ -77,6 +98,9 @@ async def get_recommendation(
             SpotRead.model_validate(result.headline_spot)
             if result.headline_spot
             else None
+        ),
+        home_spot=(
+            SpotRead.model_validate(result.home_spot) if result.home_spot else None
         ),
         spots=[
             SpotSlots(

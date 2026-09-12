@@ -3,9 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.core.config import settings
 from app.core.security import create_access_token
 from app.db.database import get_db
+from app.models.spot import Spot
 from app.models.user import User
 from app.schemas.user import LoginRequest, ProfileUpdate, Token, UserRead
 from app.services.auth_service import authenticate_user, get_current_active_user
@@ -86,9 +89,33 @@ async def update_profile(
         db.add(profile)
         current_user.profile = profile
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    values = data.model_dump(exclude_none=True)
+
+    # Le spot favori décide de ce que le job planifié interroge toutes les trois
+    # heures : on ne pose jamais un identifiant qu'on n'a pas vérifié.
+    favorite_changed = (
+        "home_spot_id" in values and values["home_spot_id"] != profile.home_spot_id
+    )
+    if favorite_changed:
+        exists = await db.execute(
+            select(Spot.id).where(Spot.id == values["home_spot_id"])
+        )
+        if exists.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spot introuvable"
+            )
+
+    for field, value in values.items():
         setattr(profile, field, value)
 
     await db.commit()
+
+    if favorite_changed:
+        # Le nouveau favori passe en `home`, l'ancien retombe au niveau que sa
+        # distance lui donne. Sans ce recalcul, le job continuerait d'interroger
+        # un spot qu'on ne regarde plus.
+        preferences = await get_or_create_preferences(db, current_user.id)
+        await recompute_tiers(db, preferences)
+
     await db.refresh(current_user, attribute_names=["profile"])
     return current_user

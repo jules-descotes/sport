@@ -25,6 +25,8 @@ class ProfileRead(BaseModel):
     level: Optional[str] = None
     disciplines: list[str] = []
     timezone: str = "Europe/Paris"
+    # La seule prévision affichée par défaut : celle de ce spot (écran Jour).
+    home_spot_id: Optional[int] = None
 
 
 class ProfileUpdate(BaseModel):
@@ -34,6 +36,9 @@ class ProfileUpdate(BaseModel):
     level: Optional[str] = None
     disciplines: Optional[list[str]] = None
     timezone: Optional[str] = None
+    # Changer de favori change ce qui est ingéré en planifié : le spot est
+    # vérifié avant d'être posé, et les niveaux sont recalculés dans la foulée.
+    home_spot_id: Optional[int] = None
 
 
 class UserRead(BaseModel):

@@ -27,7 +27,12 @@ class SlotRead(BaseModel):
     sea_level_m: Optional[float] = None
     tide_position: Optional[float] = None
     tide_rising: Optional[bool] = None
+    # Marnage du jour, en mètres (feature 8 du registre).
+    tide_range_m: Optional[float] = None
     water_temperature_c: Optional[float] = None
+    # Composante offshore signée du vent, en nœuds. Positive = de terre.
+    # Nulle quand l'orientation de la côte est inconnue : on ne devine pas.
+    wind_offshore_kt: Optional[float] = None
     line: str = ""
 
 
@@ -39,18 +44,22 @@ class SpotSlots(BaseModel):
 
 
 class RecommendResponse(BaseModel):
-    """Sert l'écran d'accueil *et* le comparateur : un seul aller-retour."""
+    """Sert l'écran Jour : le spot favori, son verdict et sa journée."""
 
     generated_at: datetime
     lat: float
     lon: float
     # `device` = géolocalisation acceptée, `home` = repli sur le domicile,
-    # `unknown` = ni l'un ni l'autre, l'écran doit le dire.
+    # `spot` = repli sur le spot favori, `unknown` = rien de tout ça, et
+    # l'écran doit le dire.
     position_source: str
     verdict: str
     sentence: str
     headline: Optional[SlotRead] = None
     headline_spot: Optional[SpotRead] = None
+    # Le favori du profil. `None` = aucun favori choisi : l'écran Jour invite à
+    # en choisir un plutôt que d'afficher la mer de quelqu'un d'autre.
+    home_spot: Optional[SpotRead] = None
     spots: list[SpotSlots] = []
     # Spots dont la prévision se complète en arrière-plan : le front peut
     # relancer la requête dans quelques secondes.

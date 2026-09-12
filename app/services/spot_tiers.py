@@ -5,6 +5,12 @@ recalculé à chaque connexion, à chaque changement de favoris et à chaque
 changement de position — jamais par le script d'import, qui n'a aucune idée de
 ce que Jules a mis en favori.
 
+Depuis le lot 1 ter, le niveau `home` part du **spot favori du profil**
+(`profiles.home_spot_id`), auquel s'ajoutent les favoris secondaires. C'est le
+seul niveau que le job planifié interroge. `potential` reste un simple
+étiquetage — plus aucun chemin ne l'ingère en masse : un spot du rayon n'est
+interrogé que lorsqu'on ouvre sa fiche sur l'écran Mer.
+
 Le niveau vit sur `spots` et non sur une table par utilisateur : il pilote un
 job planifié qui, lui, n'a pas d'utilisateur. Le jour où l'app s'ouvre aux
 potes (cf. PROJET.md §11), `tier` devient l'union des niveaux de tous les
@@ -21,6 +27,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import SpotTier
+from app.models.profile import Profile
 from app.models.spot import Spot, SpotPreference
 from app.services.geo import bounding_box, haversine_m
 
@@ -58,6 +65,14 @@ async def _spot_ids_within(
     }
 
 
+async def home_spot_id(db: AsyncSession, user_id: int) -> Optional[int]:
+    """Spot favori du profil — la seule prévision affichée par défaut."""
+    result = await db.execute(
+        select(Profile.home_spot_id).where(Profile.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_or_create_preferences(
     db: AsyncSession, user_id: int
 ) -> SpotPreference:
@@ -84,6 +99,13 @@ async def recompute_tiers(
     """
     favorites = [int(spot_id) for spot_id in (preferences.favorite_spot_ids or [])]
     hidden = {int(spot_id) for spot_id in (preferences.hidden_spot_ids or [])}
+
+    # Le favori du profil ouvre la liste, et il y est même s'il n'a jamais été
+    # coché comme favori secondaire : c'est lui qu'on regarde tous les matins,
+    # c'est lui qui doit être ingéré même app fermée.
+    favorite = await home_spot_id(db, preferences.user_id)
+    if favorite is not None and favorite not in favorites:
+        favorites.insert(0, favorite)
 
     home_ids = [spot_id for spot_id in favorites if spot_id not in hidden][:HOME_MAX]
 
