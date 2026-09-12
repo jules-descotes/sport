@@ -26,8 +26,8 @@ Le site est **utilisé sur téléphone, debout, souvent mouillé, parfois sans r
 **Règles non négociables :**
 
 1. **PWA installable** — manifest + service worker, ajout à l'écran d'accueil iOS, plein écran sans barre Safari. Pas d'app native, pas de store.
-2. **Mobile-first strict** — on dessine l'écran 390 px d'abord, le desktop est un bonus. Aucune vue qui n'existe qu'en desktop.
-3. **Navigation par barre basse fixe** (4 onglets : Surf · Training · Nutrition · Stats). Zone du pouce. Pas de menu hamburger sur les parcours quotidiens.
+2. **Mobile-first strict** — on dessine l'écran 390 px d'abord, le desktop est un bonus. **Aucun parcours quotidien qui n'existe qu'en desktop** ; les vues d'analyse profonde, elles, peuvent n'exister que là.
+3. **Navigation par barre basse fixe, trois destinations** : **Jour** (la journée en cours, tous domaines mêlés — le bloc de mer y est **la prévision du spot favori du profil**) · **Mer** (l'explorateur : la même grille pour **n'importe quel autre spot**, par recherche, favoris ou position) · **Corps** (objectifs, formules d'entraînement, table, composition). Zone du pouce. Pas de menu hamburger sur les parcours quotidiens. *(Décision du 12/09 soir, issue de l'exploration design — remplace les 4 onglets Surf / Training / Nutrition / Stats.)*
 4. **Cibles tactiles ≥ 44 px**, espacées. Aucun contrôle à moins de 16 px d'un bord.
 5. **Zéro saisie clavier pendant l'effort** — la notation d'une session et le suivi d'une série se font en boutons, curseurs et molettes. Le clavier n'apparaît que pour les notes libres, optionnelles.
 6. **Mode hors-ligne réel** — on doit pouvoir enregistrer une session sans réseau sur le parking de la plage. File d'attente locale (IndexedDB) synchronisée au retour du réseau.
@@ -35,7 +35,7 @@ Le site est **utilisé sur téléphone, debout, souvent mouillé, parfois sans r
 8. **Budget performance** : premier rendu utile < 2 s en 4G. Images en `next/image`, pas de librairie de graphes lourde.
 9. **Une seule information par écran** sur les parcours quotidiens. Le tableau multi-spots est la seule vue dense, et elle scrolle horizontalement.
 
-> **IMPORTANT** — Le premier écran de l'app doit répondre à une seule question : **« je vais à l'eau, oui ou non, et où ? »**. Tout le reste est à un tap de distance. Si cet écran demande plus de deux secondes de lecture, c'est raté.
+> **IMPORTANT** — Le premier écran (« Jour ») est **la journée dans l'ordre où elle se vit** : la fenêtre de mer, la séance, les repas, la pesée. Le bloc de mer y est un vrai tableau de bord — note et heure du meilleur créneau, houle, période, direction, vent et rafales, marée avec sens / PM / coefficient, température de l'eau, les huit créneaux du jour en bande, un aperçu de demain — lisible en deux secondes parce qu'**une seule information est en grand**. Rendu : **plein cadre** (V4 de l'exploration) pour Jour et Corps, **liste dense** (V2) pour Mer, seule vue dense autorisée.
 
 ---
 
@@ -129,7 +129,7 @@ CLAUDE.md  PROJET.md
 **Surf**
 - `spots` — **catalogue mondial** importé d'OpenStreetMap (`sport=surfing`), complété à la main par Jules : slug, nom, lat/lon, pays, type (beach/reef/point), **orientation de la côte calculée** depuis le trait de côte OSM (pas saisie), source (`osm` / `user`), URL webcam. Colonne `is_active` : seuls les spots actifs sont ingérés (cf. §6)
 - `spot_preferences` — par utilisateur : rayon d'affichage (km), spots favoris, spots masqués
-- `forecasts` — spot_id, ts, hauteur/période/direction de houle, composantes de swell, vent moyen et rafale, température de l'eau, **source + version du modèle**. **Contrainte unique `(spot_id, ts, source)`**
+- `forecasts` — spot_id, ts, **run_ts (heure d'émission de la prévision)**, hauteur/période/direction de houle, composantes de swell, vent moyen et rafale, température de l'eau, niveau marin, **source + version du modèle**. **Contrainte unique `(spot_id, ts, source, run_ts)`** — on n'écrase jamais une prévision antérieure, on en ajoute une plus récente. La lecture « dernière prévision connue » prend le `run_ts` max.
 - `observations` — mesures réelles (bouée CANDHIS, station de vent) : station_id, ts, Hm0, Tp, T02, direction, vent. Table **distincte** de `forecasts` : ce n'est pas la même grandeur, on ne les mélange jamais dans un même vecteur
 - `tides` — spot_id, ts, hauteur, pleine/basse mer, marnage du jour
 - `gear` — planches et combis : type, longueur, volume, discipline, date d'achat
@@ -144,7 +144,7 @@ CLAUDE.md  PROJET.md
 
 > **IMPORTANT** — Colonne `discipline` sur la session **et** sur le matos. Les conditions idéales en foil sont quasi l'inverse du surf (petit, mou, onshore acceptable). Sans ce champ, les notes se contredisent et le modèle n'apprend rien.
 
-**Training** — `exercises` (nom, groupe, catégorie mobilité/renfo/gainage, consignes, vidéo) · `programs` → `program_days` → `program_items` · `workout_sessions` → `workout_sets`
+**Training** — `objectives` (nom, mesure, unité, valeur de départ, cible, fréquence de mesure) → `objective_measurements` (date, valeur) · `formulas` (nom, durée, fréquence hebdo, objectifs servis) → `formula_items` (exercice, séries, reps, tempo, durée) · `exercises` (nom, groupe, catégorie mobilité/renfo/gainage, consignes, vidéo) · `workout_sessions` → `workout_sets`. La proposition du jour = la formule qui sert l'objectif le plus en retard ; rappel de mesure toutes les 2-3 semaines.
 
 **Nutrition** — `foods` (import de la table **Ciqual 2025** de l'ANSES) · `recipes` → `recipe_items` · `meal_plans` → `meal_plan_items` · `food_log` · `daily_targets` (calculé, jamais saisi)
 
@@ -230,6 +230,7 @@ Deux usages distincts, deux modèles, deux écrans.
 
 - **Ne jamais changer de source ou de modèle en cours de route.** Un biais systématique constant s'annule dans l'apprentissage ; un biais qui change casse tout l'historique.
 - Stocker **la source et la version du modèle** sur chaque ligne de `forecasts`. Les modèles de vagues sont recalibrés tous les ans ou deux.
+- **Historiser les runs** (`run_ts` dans la clé). Sans lui, la passe du matin écrase la prévision de la veille au soir, et ni l'écart « depuis hier » ni la calibration prévision ↔ mesure ne sont possibles. Chaque jour d'ingestion sans `run_ts` est perdu définitivement.
 - En cas de bascule nécessaire, **ingérer les deux sources en parallèle** plusieurs mois avant de couper.
 - Modèle retenu : **MFWAM (Météo-France)** via Open-Meteo plutôt que le modèle global par défaut — meilleure résolution côtière sur le Golfe de Gascogne.
 
@@ -273,20 +274,23 @@ Liste vivante. Tout ce qui est ici est **stocké** dès le lot 1 ; seules les li
 
 ## 8. Backlog
 
-| Lot | Contenu | Effort |
-|---|---|---|
-| **0** | Repo, Dockerfile + railway.json copiés, Postgres Railway, Vercel, DNS, auth JWT, shell PWA + barre basse, **déployé en ligne** | 1 j |
-| **1** | Catalogue OSM + orientation de côte, activation par rayon/géoloc, ingestion Open-Meteo/MFWAM (houle, vent, niveau marin) pour les spots actifs, **`daily_log`**, écran « je vais à l'eau ? », comparateur, fiche spot, webcams | 3 j |
-| **1 bis** | Bouée CANDHIS + station de vent → `observations`, dès réception du jeton | 0,5 j |
-| **2** | Log de session surf, matos, double notation, **`conditions_snapshot` en fenêtre T−2h**, file hors-ligne, **`POST /sessions/quick` + raccourci iPhone** | 2,5 j |
-| **3** | Reco par règles → ridge, **double horizon** (moyen terme / dernière minute), phrase d'explication par plus proche voisin | 1,5 j |
-| **4** | Training : exercices, programmes, mode séance plein écran, streak | 2 j |
-| **5** | Nutrition : import Ciqual, journal, cible calorique, menu de la semaine | 2 j |
-| **6** | Stats et corrélations conditions ↔ note | 1 j |
+Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, donc training et nutrition passent **avant** la reco — un accueil avec deux blocs vides serait pire que quatre onglets.
 
-≈ **13,5 jours de dev effectif**.
+| Ordre | Lot | Contenu | Effort | État |
+|---|---|---|---|---|
+| ✅ | **0** | Repo, infra, auth JWT, coquille PWA, déployé | 1 j | fait |
+| ✅ | **1** | Catalogue OSM + orientation de côte, tiers d'ingestion, Open-Meteo/MFWAM, `daily_log`, score cold start, accueil / comparateur / fiche spot / carte / profil | 3 j | fait |
+| 1 | **1 ter** | **`run_ts`** dans `forecasts` (migration) · **navigation Jour / Mer / Corps** · **spot favori** dans le profil · bloc de mer enrichi sur Jour (prévision du favori) · écran Mer = explorateur en liste dense (grille 5 j × 8 créneaux pour le spot choisi, recherche / favoris / autour de moi) · écran Corps en coquille | 1,5 j | à faire |
+| 2 | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | à faire |
+| 3 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
+| 4 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
+| 5 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
+| 6 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
+| — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-> **IMPORTANT** — **Mise en ligne à la fin du lot 0**, pas à la fin du lot 6. Un projet perso qui n'est pas installable sur le téléphone dans la première soirée ne sort jamais. Et l'ingestion démarre au lot 1 : chaque jour d'ingestion est un jour de données pour le modèle, et le `daily_log` commence à accumuler les labels négatifs bien avant que la reco existe.
+≈ **15 jours de dev effectif**, dont 4 déjà faits.
+
+> **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente.
 
 ---
 
@@ -337,6 +341,9 @@ Liste vivante. Tout ce qui est ici est **stocké** dès le lot 1 ; seules les li
 - [x] **Spots** — catalogue mondial OSM, affichage filtré par géolocalisation en direct et rayon du profil, ajout manuel possible (décidé le 12/09)
 - [x] **Disciplines** — surf seul à l'écran pour la V1 ; la colonne `discipline` existe quand même (décidé le 12/09)
 - [x] **Marées** — Open-Meteo `sea_level_height_msl`, à valider contre le SHOM (décidé le 12/09)
+- [x] **Architecture d'écrans** — trois destinations Jour / Mer / Corps, hybride plein cadre (Jour, Corps) + liste dense (Mer), objectifs mesurés pour le training (décidé le 12/09 soir, cf. `docs/DESIGN-EXPLORATION.md`)
+- [x] **Périmètre géographique** — **une seule prévision par défaut, celle du spot favori du profil** (bloc de mer sur Jour). L'onglet **Mer** sert à interroger n'importe quel autre spot du catalogue (recherche, favoris, position), à la demande. Le catalogue mondial et les tiers d'ingestion restent, mais le tier « maison » se réduit au(x) favori(s) et le reste ne s'ingère que quand on le regarde (décidé le 12/09 soir, remplace la lecture « monde + géoloc partout »)
+- [x] **Ordre des lots** — 1 ter → 2 → 4 → 5 → 3 → 6 (décidé le 12/09 soir)
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

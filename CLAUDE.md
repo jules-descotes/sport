@@ -7,6 +7,7 @@
 - Concept : suivi perso surf / training / nutrition, mobile-first, un seul utilisateur
 - Site : https://sport.atelier-okomi.fr *(à créer)*
 - API : https://api-sport.atelier-okomi.fr *(à créer)*
+- Maquettes : canvas « Sport — exploration ergonomique » — https://claude.ai/code/artifact/1098d9c7-5942-4ba4-b84d-1311fa851b6e
 
 ## Stack technique
 - Back-end : FastAPI (Python 3.12), SQLAlchemy async, PostgreSQL (prod) / SQLite (tests)
@@ -58,11 +59,11 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 - Unités en base : mètres, secondes, degrés, nœuds, kilocalories. Aucune unité composite.
 
 ## Règles produit non négociables
-1. **Mobile d'abord** — on dessine le 390 px, le desktop suit. Barre de navigation basse, cibles ≥ 44 px, police ≥ 16 px.
+1. **Mobile d'abord** — on dessine le 390 px, le desktop suit. Barre de navigation basse à **trois destinations : Jour / Mer / Corps** (plus de Surf / Training / Nutrition / Stats). Cibles ≥ 44 px, police ≥ 14 px.
 2. **Zéro saisie clavier pendant l'effort** — boutons, curseurs, molettes. Le clavier ne sert qu'aux notes libres optionnelles.
 3. **Hors-ligne réel** — enregistrer une session sans réseau, file IndexedDB synchronisée au retour.
-4. **Écran d'accueil = une seule question** : « je vais à l'eau, oui ou non, et où ? »
-5. **Ingestion météo idempotente** — `ON CONFLICT DO UPDATE` sur `(spot_id, ts, source)`. Le service Railway redémarre, le job repart.
+4. **Écran d'accueil « Jour » = la journée dans l'ordre où elle se vit** : bloc de mer enrichi (une seule info en grand), séance proposée, repas, pesée. Rendu plein cadre (V4) pour Jour et Corps, liste dense (V2) pour Mer. Référence : `docs/DESIGN-EXPLORATION.md` et le canvas « Sport — exploration ergonomique ».
+5. **Ingestion météo idempotente et historisée** — clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. Une passe n'écrase **jamais** une prévision antérieure ; la « dernière prévision » est le `run_ts` max. Le service Railway redémarre, le job repart.
 6. **Deux notes par session** : qualité des conditions, et ressenti perso. Jamais une seule.
 7. **`conditions_snapshot` figé** à l'enregistrement de chaque session, sous forme de **fenêtre T−2 h / T−1 h / T0**, en deux volets `forecast` et `observed`. C'est la donnée d'apprentissage, et elle porte les tendances.
 8. **`discipline` sur la session et sur le matos** (surf / foil / longboard).
@@ -104,7 +105,16 @@ sombre : #2B3A45 #3E5A6C #5C8FAB #C98A48 #E48A3A   (texte ink clair sur 1-3, ink
 # Règles : cibles ≥ 44 px · corps ≥ 14 px, libellés ≥ 12 px · pas d'ombre portée (bordure `line`) · icônes en trait 1,75 px, jamais d'emoji
 ```
 
-Écrans de référence (maquettes) : accueil « OUI + spot recommandé », comparateur heures × spots, fiche spot, saisie rapide (modale, sans nav), séance en cours (modale, timer géant), stats ; desktop : tableau de bord semaine, analyse, historique + panneau détail.
+**Canvas de design** — « Sport — exploration ergonomique » : https://claude.ai/code/artifact/1098d9c7-5942-4ba4-b84d-1311fa851b6e
+Privé. Une session Claude disposant de l'outil Artifact peut le relire par cette URL ; il contient
+cinq traitements UI de la même architecture (Cartes, Liste dense, La marée, Plein cadre, Le cadran),
+trois écrans chacun. Retenus : **plein cadre (V4)** pour Jour et Corps, **liste dense (V2)** pour Mer.
+
+Écrans de référence (maquettes) : **Jour** — bloc de mer enrichi (note et heure du meilleur créneau,
+houle, période, direction, vent et rafales, marée et coefficient, eau, les huit créneaux, aperçu de
+demain), séance proposée, repas, pesée · **Corps** — trois objectifs mesurés et cinq formules ·
+**Mer** — matrice 5 jours × 8 créneaux · sortie de l'eau · séance en cours (plein écran, timer géant) ;
+desktop : semaine et analyse.
 
 ## Variables d'environnement — Railway (back)
 ```
@@ -255,3 +265,10 @@ Parlementia NO, Ciboure N dans sa baie), rejeu de l'import idempotent,
 - Discipline : **surf seul à l'écran** en V1, colonne conservée.
 - Marées : **Open-Meteo `sea_level_height_msl`**, à valider contre l'annuaire SHOM.
 - CANDHIS : jeton pas encore reçu → lot 1 bis.
+
+### Décidé le 12/09 (soir) après l'exploration design
+- **Trois destinations Jour / Mer / Corps**, hybride plein cadre + liste dense. Objectifs mesurés (`objectives`, `objective_measurements`) et formules pour le training.
+- **Une seule prévision par défaut : celle du spot favori du profil**, affichée sur Jour. **Mer** est un explorateur : la même grille pour n'importe quel autre spot du catalogue, par recherche, favoris ou position, ingérée à la demande. La section « Sort du produit » de `docs/DESIGN-EXPLORATION.md` n'est appliquée **qu'à l'écran** : catalogue OSM, tiers d'ingestion et `spots/nearby` restent en place et alimentent Mer ; la carte et le comparateur multi-spots disparaissent de la navigation.
+- **`run_ts`** dans la clé de `forecasts`, en premier dans le lot 1 ter.
+- Ordre des lots : **1 ter → 2 → 4 → 5 → 3 → 6**.
+- `OVERPASS_URL` : poser en variable Railway l'instance qui a fonctionné (overpass-api.de bannit l'IP de sortie Railway). `railway.json` est déprécié au profit de `.railway/railway.ts` — migration avant le 2026-12-01.
