@@ -7,6 +7,8 @@ export interface Profile {
   level: string | null;
   disciplines: Discipline[];
   timezone: string;
+  /** Le spot favori : la seule prévision affichée par défaut, sur Jour. */
+  home_spot_id: number | null;
 }
 
 export interface User {
@@ -46,6 +48,15 @@ export interface SpotNearby extends Spot {
   distance_km: number;
   is_favorite: boolean;
   is_hidden: boolean;
+  is_home: boolean;
+}
+
+/** Résultat du sélecteur de spot de l'écran Mer. Aucune prévision : chercher
+ *  un spot n'ingère rien, la prévision arrive quand on l'ouvre. */
+export interface SpotHit extends Spot {
+  distance_km: number | null;
+  is_favorite: boolean;
+  is_home: boolean;
 }
 
 export interface SpotPreferences {
@@ -76,8 +87,17 @@ export interface ForecastPoint {
   wind_direction_deg: number | null;
   sea_level_m: number | null;
   water_temperature_c: number | null;
+  /** 0 = basse mer, 1 = pleine mer. Nul quand le marnage est négligeable. */
+  tide_position: number | null;
+  tide_rising: boolean | null;
+  tide_range_m: number | null;
+  /** Composante offshore signée, en nœuds. Positive = vent de terre. */
+  wind_offshore_kt: number | null;
   score: number | null;
   score_level: number | null;
+  reasons: string[];
+  /** Faux la nuit : la cellule s'éteint, elle ne disparaît pas. */
+  daylight: boolean;
 }
 
 export interface SpotForecast {
@@ -85,6 +105,8 @@ export interface SpotForecast {
   /** Open-Meteo a dépassé les 5 s : la réponse vient de la base. */
   refreshing: boolean;
   fetched_at: string | null;
+  /** Heure d'émission du run servi — « prévision de 6 h ». */
+  run_ts: string | null;
   points: ForecastPoint[];
 }
 
@@ -106,8 +128,14 @@ export interface Slot {
   sea_level_m: number | null;
   tide_position: number | null;
   tide_rising: boolean | null;
+  /** Marnage du jour, en mètres. */
+  tide_range_m: number | null;
   water_temperature_c: number | null;
+  /** Composante offshore signée, en nœuds. Positive = vent de terre. */
+  wind_offshore_kt: number | null;
   line: string;
+  /** Faux la nuit. Rendu quand même, éteint, jamais proposé. */
+  daylight: boolean;
 }
 
 export interface SpotSlots {
@@ -121,11 +149,15 @@ export interface Recommendation {
   generated_at: string;
   lat: number;
   lon: number;
-  position_source: "device" | "home" | "unknown";
+  position_source: "device" | "home" | "spot" | "unknown";
   verdict: Verdict;
   sentence: string;
   headline: Slot | null;
   headline_spot: Spot | null;
+  /** Le favori du profil. `null` = aucun choisi, l'écran Jour le dit. */
+  home_spot: Spot | null;
+  /** Heure d'émission de la prévision servie — « prévision de 6 h ». */
+  run_ts: string | null;
   spots: SpotSlots[];
   refreshing: number[];
 }

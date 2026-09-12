@@ -3,24 +3,26 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import {
-  IconChart,
-  IconDumbbell,
-  IconPlate,
-  IconWave,
-} from "@/components/ui/Icons";
-
-const TABS = [
-  { href: "/", label: "Surf", Icon: IconWave },
-  { href: "/training", label: "Training", Icon: IconDumbbell },
-  { href: "/nutrition", label: "Nutrition", Icon: IconPlate },
-  { href: "/stats", label: "Stats", Icon: IconChart },
-] as const;
+import { IconBody, IconDay, IconWave } from "@/components/ui/Icons";
 
 /**
- * Barre basse fixe, zone du pouce. Pas de menu hamburger sur les parcours
- * quotidiens : quatre onglets, toujours les mêmes, toujours au même endroit.
+ * Trois destinations, et trois seulement (décidé le 12/09 au soir,
+ * cf. PROJET.md §1) :
+ *
+ * - **Jour** — la journée en cours, tous domaines mêlés ;
+ * - **Mer** — l'explorateur : la prévision de n'importe quel spot du catalogue ;
+ * - **Corps** — objectifs, formules, composition.
+ *
+ * Elles remplacent les quatre onglets Surf / Training / Nutrition / Stats,
+ * dont deux affichaient « arrive au lot 4 ». Le training et la nutrition
+ * entrent désormais par la porte « Corps », qui existe dès le premier jour.
  */
+const TABS = [
+  { href: "/", label: "Jour", Icon: IconDay },
+  { href: "/mer", label: "Mer", Icon: IconWave },
+  { href: "/corps", label: "Corps", Icon: IconBody },
+] as const;
+
 export function BottomNav() {
   const pathname = usePathname();
 

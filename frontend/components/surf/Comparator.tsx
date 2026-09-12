@@ -7,12 +7,15 @@ import { dayKey, dayLabel, distanceLabel, num, scoreClass, shortHour } from "@/l
 import type { Recommendation, Slot } from "@/lib/types";
 
 /**
- * Grille heures × spots, lecture en deux secondes.
+ * Grille heures × spots — **hors navigation depuis le lot 1 ter**.
  *
- * C'est la seule vue dense de l'application, et elle scrolle horizontalement —
- * les colonnes d'heures sont nombreuses, la colonne des spots reste collée à
- * gauche. La couleur des cellules vient de l'échelle 1 → 5 du CLAUDE.md, la
- * même que sur l'accueil et la fiche spot.
+ * Le comparateur multi-spots sort du produit à l'écran : Jour porte un seul
+ * spot, Mer en porte un à la fois (décidé le 12/09 au soir). Ce composant n'est
+ * plus routé ; il est conservé parce que `/recommend` sait toujours rendre la
+ * grille multi-spots, et qu'un jour de trip il redeviendra la bonne réponse.
+ *
+ * Ne pas le recâbler sans revenir sur la décision : il rouvrirait la question
+ * de l'ingestion de tous les spots du rayon.
  */
 export function Comparator({ data }: { data: Recommendation }) {
   const days = useMemo(() => {

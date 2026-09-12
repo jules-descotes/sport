@@ -11,11 +11,16 @@ import { compass, num, scoreClass } from "@/lib/format";
 
 /**
  * Fiche spot : webcam, courbe de houle sur cinq jours, niveau de la mer,
- * favori et masquage.
+ * favori secondaire et masquage.
  *
- * Mettre un spot en favori, c'est le faire passer en ingestion planifiée : le
- * bouton n'est pas décoratif, il décide de ce qui est interrogé toutes les
- * trois heures.
+ * Ce n'est pas une destination — la barre basse en compte trois, et elle n'en
+ * comptera pas quatre. C'est le détail d'un spot, ouvert depuis l'écran Mer
+ * pour ce que la grille ne montre pas : la webcam et la forme de la houle sur
+ * cinq jours.
+ *
+ * Le favori **du profil** se définit sur Mer : c'est lui qui porte l'écran
+ * Jour. Le bouton ci-dessous ajoute un favori *secondaire* — vingt au maximum,
+ * ingérés en planifié eux aussi.
  */
 export default function SpotPage({
   params,
@@ -63,8 +68,8 @@ export default function SpotPage({
         <p className="text-[16px] text-ink">
           {missing ? "Ce spot n'existe pas." : "Prévisions indisponibles."}
         </p>
-        <Link href="/" className="mt-4 inline-block text-[14px] text-accent">
-          Retour à l&apos;accueil
+        <Link href="/mer" className="mt-4 inline-block text-[14px] text-accent">
+          Retour à Mer
         </Link>
       </main>
     );
@@ -79,7 +84,7 @@ export default function SpotPage({
     <main className="pb-6">
       <header className="flex items-start gap-2 px-4 pb-3 pt-4">
         <Link
-          href="/"
+          href="/mer"
           aria-label="Retour"
           className="flex h-touch w-touch shrink-0 items-center justify-center rounded-button text-ink-2"
         >
@@ -183,7 +188,7 @@ export default function SpotPage({
           }`}
         >
           <IconStar className="h-5 w-5" filled={isFavorite} />
-          {isFavorite ? "Spot maison" : "Mettre en favori"}
+          {isFavorite ? "Spot maison" : "Ajouter aux spots maison"}
         </button>
         <button
           type="button"

@@ -126,6 +126,9 @@ class ForecastPoint(BaseModel):
     score: Optional[float] = None
     score_level: Optional[int] = None
     reasons: list[str] = []
+    # Faux la nuit : la grille 5 jours × 8 créneaux éteint la cellule au lieu
+    # de la supprimer, sinon la matrice se décale d'une colonne.
+    daylight: bool = True
 
 
 class SpotForecastResponse(BaseModel):

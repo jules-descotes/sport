@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.recommend import RecommendResponse, SlotRead, SpotSlots
 from app.schemas.spot import SpotRead
 from app.services.auth_service import get_current_active_user
+from app.services.forecast_reads import latest_run_ts
 from app.services.recommend import Slot, recommend
 from app.services.scoring import conditions_line
 from app.services.spot_tiers import get_or_create_preferences, record_position
@@ -28,6 +29,7 @@ def _slot_read(slot: Slot) -> SlotRead:
         level=slot.score.level,
         verdict=slot.score.verdict,
         reasons=slot.score.reasons,
+        daylight=slot.daylight,
         wave_height_m=conditions.wave_height_m,
         wave_period_s=conditions.wave_period_s,
         wave_direction_deg=conditions.wave_direction_deg,
@@ -101,6 +103,9 @@ async def get_recommendation(
         ),
         home_spot=(
             SpotRead.model_validate(result.home_spot) if result.home_spot else None
+        ),
+        run_ts=(
+            await latest_run_ts(db, home_spot.id) if home_spot is not None else None
         ),
         spots=[
             SpotSlots(

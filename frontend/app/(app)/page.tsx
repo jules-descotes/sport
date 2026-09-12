@@ -4,28 +4,57 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
-import { VerdictCard } from "@/components/surf/VerdictCard";
-import { IconGrid, IconPin, IconUser } from "@/components/ui/Icons";
+import { SeaBlock } from "@/components/surf/SeaBlock";
+import { IconSearch } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
-import { distanceLabel, num, scoreClass } from "@/lib/format";
 import { useGeolocation } from "@/lib/useGeolocation";
 
 /**
- * « Je vais à l'eau, oui ou non, et où ? »
+ * **Jour** — la journée dans l'ordre où elle se vit.
  *
- * Une seule question, une seule réponse en très grand. Tout le reste — le
- * comparateur, la carte, le profil — est à un tap.
+ * La fenêtre de mer, la séance, les repas, la pesée. Les modules ne sont plus
+ * des onglets, ce sont les ingrédients du jour : c'est ce qui rendra visible le
+ * lien entre eux — la cible calorique qui monte parce qu'il y a eu 1 h 43 à
+ * l'eau, la mobilité proposée après trois jours de surf d'affilée.
+ *
+ * Le bloc de mer porte **la prévision du spot favori du profil**, et elle
+ * seule. Interroger le rayon à chaque ouverture reviendrait à ingérer des spots
+ * que personne ne regarde (décidé le 12/09 au soir, cf. PROJET.md §11).
  */
-export default function SurfHomePage() {
+
+/**
+ * Emplacement d'un lot à venir.
+ *
+ * Il est là pour que la hiérarchie de l'écran soit juste dès maintenant, et il
+ * ne promet rien qu'il ne tienne : une ligne sobre, pas un bouton mort qui
+ * donne l'impression d'une panne.
+ */
+function ComingSlot({ title, hint, lot }: { title: string; hint: string; lot: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-card border border-line bg-card px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold uppercase tracking-wide text-mute">
+          {title}
+        </p>
+        <p className="mt-0.5 truncate text-[14px] text-ink-2">{hint}</p>
+      </div>
+      <span className="shrink-0 rounded-pill border border-line bg-soft px-2.5 py-1 text-[12px] font-semibold text-mute">
+        {lot}
+      </span>
+    </div>
+  );
+}
+
+export default function JourPage() {
   const geolocation = useGeolocation();
 
   const { data, isPending, error, isFetching } = useQuery({
-    // La position fait partie de la clé : changer de coin recharge la reco.
+    // La position fait partie de la clé : changer de coin met la distance à jour.
     queryKey: ["recommend", geolocation.position],
     queryFn: () => api.recommend(geolocation.position),
     // On attend la géoloc, mais pas éternellement : dès qu'elle est tranchée
     // (acceptée, refusée ou indisponible), on interroge le back, qui se rabat
-    // sur le domicile si besoin.
+    // sur le domicile puis sur le spot favori.
     enabled: geolocation.status !== "pending",
     // Le back complète parfois en arrière-plan : on retente une fois.
     refetchInterval: (query) =>
@@ -56,82 +85,47 @@ export default function SurfHomePage() {
     );
   }
 
-  const others = data.spots.filter(
-    (item) => item.spot.id !== data.headline_spot?.id,
-  );
-
   return (
     <main className="flex flex-col gap-4 pb-6 pt-4">
-      {geolocation.status === "denied" && data.position_source === "home" ? (
-        <p className="px-5 text-[12px] text-mute">
-          Géolocalisation refusée — prévisions autour de ton domicile.
-        </p>
-      ) : null}
-
-      <VerdictCard data={data} />
+      {data.home_spot ? (
+        <SeaBlock data={data} />
+      ) : (
+        /* Sans favori, l'app ne choisit pas à la place de Jules : elle ne va
+           pas non plus chercher la prévision de quinze spots pour meubler. */
+        <section className="px-5">
+          <article className="rounded-card border border-line bg-card px-5 py-6">
+            <h2 className="font-display text-[26px] leading-none font-semibold uppercase text-ink">
+              Choisis ton spot
+            </h2>
+            <p className="mt-3 text-[15px] leading-snug text-ink-2">
+              Jour affiche la prévision d&apos;un seul spot : le tien. Les autres
+              se consultent depuis Mer, quand tu les regardes.
+            </p>
+            <Link
+              href="/mer"
+              className="mt-4 flex min-h-touch items-center justify-center gap-2 rounded-button bg-accent px-4 text-[16px] font-semibold text-on-accent"
+            >
+              <IconSearch className="h-5 w-5" />
+              Chercher un spot
+            </Link>
+          </article>
+        </section>
+      )}
 
       <DailyLogSwipe />
 
-      {/* Les autres spots proches, du meilleur au moins bon. Une ligne par
-          spot : c'est une liste de décision, pas un tableau de bord.
-
-          Le titre précise l'horizon, et ce n'est pas du zèle : le verdict
-          porte sur la prochaine fenêtre de jour, cette liste sur les cinq
-          jours. Sans la mention, un 4,4 affiché sous un verdict à 3,0 n'a
-          aucun sens. */}
-      {others.length > 0 ? (
-        <section className="px-5">
-          <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
-            Autour de toi · meilleur créneau sur 5 jours
-          </h2>
-          <ul className="overflow-hidden rounded-card border border-line bg-card">
-            {others.map((item) => (
-              <li key={item.spot.id} className="border-b border-line last:border-0">
-                <Link
-                  href={`/surf/spots/${item.spot.slug}`}
-                  className="flex min-h-touch items-center gap-3 px-4 py-3"
-                >
-                  <span
-                    className={`tabular flex h-9 w-9 shrink-0 items-center justify-center rounded-cell text-[14px] font-semibold ${scoreClass(
-                      item.best?.level,
-                    )}`}
-                  >
-                    {item.best ? num(item.best.score, 1) : "—"}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-semibold text-ink">
-                      {item.spot.name}
-                    </span>
-                    <span className="block truncate text-[12px] text-mute">
-                      {item.best?.line ?? "Pas encore de prévision"}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[12px] text-mute">
-                    {distanceLabel(item.distance_km)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <nav className="grid grid-cols-3 gap-3 px-5" aria-label="Raccourcis surf">
-        {[
-          { href: "/surf/comparateur", label: "Comparer", Icon: IconGrid },
-          { href: "/surf/carte", label: "Carte", Icon: IconPin },
-          { href: "/profil", label: "Profil", Icon: IconUser },
-        ].map(({ href, label, Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex min-h-touch flex-col items-center justify-center gap-1 rounded-card border border-line bg-card py-3 text-[13px] font-semibold text-ink-2"
-          >
-            <Icon className="h-5 w-5" />
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <section className="flex flex-col gap-3 px-5" aria-label="Le reste de la journée">
+        <ComingSlot
+          title="Séance"
+          hint="Mobilité, renfo, gainage"
+          lot="lot 4"
+        />
+        <ComingSlot
+          title="Repas"
+          hint="Cible calorique et journal"
+          lot="lot 5"
+        />
+      </section>
 
       {isFetching || data.refreshing.length > 0 ? (
         <p className="px-5 text-[12px] text-mute">

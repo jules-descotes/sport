@@ -5,18 +5,22 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { SpotPicker } from "@/components/surf/SpotPicker";
 import { TileMap } from "@/components/surf/TileMap";
-import { IconCrosshair, IconLogout } from "@/components/ui/Icons";
+import { IconCrosshair, IconLogout, IconStar } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useGeolocation } from "@/lib/useGeolocation";
 
 /**
- * Domicile et rayon d'affichage.
+ * Spot favori, domicile et rayon.
  *
- * Ces deux réglages décident de ce qui est ingéré : tout spot dans le rayon
- * devient « potentiel » et sera interrogé à l'ouverture de l'app. Élargir le
- * rayon coûte des appels — d'où le curseur plutôt qu'un champ libre, et le
- * plafond à 100 km.
+ * Le **spot favori** est le réglage qui compte : c'est sa prévision qui
+ * s'affiche sur Jour, et c'est le seul spot interrogé toutes les trois heures,
+ * app fermée.
+ *
+ * Le **rayon** ne décide plus de ce qui est ingéré — plus rien n'est interrogé
+ * sans qu'on l'ait ouvert. Il ne sert qu'à cadrer la recherche « autour de
+ * moi » de l'écran Mer.
  */
 const RADIUS_STEPS = [10, 20, 30, 40, 60, 80, 100];
 
@@ -31,9 +35,26 @@ export default function ProfilPage() {
   });
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
 
+  const homeSpotId = me.data?.profile?.home_spot_id ?? null;
+  const homeSpot = useQuery({
+    queryKey: ["spot", homeSpotId],
+    queryFn: () => api.spot(homeSpotId as number),
+    enabled: homeSpotId !== null,
+  });
+
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [draftHome, setDraftHome] = useState<{ lat: number; lon: number } | null>(
     null,
   );
+
+  const setFavoriteSpot = useMutation({
+    mutationFn: (spotId: number) => api.updateProfile({ home_spot_id: spotId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+      queryClient.invalidateQueries({ queryKey: ["recommend"] });
+      queryClient.invalidateQueries({ queryKey: ["spot-favorites"] });
+    },
+  });
 
   const save = useMutation({
     mutationFn: (data: {
@@ -84,6 +105,48 @@ export default function ProfilPage() {
         title="Profil"
         subtitle={me.data?.email ?? undefined}
       />
+
+      <section className="px-5 pb-6">
+        <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
+          Spot favori
+        </h2>
+
+        <div className="flex items-center gap-3 rounded-card border border-line bg-card px-4 py-3">
+          <IconStar
+            className={`h-5 w-5 shrink-0 ${
+              homeSpotId !== null ? "text-accent" : "text-mute"
+            }`}
+            filled={homeSpotId !== null}
+          />
+          <p className="min-w-0 flex-1 truncate text-[16px] font-semibold text-ink">
+            {homeSpot.data?.name ?? "Aucun spot choisi"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((open) => !open)}
+            className="min-h-touch shrink-0 rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink-2"
+          >
+            {pickerOpen ? "Fermer" : "Changer"}
+          </button>
+        </div>
+        <p className="mt-2 text-[12px] text-mute">
+          Sa prévision est celle de l&apos;écran Jour, et c&apos;est le seul
+          spot interrogé toutes les trois heures, app fermée.
+        </p>
+      </section>
+
+      {pickerOpen ? (
+        <div className="-mt-2 pb-6">
+          <SpotPicker
+            selectedId={homeSpotId}
+            onSelect={(slug) => {
+              // Le sélecteur rend un slug ; le profil stocke un identifiant.
+              api.spot(slug).then((spot) => setFavoriteSpot.mutate(spot.id));
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+        </div>
+      ) : null}
 
       <section className="px-5">
         <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
@@ -146,7 +209,7 @@ export default function ProfilPage() {
 
       <section className="px-5 pt-6">
         <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
-          Rayon d&apos;affichage
+          Rayon de recherche
         </h2>
         <div className="flex flex-wrap gap-2">
           {RADIUS_STEPS.map((step) => (
@@ -166,8 +229,8 @@ export default function ProfilPage() {
           ))}
         </div>
         <p className="mt-2 text-[12px] text-mute">
-          Les spots dans ce rayon sont interrogés à l&apos;ouverture de
-          l&apos;app. Les favoris, eux, le sont toutes les trois heures.
+          Cadre la recherche « autour de moi » sur l&apos;écran Mer. Aucun de
+          ces spots n&apos;est interrogé tant que tu ne l&apos;ouvres pas.
         </p>
       </section>
 

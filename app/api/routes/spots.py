@@ -43,6 +43,7 @@ from app.services.scoring import (
     score_conditions,
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
+from app.services.sun import is_daylight
 from app.services.spot_tiers import (
     HOME_MAX,
     get_or_create_preferences,
@@ -415,6 +416,7 @@ async def spot_forecast(
                 score=score.value,
                 score_level=score.level,
                 reasons=score.reasons,
+                daylight=is_daylight(ts, spot.lat, spot.lon),
             )
         )
 

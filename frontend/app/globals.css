@@ -149,40 +149,12 @@
   }
 
   /* Échelle de score 1 → 5 — le fil rouge du produit, identique partout :
-     accueil, comparateur, fiche spot. Une seule définition, jamais de couleur
+     Jour, Mer, fiche spot. Une seule définition, jamais de couleur
      de note écrite en dur dans un composant.
 
      Le texte suit les jetons du CLAUDE.md : `ink` sur les paliers 1 à 3 dans
      les deux thèmes, et l'encre sombre sur les paliers chauds 4 et 5, assez
      clairs pour la porter en mode clair comme en mode sombre. */
-  .score-1 {
-    background-color: var(--sport-score-1);
-    color: var(--sport-ink);
-  }
-  .score-2 {
-    background-color: var(--sport-score-2);
-    color: var(--sport-ink);
-  }
-  .score-3 {
-    background-color: var(--sport-score-3);
-    color: var(--sport-ink);
-  }
-  .score-4 {
-    background-color: var(--sport-score-4);
-    color: #10202b;
-  }
-  .score-5 {
-    background-color: var(--sport-score-5);
-    color: #10202b;
-  }
-
-  /* Échelle de score 1 → 5 — le fil rouge du produit, identique partout :
-     accueil, comparateur, fiche spot. Une seule définition, jamais de couleur
-     de note écrite en dur dans un composant.
-
-     Le texte suit les jetons du CLAUDE.md : `ink` sur les paliers 1 à 3 dans
-     les deux thèmes, et l'encre sombre sur les paliers chauds 4 et 5 — qui sont
-     assez clairs pour la porter en mode clair comme en mode sombre. */
   .score-1 {
     background-color: var(--sport-score-1);
     color: var(--sport-ink);

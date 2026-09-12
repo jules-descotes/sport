@@ -27,6 +27,36 @@ export function IconWave({ className }: IconProps) {
   );
 }
 
+/** Jour — le soleil sur l'horizon : la journée en cours. */
+export function IconDay({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12.5" r="3.6" />
+      <path d="M12 4v2M12 19v2M4.9 5.4l1.4 1.4M17.7 18.2l1.4 1.4M3 12.5h2M19 12.5h2M4.9 19.6l1.4-1.4M17.7 6.8l1.4-1.4" />
+    </svg>
+  );
+}
+
+/** Corps — silhouette : objectifs, formules, composition. */
+export function IconBody({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="5.2" r="2.4" />
+      <path d="M12 7.6v7M12 14.6 8.5 20M12 14.6 15.5 20M7.5 10h9" />
+    </svg>
+  );
+}
+
+/** Recherche. */
+export function IconSearch({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m15.5 15.5 4 4" />
+    </svg>
+  );
+}
+
 /** Training — haltère. */
 export function IconDumbbell({ className }: IconProps) {
   return (

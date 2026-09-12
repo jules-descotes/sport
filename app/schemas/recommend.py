@@ -17,6 +17,10 @@ class SlotRead(BaseModel):
     level: int
     verdict: str
     reasons: list[str] = []
+    # Faux la nuit. Le créneau est quand même rendu — la bande de l'écran Jour
+    # est une matrice, une colonne manquante décale toute la lecture — mais il
+    # est éteint à l'écran et jamais proposé comme meilleur créneau.
+    daylight: bool = True
 
     wave_height_m: Optional[float] = None
     wave_period_s: Optional[float] = None
@@ -60,6 +64,10 @@ class RecommendResponse(BaseModel):
     # Le favori du profil. `None` = aucun favori choisi : l'écran Jour invite à
     # en choisir un plutôt que d'afficher la mer de quelqu'un d'autre.
     home_spot: Optional[SpotRead] = None
+    # Heure d'émission de la prévision servie. C'est le bénéfice visible de
+    # `run_ts` : l'écran peut dire « prévision de 6 h » au lieu de laisser
+    # croire que la mer vient d'être regardée.
+    run_ts: Optional[datetime] = None
     spots: list[SpotSlots] = []
     # Spots dont la prévision se complète en arrière-plan : le front peut
     # relancer la requête dans quelques secondes.

@@ -40,10 +40,15 @@ async def test_recommend_scores_every_slot(
 
     result = await recommend(db_session, preferences, HOSSEGOR_LAT, HOSSEGOR_LON)
 
+    slots = result.spots[0].slots
     assert len(result.spots) == 1
-    assert result.spots[0].slots
-    # Les créneaux de nuit sont écartés : on ne surfe pas à 3 h du matin.
-    assert len(result.spots[0].slots) < 48
+    # Tous les créneaux sont rendus, nuit comprise : la bande de l'écran Jour
+    # est une matrice, une colonne manquante décale toute la lecture.
+    assert len(slots) == 48
+    # Mais la nuit est marquée, et le meilleur créneau n'y tombe jamais.
+    assert any(not slot.daylight for slot in slots)
+    assert result.spots[0].best.daylight
+    assert result.headline is None or result.headline.daylight
 
 
 async def test_recommend_ranks_the_best_spot_first(

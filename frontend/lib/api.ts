@@ -5,6 +5,7 @@ import type {
   Recommendation,
   Spot,
   SpotForecast,
+  SpotHit,
   SpotNearby,
   SpotPreferences,
   User,
@@ -86,6 +87,14 @@ export const api = {
 
   me: () => request<User>("/auth/me"),
 
+  /** Le spot favori passe par là : c'est lui qui décide de ce qui est ingéré
+   *  en planifié, et de la prévision affichée sur Jour. */
+  updateProfile: (data: { home_spot_id?: number; timezone?: string }) =>
+    request<User>("/auth/me/profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
   // ── Reco ──────────────────────────────────────────────────────────────
 
   /** Sert l'écran d'accueil ET le comparateur : un seul aller-retour. */
@@ -105,8 +114,24 @@ export const api = {
 
   spot: (ref: string | number) => request<Spot>(`/spots/${ref}`),
 
-  spotForecast: (ref: string | number, days = 5) =>
-    request<SpotForecast>(`/spots/${ref}/forecast${query({ days })}`),
+  /** `step_hours: 3` sert la grille 5 jours × 8 créneaux de l'écran Mer :
+   *  quarante points au lieu de cent vingt, sur un réseau de parking de plage. */
+  spotForecast: (ref: string | number, days = 5, stepHours = 1) =>
+    request<SpotForecast>(
+      `/spots/${ref}/forecast${query({ days, step_hours: stepHours })}`,
+    ),
+
+  /** Recherche par nom dans le catalogue. N'ingère rien. */
+  searchSpots: (
+    q: string,
+    position?: { lat: number; lon: number } | null,
+  ) =>
+    request<SpotHit[]>(
+      `/spots/search${query({ q, lat: position?.lat, lon: position?.lon })}`,
+    ),
+
+  /** Les spots maison, le favori du profil en tête. N'ingère rien non plus. */
+  favoriteSpots: () => request<SpotHit[]>("/spots/favorites"),
 
   createSpot: (data: {
     name: string;

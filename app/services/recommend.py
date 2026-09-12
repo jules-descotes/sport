@@ -180,13 +180,17 @@ async def load_forecast_rows(
 def score_spot(
     spot: Spot,
     rows: Sequence[tuple[datetime, dict[str, Optional[float]]]],
-    daylight_only: bool = True,
+    daylight_only: bool = False,
 ) -> list[Slot]:
-    """Note tous les créneaux d'un spot.
+    """Note tous les créneaux d'un spot, nuit comprise, et dit lesquels sont de jour.
 
-    Les créneaux de nuit sont notés puis écartés : on surfe rarement à 3 h du
-    matin, et une note de 5 à cette heure-là dans le comparateur ferait perdre
-    trois secondes de lecture pour rien.
+    La nuit était écartée au lot 1. Elle ne l'est plus, parce que la bande des
+    huit créneaux de l'écran Jour et la grille de l'écran Mer sont des
+    **matrices** : une colonne manquante décale toute la lecture. Les créneaux
+    de nuit sont donc rendus, marqués `daylight=False`, et l'écran les éteint.
+
+    Ils restent en revanche exclus du **choix** du meilleur créneau : une note
+    de 5 à 3 h du matin n'est pas une proposition.
     """
     tide = TideContext.from_levels({ts: values.get("sea_level_m") for ts, values in rows})
 
@@ -319,7 +323,11 @@ async def recommend(
     recommendations: list[SpotRecommendation] = []
     for spot, distance_km in pairs:
         slots = score_spot(spot, rows_by_spot.get(spot.id, []))
-        future = [slot for slot in slots if slot.ts >= now - timedelta(minutes=30)]
+        future = [
+            slot
+            for slot in slots
+            if slot.ts >= now - timedelta(minutes=30) and slot.daylight
+        ]
         best = max(future, key=lambda slot: slot.score.value, default=None)
         recommendations.append(
             SpotRecommendation(
@@ -334,7 +342,7 @@ async def recommend(
     headline_spot: Optional[Spot] = None
     for recommendation in recommendations:
         for slot in recommendation.slots:
-            if not (window_start <= slot.ts <= window_end):
+            if not slot.daylight or not (window_start <= slot.ts <= window_end):
                 continue
             if headline is None or slot.score.value > headline.score.value:
                 headline, headline_spot = slot, recommendation.spot
