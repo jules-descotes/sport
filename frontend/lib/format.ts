@@ -165,3 +165,90 @@ export function highTideAfter<T extends { ts: string; sea_level_m: number | null
   }
   return null;
 }
+
+/**
+ * Longueur de planche : mètres en base, pieds et pouces à l'écran.
+ *
+ * La base ne stocke pas de « 6'2 » — c'est une unité composite, deux nombres
+ * et deux unités dans un seul champ, et le CLAUDE.md l'interdit. Mais aucun
+ * surfeur ne dit « ma 1,88 m ». La conversion est donc un affichage, au même
+ * titre que celle des heures UTC en heure locale : la base porte la grandeur,
+ * le front porte la coutume.
+ */
+export function boardLength(lengthM: number | null | undefined): string {
+  if (lengthM === null || lengthM === undefined) return "";
+  const totalInches = lengthM / 0.0254;
+  let feet = Math.floor(totalInches / 12);
+  let inches = Math.round(totalInches - feet * 12);
+  // 11,6 pouces arrondis donnent 12 : c'est un pied de plus, pas un 6'12.
+  if (inches === 12) {
+    feet += 1;
+    inches = 0;
+  }
+  return `${feet}'${inches}`;
+}
+
+/** L'inverse, pour la molette de saisie du matos. */
+export function lengthFromFeet(feet: number, inches: number): number {
+  return Math.round((feet * 12 + inches) * 0.0254 * 1000) / 1000;
+}
+
+/** « 1 h 45 », « 45 min ». Jamais « 105 min » : personne ne lit ça. */
+export function durationLabel(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return "—";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${String(rest).padStart(2, "0")}`;
+}
+
+/** Heure locale à la minute — « 09:30 ». La base est en UTC. */
+export function clockLabel(iso: string): string {
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+const MOIS = [
+  "janv.",
+  "févr.",
+  "mars",
+  "avr.",
+  "mai",
+  "juin",
+  "juil.",
+  "août",
+  "sept.",
+  "oct.",
+  "nov.",
+  "déc.",
+];
+
+/** « 12 sept. » — et l'année seulement si ce n'est pas celle-ci. */
+export function shortDate(iso: string, now = new Date()): string {
+  const date = new Date(iso);
+  const base = `${date.getDate()} ${MOIS[date.getMonth()]}`;
+  return date.getFullYear() === now.getFullYear()
+    ? base
+    : `${base} ${String(date.getFullYear()).slice(2)}`;
+}
+
+/** Fin d'une session, depuis son début et sa durée. */
+export function sessionEnd(startIso: string, durationMin: number | null): Date {
+  const start = new Date(startIso);
+  return new Date(start.getTime() + (durationMin ?? 0) * 60_000);
+}
+
+/** Minutes écoulées entre deux instants, arrondies au quart d'heure.
+ *  Les molettes de saisie vont par quinze minutes : la durée aussi. */
+export function minutesBetween(start: Date, end: Date): number {
+  return Math.round((end.getTime() - start.getTime()) / 60_000);
+}
+
+/** Arrondit un instant au quart d'heure inférieur — le pas des molettes. */
+export function floorToQuarter(date: Date): Date {
+  const rounded = new Date(date);
+  rounded.setMinutes(Math.floor(rounded.getMinutes() / 15) * 15, 0, 0);
+  return rounded;
+}

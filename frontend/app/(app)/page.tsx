@@ -3,11 +3,21 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
+import {
+  DoneSessionRow,
+  PendingSessionBlock,
+} from "@/components/session/PendingSessionBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { SeaBlock } from "@/components/surf/SeaBlock";
-import { IconSearch } from "@/components/ui/Icons";
+import {
+  IconCloudOff,
+  IconLog,
+  IconSearch,
+  IconUser,
+} from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useGeolocation } from "@/lib/useGeolocation";
+import { useOfflineQueue } from "@/lib/useOfflineQueue";
 
 /**
  * **Jour** — la journée dans l'ordre où elle se vit.
@@ -16,6 +26,12 @@ import { useGeolocation } from "@/lib/useGeolocation";
  * des onglets, ce sont les ingrédients du jour : c'est ce qui rendra visible le
  * lien entre eux — la cible calorique qui monte parce qu'il y a eu 1 h 43 à
  * l'eau, la mobilité proposée après trois jours de surf d'affilée.
+ *
+ * L'ordre n'est pas figé, il suit l'heure : **une session à noter passe devant
+ * tout le reste**. À 11 h, ce qui compte n'est plus la prévision du matin,
+ * c'est la session qu'on vient de finir — et une session non notée est une
+ * ligne sans étiquette, donc inutile au modèle. Une fois notée, le bloc de mer
+ * reprend sa place et la session du jour se range en pied.
  *
  * Le bloc de mer porte **la prévision du spot favori du profil**, et elle
  * seule. Interroger le rayon à chaque ouverture reviendrait à ingérer des spots
@@ -47,6 +63,7 @@ function ComingSlot({ title, hint, lot }: { title: string; hint: string; lot: st
 
 export default function JourPage() {
   const geolocation = useGeolocation();
+  const offline = useOfflineQueue();
 
   const { data, isPending, error, isFetching } = useQuery({
     // La position fait partie de la clé : changer de coin met la distance à jour.
@@ -60,6 +77,18 @@ export default function JourPage() {
     refetchInterval: (query) =>
       query.state.data?.refreshing.length ? 6_000 : false,
   });
+
+  // Un seul aller-retour pour les deux questions de l'écran : « y a-t-il une
+  // session à noter ? » et « qu'est-ce que j'ai fait aujourd'hui ? ».
+  const journal = useQuery({
+    queryKey: ["session-journal"],
+    queryFn: api.sessionJournal,
+  });
+
+  const toRate = journal.data?.to_rate ?? [];
+  const doneToday = (journal.data?.today ?? []).filter(
+    (session) => session.status === "rated",
+  );
 
   if (geolocation.status === "pending" || isPending) {
     return (
@@ -86,7 +115,31 @@ export default function JourPage() {
   }
 
   return (
-    <main className="flex flex-col gap-4 pb-6 pt-4">
+    <main className="flex flex-col gap-4 pb-6 pt-3">
+      {/* Barre de service : le profil n'est dans aucune des trois destinations,
+          et c'est là que vivent le matos et le raccourci iPhone. */}
+      <nav className="flex items-center justify-end gap-1 px-4" aria-label="Outils">
+        <Link
+          href="/sessions"
+          aria-label="Historique des sessions"
+          className="flex h-touch w-touch items-center justify-center rounded-button text-mute"
+        >
+          <IconLog className="h-5 w-5" />
+        </Link>
+        <Link
+          href="/profil"
+          aria-label="Profil"
+          className="flex h-touch w-touch items-center justify-center rounded-button text-mute"
+        >
+          <IconUser className="h-5 w-5" />
+        </Link>
+      </nav>
+
+      {/* Devant tout le reste tant qu'elle n'est pas notée. */}
+      {toRate.map((session) => (
+        <PendingSessionBlock key={session.id} session={session} />
+      ))}
+
       {data.home_spot ? (
         <SeaBlock data={data} />
       ) : (
@@ -126,6 +179,23 @@ export default function JourPage() {
           lot="lot 5"
         />
       </section>
+
+      {/* La journée telle qu'elle s'est passée, en pied : un rappel, pas une
+          action. */}
+      {doneToday.length > 0 ? (
+        <section className="flex flex-col gap-2 px-5" aria-label="Sessions du jour">
+          {doneToday.map((session) => (
+            <DoneSessionRow key={session.id} session={session} />
+          ))}
+        </section>
+      ) : null}
+
+      {offline.pending > 0 ? (
+        <p className="flex items-center gap-2 px-5 text-[12px] text-mute">
+          <IconCloudOff className="h-4 w-4 shrink-0" />
+          {offline.pending} notation(s) en attente d&apos;envoi
+        </p>
+      ) : null}
 
       {isFetching || data.refreshing.length > 0 ? (
         <p className="px-5 text-[12px] text-mute">

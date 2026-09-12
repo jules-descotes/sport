@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.daily_log import router as daily_log_router
+from app.api.routes.gear import router as gear_router
 from app.api.routes.recommend import router as recommend_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.spots import router as spots_router
@@ -19,8 +20,10 @@ from app.db.database import async_session
 
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
 # Alembic la cible de l'autogénération).
+from app.models.api_token import ApiToken  # noqa: F401
 from app.models.daily_log import DailyLog  # noqa: F401
 from app.models.forecast import Forecast, Observation  # noqa: F401
+from app.models.gear import Gear  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
 from app.models.spot import Spot, SpotPreference  # noqa: F401
 from app.models.surf_session import SurfSession  # noqa: F401
@@ -114,6 +117,20 @@ app.include_router(spots_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
 app.include_router(daily_log_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
+app.include_router(gear_router, prefix="/api/v1")
+
+
+if settings.storage_backend == "local":
+    # Développement seulement : en production les photos vivent sur R2 et sont
+    # servies par son domaine public. Monter un répertoire depuis le conteneur
+    # Railway n'aurait aucun sens — son disque est éphémère.
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+
+    media_root = Path(settings.media_dir)
+    media_root.mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=media_root), name="media")
 
 
 @app.get("/")

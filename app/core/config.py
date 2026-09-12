@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Session longue : on se connecte une fois depuis le téléphone, jamais plus.
     access_token_expire_days: int = 60
     session_cookie_name: str = "sport_session"
+    # Jeton Bearer du raccourci iPhone. Un an : il vit dans les Raccourcis iOS
+    # et on n'a pas envie de le refaire tous les deux mois. C'est long, et
+    # c'est précisément pour ça qu'il est révocable depuis le profil.
+    api_token_expire_days: int = 365
     # Vide en local (cookie lié à l'hôte). En production : ".atelier-okomi.fr",
     # pour que le cookie posé par api-sport soit renvoyé depuis sport.
     session_cookie_domain: str = ""

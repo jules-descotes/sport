@@ -46,6 +46,12 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      # La file hors ligne est la seule pièce du front qui peut perdre une
+      # session : une notation mise en attente et jamais renvoyée ne laisse
+      # aucune trace. Elle est testée contre un vrai IndexedDB.
+      - name: Tests de la file hors ligne
+        run: cd frontend && npm run test
+
       - name: Build
         run: cd frontend && npm run build
         env:

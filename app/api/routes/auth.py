@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_api_token, new_jti
 from app.db.database import get_db
+from app.models.api_token import ApiToken
 from app.models.spot import Spot
 from app.models.user import User
+from app.schemas.token import ApiTokenCreate, ApiTokenCreated, ApiTokenRead
 from app.schemas.user import LoginRequest, ProfileUpdate, Token, UserRead
 from app.services.auth_service import authenticate_user, get_current_active_user
 from app.services.spot_tiers import get_or_create_preferences, recompute_tiers
@@ -119,3 +123,91 @@ async def update_profile(
 
     await db.refresh(current_user, attribute_names=["profile"])
     return current_user
+
+
+# ── Jetons d'API — le raccourci iPhone ─────────────────────────────────────
+#
+# Le raccourci iOS « Obtenir le contenu de l'URL » n'a pas de magasin de
+# cookies : le cookie `Secure` / `SameSite=Lax` de la session ne lui parvient
+# pas. Il lui faut donc un jeton Bearer, et un jeton Bearer qui vit un an sur
+# un téléphone doit pouvoir être coupé sans changer `SECRET_KEY` — sans quoi
+# révoquer le raccourci déconnecterait aussi le navigateur.
+
+
+@router.post(
+    "/tokens", response_model=ApiTokenCreated, status_code=status.HTTP_201_CREATED
+)
+async def create_token(
+    data: ApiTokenCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiTokenCreated:
+    """Fabrique un jeton Bearer longue durée.
+
+    **La valeur n'est renvoyée qu'ici, une seule fois.** Elle n'est pas
+    stockée : la base ne garde que le `jti`, qui suffit à révoquer. Perdre le
+    jeton n'est pas grave — on en refait un et on révoque l'ancien.
+    """
+    jti = new_jti()
+    token, expires_at = create_api_token(
+        current_user.email, jti, settings.api_token_expire_days
+    )
+
+    row = ApiToken(
+        user_id=current_user.id,
+        jti=jti,
+        name=data.name.strip(),
+        expires_at=expires_at,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+
+    return ApiTokenCreated(
+        **ApiTokenRead.model_validate(row).model_dump(), token=token
+    )
+
+
+@router.get("/tokens", response_model=list[ApiTokenRead])
+async def list_tokens(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ApiTokenRead]:
+    """Les jetons émis, révoqués compris. Jamais leur valeur.
+
+    Les révoqués restent affichés : c'est la trace de ce qui a été coupé, et
+    elle tient dans une ligne barrée.
+    """
+    result = await db.execute(
+        select(ApiToken)
+        .where(ApiToken.user_id == current_user.id)
+        .order_by(ApiToken.created_at.desc())
+    )
+    return [ApiTokenRead.model_validate(row) for row in result.scalars().all()]
+
+
+@router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_token(
+    token_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Coupe un jeton. Effet immédiat, sur ce jeton seul.
+
+    La ligne est gardée plutôt que supprimée : un jeton révoqué dont la trace
+    disparaît est un jeton dont on ne sait plus s'il a existé.
+    """
+    result = await db.execute(
+        select(ApiToken)
+        .where(ApiToken.id == token_id)
+        .where(ApiToken.user_id == current_user.id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Jeton introuvable"
+        )
+
+    if row.revoked_at is None:
+        row.revoked_at = datetime.now(UTC)
+        await db.commit()

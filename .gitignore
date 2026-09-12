@@ -35,3 +35,7 @@ next-env.d.ts
 .claude/
 Thumbs.db
 .DS_Store
+
+# Photos de session en stockage local (développement). En production elles
+# vivent sur R2 : le disque du conteneur Railway est éphémère.
+media/

@@ -1,14 +1,25 @@
 /**
- * Service worker minimal — lot 0.
+ * Service worker minimal — la coquille, et rien d'autre.
  *
  * Objectif unique ici : l'app installée s'ouvre et affiche quelque chose même
- * sans réseau. Le hors-ligne réel (file d'attente IndexedDB des sessions,
- * synchronisée au retour du réseau) arrive au lot 2.
+ * sans réseau.
  *
  * Deux règles, pas une de plus :
  *   - les navigations passent par le réseau, avec repli sur le cache ;
  *   - les fichiers immuables de Next (/_next/static) sont servis depuis le cache.
  * L'API n'est jamais mise en cache : une prévision périmée est pire que rien.
+ *
+ * **La file hors ligne du lot 2 ne vit pas ici.** Elle est dans la page
+ * (`lib/offline-queue.ts`), et c'est délibéré : ce qu'on met en attente n'est
+ * pas une requête à rejouer à l'identique mais une notation à envoyer, avec sa
+ * règle propre — une erreur réseau se retente, un refus de l'API se jette, et
+ * re-noter la même session remplace l'entrée au lieu d'en ajouter une. Un
+ * service worker qui rejouerait des requêtes ne saurait rien faire de tout ça.
+ *
+ * Conséquence à connaître : la notation hors ligne marche sur un écran **déjà
+ * ouvert**. Naviguer sans réseau vers un écran jamais visité tombe sur
+ * `offline.html` — la navigation demande au serveur une charge utile que le
+ * cache n'a pas.
  */
 
 const CACHE = "sport-shell-v1";

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Optional
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -13,11 +14,14 @@ from sqlalchemy.pool import StaticPool
 from app.core.security import hash_password
 from app.db.database import Base, get_db
 from app.main import app
-from app.models.enums import SpotSource, SpotTier
+from app.models.enums import GearType, SpotSource, SpotTier
 from app.models.forecast import Forecast
+from app.models.gear import Gear
 from app.models.profile import Profile
 from app.models.spot import Spot, SpotPreference
 from app.models.user import User
+from app.services import backfill
+from app.services.openmeteo import HourlyBundle
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -220,3 +224,117 @@ def patch_session_factory(monkeypatch):
         monkeypatch.setattr(module, "async_session", lambda: _scope())
 
     return _patch
+
+
+@pytest.fixture
+async def bearer_client(db_session) -> AsyncClient:
+    """Client **sans cookie** — exactement ce qu'est le raccourci iOS.
+
+    `auth_client` porte le cookie de session : s'en servir pour tester le jeton
+    Bearer testerait le cookie, et un jeton révoqué passerait quand même. Un
+    client distinct est le seul moyen d'éprouver vraiment la voie Bearer.
+    """
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make_gear(db_session):
+    """Une planche. Longueur en mètres : 1,88 m, c'est le 6'2 de PROJET.md §7.2."""
+
+    async def _make(
+        user: User,
+        name: str = "6'2 Pyzel",
+        gear_type: str = GearType.BOARD.value,
+        length_m: Optional[float] = 1.88,
+        volume_l: Optional[float] = 30.0,
+        discipline: str = "surf",
+        is_active: bool = True,
+    ) -> Gear:
+        gear = Gear(
+            user_id=user.id,
+            name=name,
+            gear_type=gear_type,
+            length_m=length_m,
+            volume_l=volume_l,
+            discipline=discipline,
+            is_active=is_active,
+        )
+        db_session.add(gear)
+        await db_session.commit()
+        await db_session.refresh(gear)
+        return gear
+
+    return _make
+
+
+@pytest.fixture
+def archive_bundle():
+    """Journée complète d'archive Open-Meteo, houle et vent montants.
+
+    Une journée entière et pas trois heures : c'est ce que renvoie vraiment
+    l'API, et la position dans la marée ne se lit que sur les extrêmes du jour.
+    """
+
+    def _build(start: datetime, hours: int = 48) -> HourlyBundle:
+        day_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        return HourlyBundle(
+            rows={
+                day_start
+                + timedelta(hours=hour): {
+                    # Houle montante sur la fenêtre : la tendance doit se voir.
+                    "wave_height_m": round(1.0 + 0.05 * hour, 3),
+                    "wave_period_s": 11.0,
+                    "wave_peak_period_s": 12.0,
+                    "wave_direction_deg": 285.0,
+                    "wind_speed_kt": round(5.0 + 0.5 * hour, 3),
+                    "wind_gust_kt": 12.0,
+                    "wind_direction_deg": 90.0,
+                    "sea_level_m": round(
+                        1.8 * math.sin(2 * math.pi * hour / 12.42), 3
+                    ),
+                    "water_temperature_c": 19.0,
+                }
+                for hour in range(hours)
+            }
+        )
+
+    return _build
+
+
+@pytest.fixture
+def fake_archive(monkeypatch, archive_bundle):
+    """Remplace l'appel d'archive. **Aucun test ne sort sur le réseau.**"""
+
+    def _install(bundle=None, fail: bool = False):
+        calls: list[tuple[float, float]] = []
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc_info):
+                return None
+
+            async def fetch_archive(self, lat, lon, start, end):
+                calls.append((lat, lon))
+                if fail:
+                    raise httpx.ConnectError("archive injoignable")
+                return (
+                    bundle
+                    if bundle is not None
+                    else archive_bundle(datetime.now(UTC))
+                )
+
+        monkeypatch.setattr(backfill, "OpenMeteoClient", FakeClient)
+        return calls
+
+    return _install

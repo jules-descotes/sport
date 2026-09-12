@@ -1,13 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { SpotPicker } from "@/components/surf/SpotPicker";
 import { TileMap } from "@/components/surf/TileMap";
-import { IconCrosshair, IconLogout, IconStar } from "@/components/ui/Icons";
+import {
+  IconBoard,
+  IconChevronRight,
+  IconCrosshair,
+  IconKey,
+  IconLog,
+  IconLogout,
+  IconStar,
+} from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useGeolocation } from "@/lib/useGeolocation";
 
@@ -105,6 +114,51 @@ export default function ProfilPage() {
         title="Profil"
         subtitle={me.data?.email ?? undefined}
       />
+
+      {/* Les trois portes du lot 2 : ce qu'on emporte à l'eau, ce qu'on en a
+          rapporté, et ce qui fait marcher le raccourci iPhone. */}
+      <section className="px-5 pb-6">
+        <ul className="overflow-hidden rounded-card border border-line bg-card">
+          {[
+            {
+              href: "/profil/matos",
+              label: "Matos",
+              hint: "Planches et combinaisons",
+              Icon: IconBoard,
+            },
+            {
+              href: "/sessions",
+              label: "Sessions",
+              hint: "L'historique, et ce qui reste à noter",
+              Icon: IconLog,
+            },
+            {
+              href: "/profil/jetons",
+              label: "Raccourci iPhone",
+              hint: "Jeton Bearer, révocable",
+              Icon: IconKey,
+            },
+          ].map(({ href, label, hint, Icon }) => (
+            <li key={href} className="border-b border-line last:border-0">
+              <Link
+                href={href}
+                className="flex min-h-touch items-center gap-3 px-4 py-2.5"
+              >
+                <Icon className="h-5 w-5 shrink-0 text-mute" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold text-ink">
+                    {label}
+                  </span>
+                  <span className="block truncate text-[12px] text-mute">
+                    {hint}
+                  </span>
+                </span>
+                <IconChevronRight className="h-4 w-4 shrink-0 text-mute" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section className="px-5 pb-6">
         <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">

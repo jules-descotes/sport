@@ -10,12 +10,10 @@ coup. Ce que ces tests protègent :
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-import httpx
 import pytest
 
-from app.services import backfill
 from app.services.backfill import (
     build_conditions_snapshot,
     window_timestamps,
@@ -27,57 +25,6 @@ SESSION_START = datetime(2026, 9, 12, 8, 30, tzinfo=UTC)
 # Le run qu'on avait sous les yeux avant d'aller à l'eau, et celui d'après.
 RUN_BEFORE_SESSION = datetime(2026, 9, 12, 6, 0, tzinfo=UTC)
 RUN_AFTER_SESSION = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
-
-
-def archive_bundle(start: datetime, hours: int = 48) -> HourlyBundle:
-    """Journée complète d'archive : c'est ce que renvoie vraiment Open-Meteo."""
-    import math
-
-    day_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-    return HourlyBundle(
-        rows={
-            day_start
-            + timedelta(hours=hour): {
-                # Houle montante sur la fenêtre : la tendance doit se voir.
-                "wave_height_m": round(1.0 + 0.05 * hour, 3),
-                "wave_period_s": 11.0,
-                "wave_peak_period_s": 12.0,
-                "wave_direction_deg": 285.0,
-                "wind_speed_kt": round(5.0 + 0.5 * hour, 3),
-                "wind_gust_kt": 12.0,
-                "wind_direction_deg": 90.0,
-                "sea_level_m": round(1.8 * math.sin(2 * math.pi * hour / 12.42), 3),
-                "water_temperature_c": 19.0,
-            }
-            for hour in range(hours)
-        }
-    )
-
-
-@pytest.fixture
-def fake_archive(monkeypatch):
-    """Remplace l'appel d'archive. Aucun test ne sort sur le réseau."""
-
-    def _install(bundle=None, fail: bool = False):
-        calls: list[tuple[float, float]] = []
-
-        class FakeClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *exc_info):
-                return None
-
-            async def fetch_archive(self, lat, lon, start, end):
-                calls.append((lat, lon))
-                if fail:
-                    raise httpx.ConnectError("archive injoignable")
-                return bundle if bundle is not None else archive_bundle(SESSION_START)
-
-        monkeypatch.setattr(backfill, "OpenMeteoClient", FakeClient)
-        return calls
-
-    return _install
 
 
 # ── Fenêtre ────────────────────────────────────────────────────────────────
@@ -103,9 +50,9 @@ def test_window_handles_a_session_across_midnight() -> None:
 
 
 async def test_observed_panel_has_the_three_points(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -116,10 +63,10 @@ async def test_observed_panel_has_the_three_points(
 
 
 async def test_backfill_works_on_a_spot_never_ingested(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Spot de voyage : aucune prévision en base, mais l'archive répond quand même."""
-    calls = fake_archive()
+    calls = fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot(name="Uluwatu", slug="uluwatu", lat=-8.82, lon=115.09)
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -132,7 +79,7 @@ async def test_backfill_works_on_a_spot_never_ingested(
 
 
 async def test_retroactive_session_is_backfilled_like_any_other(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Une session saisie six mois plus tard produit le même snapshot."""
     past = datetime(2026, 3, 4, 9, 0, tzinfo=UTC)
@@ -149,10 +96,10 @@ async def test_retroactive_session_is_backfilled_like_any_other(
 
 
 async def test_forecast_panel_comes_from_the_ingested_rows(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Sur un spot maison, ce qui était annoncé est conservé à côté du constaté."""
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     await upsert_forecast_rows(
@@ -176,7 +123,7 @@ async def test_forecast_panel_comes_from_the_ingested_rows(
 
 
 async def test_forecast_panel_ignores_runs_emitted_after_the_session(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Une passe postérieure à la session est un constat déguisé, pas une prévision.
 
@@ -184,7 +131,7 @@ async def test_forecast_panel_ignores_runs_emitted_after_the_session(
     moment de prédire — le décalage train/serve de PROJET.md §7.1, dans sa
     version la plus discrète, celle qui ne se voit qu'en production.
     """
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     rows = {
@@ -213,10 +160,10 @@ async def test_forecast_panel_ignores_runs_emitted_after_the_session(
 
 
 async def test_trends_capture_a_rising_swell(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Une houle de 1,4 m qui monte et une qui s'écroule ne sont pas la même session."""
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -226,10 +173,10 @@ async def test_trends_capture_a_rising_swell(
 
 
 async def test_tide_is_read_on_the_whole_day(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Trois points ne disent pas où sont la pleine et la basse mer."""
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -257,9 +204,9 @@ async def test_archive_failure_never_loses_the_session(
 
 
 async def test_snapshot_records_the_model_version(
-    db_session, make_spot, fake_archive
+    db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     snapshot = await build_conditions_snapshot(db_session, spot, SESSION_START)
@@ -273,9 +220,9 @@ async def test_snapshot_records_the_model_version(
 
 
 async def test_create_session_freezes_the_snapshot(
-    auth_client, db_session, make_spot, fake_archive
+    auth_client, db_session, make_spot, fake_archive, archive_bundle
 ) -> None:
-    fake_archive()
+    fake_archive(bundle=archive_bundle(SESSION_START))
     spot = await make_spot()
 
     response = await auth_client.post(

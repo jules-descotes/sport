@@ -1,13 +1,21 @@
 import type {
+  ApiToken,
+  ApiTokenCreated,
   DailyLogEntry,
   DailyLogStatus,
   DailyLogToday,
+  Discipline,
+  GearType,
+  GearWithUsage,
   Recommendation,
+  SessionJournal,
+  SessionStatus,
   Spot,
   SpotForecast,
   SpotHit,
   SpotNearby,
   SpotPreferences,
+  SurfSession,
   User,
 } from "./types";
 
@@ -60,6 +68,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return body as T;
+}
+
+/** Le corps d'une notation. Partagé avec la file hors ligne, qui rejoue
+ *  exactement cette forme au retour du réseau. */
+export interface SessionUpdate {
+  spot_id?: number;
+  started_at?: string;
+  duration_min?: number;
+  rating_conditions?: number;
+  rating_personal?: number;
+  gear_id?: number;
+  wave_count?: number;
+  notes?: string | null;
 }
 
 function query(params: Record<string, string | number | boolean | undefined>) {
@@ -170,6 +191,123 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // ── Sessions ──────────────────────────────────────────────────────────
+
+  /** Tout ce dont l'écran Jour a besoin, en un aller-retour : les sessions à
+   *  noter (de n'importe quel jour) et celles d'aujourd'hui. */
+  sessionJournal: () => request<SessionJournal>("/sessions/today"),
+
+  sessions: (params: {
+    status?: SessionStatus;
+    since?: string;
+    until?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) => request<SurfSession[]>(`/sessions${query(params)}`),
+
+  session: (id: number) => request<SurfSession>(`/sessions/${id}`),
+
+  /** La notation. Le passage en `rated` est décidé par le serveur, qui
+   *  regarde si les **deux** notes sont là — jamais par le front. */
+  updateSession: (id: number, data: SessionUpdate) =>
+    request<SurfSession>(`/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  createSession: (data: {
+    spot_id: number;
+    started_at: string;
+    duration_min?: number;
+    discipline?: Discipline;
+    rating_conditions?: number;
+    rating_personal?: number;
+    gear_id?: number;
+    wave_count?: number;
+    notes?: string;
+    client_uuid?: string;
+  }) =>
+    request<SurfSession>("/sessions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSession: (id: number) =>
+    request<void>(`/sessions/${id}`, { method: "DELETE" }),
+
+  /** Photo de session — multipart, donc hors du `request` JSON.
+   *  Exige le réseau : une photo ne va pas dans la file hors ligne, qui est
+   *  faite pour des notes de quelques octets. */
+  uploadSessionPhoto: async (id: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/sessions/${id}/photo`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+    } catch {
+      throw new ApiError(0, "Réseau indisponible");
+    }
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        typeof payload?.detail === "string"
+          ? payload.detail
+          : "Photo non enregistrée",
+      );
+    }
+    return payload as SurfSession;
+  },
+
+  // ── Matos ─────────────────────────────────────────────────────────────
+
+  gear: (includeInactive = true) =>
+    request<GearWithUsage[]>(`/gear${query({ include_inactive: includeInactive })}`),
+
+  createGear: (data: {
+    name: string;
+    gear_type?: GearType;
+    length_m?: number | null;
+    volume_l?: number | null;
+    discipline?: Discipline;
+    purchased_on?: string | null;
+  }) => request<GearWithUsage>("/gear", { method: "POST", body: JSON.stringify(data) }),
+
+  updateGear: (
+    id: number,
+    data: {
+      name?: string;
+      length_m?: number | null;
+      volume_l?: number | null;
+      is_active?: boolean;
+    },
+  ) =>
+    request<GearWithUsage>(`/gear/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteGear: (id: number) =>
+    request<void>(`/gear/${id}`, { method: "DELETE" }),
+
+  // ── Jetons d'API (raccourci iPhone) ───────────────────────────────────
+
+  tokens: () => request<ApiToken[]>("/auth/tokens"),
+
+  /** La valeur du jeton n'est renvoyée qu'ici, une seule fois. */
+  createToken: (name: string) =>
+    request<ApiTokenCreated>("/auth/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  revokeToken: (id: number) =>
+    request<void>(`/auth/tokens/${id}`, { method: "DELETE" }),
 
   // ── Journal quotidien ─────────────────────────────────────────────────
 

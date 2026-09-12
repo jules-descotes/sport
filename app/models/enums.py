@@ -64,3 +64,32 @@ class DailyLogStatus(StrEnum):
     SURFED = "surfed"
     WATCHED_AND_PASSED = "watched_and_passed"
     NOT_WATCHED = "not_watched"
+
+
+class GearType(StrEnum):
+    """Ce qu'on emporte à l'eau. Deux catégories portent l'essentiel du signal.
+
+    La **planche** est celle qui compte pour le modèle : à conditions égales, le
+    voisin le plus proche dit aussi quelle planche prendre (cf. PROJET.md §7.2).
+    La combinaison sert le conseil « quelle épaisseur » à partir de la
+    température de l'eau, déjà présente dans les données Open-Meteo.
+    """
+
+    BOARD = "board"
+    WETSUIT = "wetsuit"
+    ACCESSORY = "accessory"
+
+
+class SessionStatus(StrEnum):
+    """Une session vit en deux temps, et c'est délibéré.
+
+    Le chemin rapide (`POST /sessions/quick`, raccourci iPhone) enregistre une
+    session en quinze secondes, sortie de l'eau, sans note. Elle est alors
+    `to_rate` : l'écran Jour la remonte en premier, et la notation se fait plus
+    tard, au sec. Séparer les deux moments est ce qui permet de tenir les
+    quinze secondes — le risque du projet est la friction de saisie, pas la
+    rareté des données (cf. PROJET.md §7.2).
+    """
+
+    TO_RATE = "to_rate"
+    RATED = "rated"

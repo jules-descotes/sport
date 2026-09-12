@@ -42,7 +42,8 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 ## Commandes utiles
 - Back seul : `python run.py` (port 8000)
 - Front seul : `cd frontend && npm run dev` (port 3000)
-- Tests : `pytest tests/ -v`
+- Tests back : `pytest tests/ -v`
+- Tests front (file hors ligne) : `cd frontend && npm run test`
 - API docs local : http://localhost:8000/docs
 - Import OSM : `python -m scripts.import_osm_spots [--bbox min_lat,min_lon,max_lat,max_lon] [--dry-run]`
 
@@ -130,6 +131,7 @@ R2_PUBLIC_URL=
 RESEND_API_KEY=
 EMAILS_FROM=bonjour@atelier-okomi.fr
 SENTRY_DSN=
+API_TOKEN_EXPIRE_DAYS=365       # jeton Bearer du raccourci iPhone (lot 2)
 WINDY_WEBCAMS_API_KEY=          # clé Webcams API (≠ Point Forecast)
 TIDES_API_KEY=
 FORECAST_INGEST_INTERVAL_HOURS=3
@@ -169,7 +171,7 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Lot 0 — repo, infra, auth, coquille PWA — **code terminé le 2026-09-12**, mise en ligne à faire
 - [x] Lot 1 — spots, ingestion météo, écran d'accueil, webcams — **code terminé le 2026-09-12**, import OSM à lancer en production
 - [x] Lot 1 ter — `run_ts`, spot favori, navigation Jour / Mer / Corps — **code terminé le 2026-09-12**
-- [ ] Lot 2 — log de session, matos, notation, hors-ligne
+- [x] Lot 2 — log de session, matos, notation, hors-ligne — **code terminé le 2026-09-12**, raccourci iPhone à monter sur le téléphone
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 4 — training
 - [ ] Lot 5 — nutrition
@@ -193,10 +195,12 @@ NEXT_PUBLIC_APP_NAME=Sport
 
 ### Lot 0 — ce qui reste (hors code, à faire à la main)
 - [x] Créer le dépôt GitHub `jules-descotes/sport` et pousser
-- [ ] Railway : service back (Dockerfile) + Postgres dédié, variables d'environnement
-- [ ] Vercel : projet front sur `/frontend`, variables `NEXT_PUBLIC_*`
-- [ ] OVH : CNAME `sport` et `api-sport` sur `atelier-okomi.fr`
+- [x] Railway : service `sport` (Dockerfile, `PORT=8080`) + Postgres dédié, variables posées dont `FORECAST_WAVE_MODEL` / `FORECAST_MODEL_VERSION`, domaine custom `api-sport` déclaré (cible `voy0nwe9.up.railway.app`) — **en attente du DNS**. `railway ssh --service sport --environment production` fonctionne (le `--environment` est indispensable)
+- [x] Vercel : projet front sur `/frontend`, variables `NEXT_PUBLIC_*`, domaine `sport` déclaré — **en attente du DNS**
+- [ ] OVH : 2 CNAME (`sport` → cible Vercel, `api-sport` → cible Railway) + 1 TXT `_railway-verify.api-sport` — **pas encore fait**
 - [ ] Installer la PWA sur le téléphone et vérifier le plein écran iOS
+- [~] Import OSM en production : **4 568 spots créés** (Portugal → Bretagne) le 12/09 depuis le conteneur Railway ; la **côte française est à rejouer** (`--bbox 43.3,-5.0,49.0,-1.0`) car overpass-api.de a banni l'IP de sortie Railway en cours de route — orientations manquantes et plages de lac à purger. Utiliser une autre instance via `OVERPASS_URL` (private.coffee ou maps.mail.ru)
+- [ ] Choisir le **spot favori** dans le profil à la première connexion — sans lui, le job planifié n'ingère rien
 
 ### Lot 1 — ce qui est livré (2026-09-12)
 **Catalogue**
@@ -324,6 +328,94 @@ Parlementia NO, Ciboure N dans sa baie), rejeu de l'import idempotent,
       la première passe d'ingestion historisée
 - [ ] Choisir le spot favori depuis le profil dès la première connexion en
       production — sans lui, le job planifié n'interroge rien
+
+### Lot 2 — ce qui est livré (2026-09-12)
+
+**Le chemin des quinze secondes**
+- `POST /sessions/quick` — entrée minimale (`lat`, `lon`, `ended_at` optionnel).
+  Le serveur identifie le **spot le plus proche à moins de 2 km**, retombe sur
+  le **favori du profil** hors zone, estime le début à **fin − 90 min**, crée la
+  session en statut `to_rate`, fige le `conditions_snapshot` et renvoie un lien
+  profond `/sessions/{id}/noter`
+- **Idempotent sur 10 minutes** : deux déclenchements rapprochés du raccourci
+  donnent une seule session (`created: false`). Un `client_uuid` facultatif
+  donne en plus une idempotence exacte, indépendante de l'horloge
+- `start_estimated` distingue une heure devinée d'une heure relevée. Corriger le
+  début d'au moins une heure, ou changer de spot, **refait le snapshot** — le
+  garder étiquetterait la session avec les conditions d'un autre endroit
+- Le volet `forecast` ne retient que les runs **émis avant le début**. Le volet
+  `observed` manquant (parking sans réseau) est **rattrapé à la notation**
+
+**Jeton Bearer révocable**
+- `POST|GET /auth/tokens`, `DELETE /auth/tokens/{id}`. JWT `type: "api"` portant
+  un `jti` cherché dans `api_tokens` à chaque appel : **un JWT ne se révoque
+  pas**, et couper le raccourci d'un téléphone perdu ne doit pas obliger à
+  changer `SECRET_KEY` — ce qui déconnecterait aussi le navigateur
+- La valeur n'est jamais stockée ni réaffichée. `last_used_at` dit quel jeton ne
+  sert plus
+
+**Matos**
+- `gear` (type, nom court, **longueur en mètres**, volume, discipline, date
+  d'achat, actif) + CRUD. Un 6'2 est une unité composite : la base porte 1,88 m,
+  le front affiche `6'2`
+- Compteur de sessions et `last_used_at` **calculés**, jamais stockés.
+  Supprimer du matos qui a servi est refusé (409) : le lien session ↔ planche
+  est de la donnée d'apprentissage. On range, on ne supprime pas
+
+**Écran « Noter la session »** (`/sessions/{id}/noter`, plein cadre)
+- Spot en tête, modifiable en un tap (les 5 plus proches) · début / fin en
+  molettes de 15 min avec durée affichée · **QUALITÉ DES CONDITIONS** puis
+  **MON RESSENTI**, cinq grands boutons chacun, séparés par un filet et un fond
+  · planche en pastilles, la dernière utilisée présélectionnée · compteur de
+  vagues, pas de 1 au tap et de 5 en appui long · note libre et photo repliées
+- **Aucune zone de texte visible sans action explicite.** Un seul bouton
+  « Enregistrer », inerte tant que les deux notes ne sont pas posées
+
+**Hors ligne**
+- `lib/offline-queue.ts` — file IndexedDB, une entrée par session (re-noter
+  remplace), envoi au retour du réseau (`online` + `visibilitychange`),
+  indicateur « en attente d'envoi ». Une erreur réseau se retente, un refus de
+  l'API se jette — sinon la file rejoue l'échec indéfiniment
+- La file vit dans la page, **pas dans le service worker** : ce qu'on met en
+  attente est une notation avec sa règle propre, pas une requête à rejouer
+
+**Écrans**
+- **Jour** : une session `to_rate` passe **au-dessus du bloc de mer**, plein
+  cadre sur accent. Une fois notée, le bloc de mer reprend sa place et la
+  session du jour se range en pied avec ses deux notes
+- **`/sessions`** : historique en liste dense · **`/sessions/{id}`** : détail
+  avec la fenêtre `observed` et le `forecast` d'avant, en deux matrices de trois
+  colonnes
+- **Profil** : matos, sessions, raccourci iPhone. Le profil est enfin atteignable
+  — une icône en haut de Jour, il n'était routé nulle part depuis le lot 1 ter
+
+**Photos** — `POST /sessions/{id}/photo`, R2 en production. Ré-encodage en JPEG
+1 600 px : l'EXIF part avec, **GPS compris**.
+
+**Correction au passage** — `UtcDatetime` (`app/schemas/types.py`) recolle UTC
+aux datetimes rendus par SQLite. Sans décalage explicite, `new Date(...)` lit
+l'heure comme locale : une session de 10 h 30 s'affichait à 8 h 30 en
+développement. Invisible en production (asyncpg rend des datetimes conscients),
+permanent en local.
+
+**257 tests pytest + 15 tests vitest verts**, `npm run lint` et `npm run build`
+propres.
+
+**Vérifié en conditions réelles le 12/09** : chaîne complète jeton → quick POST
+en Bearer sans cookie → archive Open-Meteo → notation → historique. La Gravière
+reconnue à 206 m, fenêtre T−2 h/T−1 h/T0 remplie (0,62 m / 7,8 s / 310°, vent
+8,8 → 17,1 kt, marnage 4,11 m), idempotence confirmée, révocation du jeton
+effective sans toucher au cookie, session rétroactive sur Uluwatu — jamais
+ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
+
+### Lot 2 — ce qui reste (hors code, à faire à la main)
+- [ ] Monter le raccourci iOS sur le téléphone : `docs/RACCOURCI-IOS.md`
+- [ ] Créer le jeton depuis Profil → Raccourci iPhone, et le coller dans
+      l'en-tête `Authorization` du raccourci
+- [ ] Saisir le matos réel (planches, combinaisons) depuis Profil → Matos
+- [ ] Appliquer la migration `0005` en production (automatique au déploiement)
+- [ ] Poser `STORAGE_BACKEND=r2` et les clés R2 sur Railway si on veut les
+      photos — sans elles, l'envoi répond 502 et la notation marche quand même
 
 ### Décidé le 12/09 pour le lot 1 (cf. PROJET.md §11)
 - Spots : **catalogue mondial OpenStreetMap** (`sport=surfing`, Overpass), affichage filtré par **géolocalisation en direct + rayon du profil**, ajout manuel depuis la carte. Jamais de scraping de sites de prévi.

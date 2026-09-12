@@ -216,6 +216,8 @@ Deux usages distincts, deux modèles, deux écrans.
 
 > **IMPORTANT** — **Le risque de ce projet n'est pas la rareté des données, c'est la friction de saisie.** 240 sessions par an, c'est 240 formulaires. À 90 secondes pièce, 6 heures de saisie par an et un abandon au bout de trois mois. À 15 secondes, l'historique existe. **Le chemin de saisie rapide n'est pas un confort, c'est ce qui décide si le modèle aura des données** — d'où le `POST /sessions/quick` et le raccourci iPhone dès le lot 2 (§8).
 
+> *Fait le 12/09.* La saisie est coupée en deux moments plutôt que compressée en un seul : le raccourci enregistre la session **sortie de l'eau**, en un tap, sans note — le serveur devine le spot, estime le début et fige les conditions ; la notation se fait **plus tard, au sec**, en boutons. C'est cette coupure qui tient les quinze secondes, pas l'optimisation du formulaire. Recette : `docs/RACCOURCI-IOS.md`.
+
 **Le plus proche voisin sert surtout à expliquer.** Même quand la régression fait le classement, on cherche la session passée la plus proche pour produire la phrase — c'est ce qui rend la reco crédible, et ça dit aussi quelle planche prendre.
 
 **Implémentation** — extension `pgvector` sur le Postgres Railway si disponible (opérateur `<->`, une requête SQL, zéro serveur ML). Sinon un calcul de distance en SQL pur ou en NumPy dans le service est instantané à cette échelle. Ne pas sur-concevoir.
@@ -281,14 +283,14 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 | ✅ | **0** | Repo, infra, auth JWT, coquille PWA, déployé | 1 j | fait |
 | ✅ | **1** | Catalogue OSM + orientation de côte, tiers d'ingestion, Open-Meteo/MFWAM, `daily_log`, score cold start, accueil / comparateur / fiche spot / carte / profil | 3 j | fait |
 | ✅ | **1 ter** | **`run_ts`** dans `forecasts` (migration) · **navigation Jour / Mer / Corps** · **spot favori** dans le profil · bloc de mer enrichi sur Jour (prévision du favori) · écran Mer = explorateur en liste dense (grille 5 j × 8 créneaux pour le spot choisi, recherche / favoris / autour de moi) · écran Corps en coquille | 1,5 j | fait |
-| 1 | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | à faire |
-| 2 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
-| 3 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
-| 4 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
-| 5 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
+| ✅ | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | fait |
+| 1 | **4** | Training : objectifs mesurés, formules, mode séance plein écran avec timer, proposition du jour, jauges sur Corps | 2,5 j | à faire |
+| 2 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
+| 3 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
+| 4 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
 | — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-≈ **15 jours de dev effectif**, dont 5,5 déjà faits.
+≈ **15 jours de dev effectif**, dont 8 déjà faits.
 
 > **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente. *(Fait le 12/09 : migration `0003`, clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. `run_ts` est arrondi à l'heure — sans quoi chaque redémarrage à froid de Railway écrirait un run de plus pour la même prévision.)*
 
