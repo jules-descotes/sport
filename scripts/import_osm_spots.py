@@ -30,11 +30,24 @@ Trois passes :
    à plus de `MAX_COAST_DISTANCE_M` de la mer est écarté ici — c'est le filtre
    qui élimine les plages de lac, les vagues de rivière et les magasins restés
    dans les mailles du filet.
-3. **Écriture** — upsert sur la clé naturelle `(osm_type, osm_id)`.
+3. **Écriture** — upsert sur la clé naturelle `(osm_type, osm_id)`, **et
+   suppression** des spots `source='osm'` que le filtre côtier vient d'écarter :
+   sans ça, une plage de lac entrée pendant un passage dégradé resterait au
+   catalogue pour toujours.
 
    Le trait de côte n'est pas interrogé spot par spot — ce serait des milliers
    de requêtes Overpass. Les candidats sont regroupés en tuiles, et une requête
    par tuile rapporte tout le trait de côte de la zone.
+
+**Quand Overpass bloque**, on n'enchaîne pas les tuiles suivantes : un import
+réel en a perdu 49 d'affilée comme ça, parce que continuer à frapper une
+instance qui refuse les connexions ne fait que prolonger le bannissement. On
+attend 60 s, puis 120 s, puis 300 s, en reprenant **la même tuile** à chaque
+fois, et on n'abandonne qu'après. Les tuiles finalement perdues sont listées en
+fin de run avec la commande `--bbox` qui les rejoue.
+
+Une tuile abandonnée rend ses candidats **sans orientation et sans filtrage** :
+un import dégradé ne doit jamais déclencher de suppression.
 
 Ce calcul vit **ici et nulle part ailleurs** : jamais à la volée dans l'API
 (cf. CLAUDE.md). Une orientation de plage est de toute façon un *a priori* de
@@ -54,6 +67,7 @@ import asyncio
 import logging
 import math
 import sys
+import time
 from collections import defaultdict
 from typing import Any, Iterable, Optional, Sequence
 
@@ -64,7 +78,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.database import async_session
 from app.models.enums import SpotSource, SpotType
-from app.models.spot import Spot
+from app.models.spot import Spot, SpotPreference
+from app.models.surf_session import SurfSession
 from app.services.geo import (
     Point,
     nearest_coast_bearing,
@@ -82,8 +97,18 @@ logger = logging.getLogger("import_osm_spots")
 # Un agent identifiable est demandé par leur politique d'usage.
 USER_AGENT = "sport-atelier-okomi/1.0 (import mensuel de spots de surf)"
 OVERPASS_TIMEOUT_S = 900
+# Espacement minimal entre deux requêtes, garanti par `_throttle`.
 PAUSE_BETWEEN_QUERIES_S = 2.0
 MAX_RETRIES = 3
+
+# Attentes longues, appliquées à la **même tuile** quand Overpass bloque.
+# Enchaîner les tuiles suivantes pendant un bannissement ne fait que le
+# prolonger : un import réel a perdu 49 tuiles d'affilée comme ça. On attend,
+# on reprend la même tuile, et on n'abandonne qu'après la dernière attente.
+BLOCKED_BACKOFF_S = (60.0, 120.0, 300.0)
+
+# Horodatage de la dernière requête Overpass, pour `_throttle`.
+_last_request_at: Optional[float] = None
 
 # Clés qui trahissent un commerce, un club ou un bâtiment plutôt qu'un spot.
 # Un objet qui en porte une est écarté, quel que soit son `sport`.
@@ -171,10 +196,50 @@ out geom;
 """.strip()
 
 
+async def _throttle() -> None:
+    """Garantit `PAUSE_BETWEEN_QUERIES_S` entre deux requêtes, quoi qu'il arrive.
+
+    L'espacement est posé ici et pas dans la boucle des tuiles : une tuile en
+    échec, une reprise après attente longue ou un `continue` quelconque
+    sautaient la pause et enchaînaient les requêtes — ce qui est exactement ce
+    qui déclenche le blocage.
+    """
+    global _last_request_at
+
+    if _last_request_at is not None:
+        elapsed = time.monotonic() - _last_request_at
+        if elapsed < PAUSE_BETWEEN_QUERIES_S:
+            await asyncio.sleep(PAUSE_BETWEEN_QUERIES_S - elapsed)
+
+    _last_request_at = time.monotonic()
+
+
+def is_throttled(exc: BaseException) -> bool:
+    """L'erreur trahit-elle un blocage d'Overpass plutôt qu'une requête fautive ?
+
+    Deux formes, vues sur un import réel : le 429 qui survit aux trois
+    tentatives courtes, et le « All connection attempts failed » — l'instance
+    refuse la connexion avant même de répondre, ce qui est sa façon de bannir
+    un client trop pressé. Une requête mal écrite (400) ou un objet introuvable
+    n'ont, eux, aucune raison d'être rejoués huit minutes plus tard.
+    """
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (429, 502, 503, 504)
+    return False
+
+
 async def overpass(client: httpx.AsyncClient, query: str) -> dict[str, Any]:
-    """Appel Overpass avec backoff — 429 et 504 sont la norme, pas l'exception."""
+    """Appel Overpass avec backoff court — 429 et 504 sont la norme.
+
+    Les attentes longues, elles, sont gérées un cran au-dessus, par tuile
+    (cf. `fetch_coastline`) : ce n'est pas la même décision. Ici on absorbe un
+    hoquet ; là-haut on décide d'attendre cinq minutes ou d'abandonner.
+    """
     delay = 5.0
     for attempt in range(1, MAX_RETRIES + 1):
+        await _throttle()
         # Overpass attend la requête en `data=` encodé en formulaire ; un corps
         # brut se fait renvoyer un 406 par l'instance principale.
         response = await client.post(
@@ -326,32 +391,72 @@ def coast_orientation(
     }
 
 
+async def fetch_coastline(
+    client: httpx.AsyncClient, tile: tuple[int, int]
+) -> list[list[Point]]:
+    """Trait de côte d'une tuile, avec attentes longues si Overpass bloque.
+
+    Lève la dernière exception si la tuile reste injoignable après toutes les
+    attentes — l'appelant décide quoi en faire.
+    """
+    min_lat, min_lon, max_lat, max_lon = tile_bbox(tile)
+    query = coastline_query(min_lat, min_lon, max_lat, max_lon)
+
+    attempts = len(BLOCKED_BACKOFF_S) + 1
+    for attempt in range(attempts):
+        try:
+            return parse_coastlines(await overpass(client, query))
+        except Exception as exc:
+            last = attempt == attempts - 1
+            if last or not is_throttled(exc):
+                raise
+            wait = BLOCKED_BACKOFF_S[attempt]
+            logger.warning(
+                "Overpass bloque sur la tuile %s (%s) — pause de %.0f s avant "
+                "de reprendre la MÊME tuile (%d/%d)",
+                tile,
+                type(exc).__name__,
+                wait,
+                attempt + 1,
+                len(BLOCKED_BACKOFF_S),
+            )
+            await asyncio.sleep(wait)
+
+    raise RuntimeError("inatteignable")  # pragma: no cover
+
+
 async def orient_candidates(
     client: httpx.AsyncClient, candidates: Sequence[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], list[tuple[str, int]], list[tuple[int, int]]]:
     """Oriente les candidats et écarte ceux qui ne sont pas au bord de la mer.
 
-    Renvoie `(candidats côtiers, nombre d'écartés)`. Une requête de trait de
-    côte par tuile, pas une par spot.
+    Renvoie `(candidats côtiers, clés OSM écartées, tuiles abandonnées)`.
+
+    Les clés écartées ne le sont **que** sur la foi d'un trait de côte
+    réellement obtenu : une tuile abandonnée rend ses candidats tels quels,
+    sans orientation et sans les marquer. C'est ce qui permet de supprimer en
+    confiance les spots non côtiers à la passe suivante — un import dégradé ne
+    doit jamais faire supprimer quoi que ce soit.
     """
     by_tile: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for candidate in candidates:
         by_tile[tile_of(candidate["lat"], candidate["lon"])].append(candidate)
 
     coastal: list[dict[str, Any]] = []
-    dropped = 0
+    dropped_keys: list[tuple[str, int]] = []
+    abandoned: list[tuple[int, int]] = []
 
     for index, (tile, tile_candidates) in enumerate(sorted(by_tile.items()), start=1):
-        min_lat, min_lon, max_lat, max_lon = tile_bbox(tile)
         try:
-            payload = await overpass(
-                client, coastline_query(min_lat, min_lon, max_lat, max_lon)
-            )
-            ways = parse_coastlines(payload)
+            ways = await fetch_coastline(client, tile)
         except Exception as exc:
-            # Tuile injoignable : on garde les candidats sans orientation
-            # plutôt que de les perdre. Le prochain import les rattrapera.
-            logger.error("Trait de côte indisponible pour la tuile %s : %s", tile, exc)
+            # Tuile définitivement injoignable : on garde les candidats sans
+            # orientation plutôt que de les perdre, et on la signale en fin de
+            # run pour un rejeu ciblé.
+            logger.error(
+                "Tuile %s abandonnée après toutes les attentes : %s", tile, exc
+            )
+            abandoned.append(tile)
             coastal.extend(tile_candidates)
             continue
 
@@ -361,7 +466,7 @@ async def orient_candidates(
                 candidate["lat"], candidate["lon"], ways
             )
             if orientation is None:
-                dropped += 1
+                dropped_keys.append((candidate["osm_type"], candidate["osm_id"]))
                 continue
             candidate.update(orientation)
             coastal.append(candidate)
@@ -376,9 +481,8 @@ async def orient_candidates(
             kept,
             len(tile_candidates),
         )
-        await asyncio.sleep(PAUSE_BETWEEN_QUERIES_S)
 
-    return coastal, dropped
+    return coastal, dropped_keys, abandoned
 
 
 # ── Passe 3 : écriture ─────────────────────────────────────────────────────
@@ -477,6 +581,99 @@ async def upsert_spots(
     return stats
 
 
+async def delete_inland_spots(
+    db: AsyncSession,
+    dropped_keys: Sequence[tuple[str, int]],
+    dry_run: bool = False,
+) -> int:
+    """Supprime les spots OSM que le filtre côtier vient d'écarter.
+
+    Sans ça, une plage de lac entrée pendant un passage dégradé — trait de côte
+    indisponible, donc aucun filtre appliqué — resterait au catalogue pour
+    toujours : les passes suivantes l'écartent bien de la liste des candidats,
+    mais l'upsert ne touche que ce qu'on lui donne. Il faut donc une
+    suppression explicite.
+
+    Ne sont supprimés que les spots `source='osm'` : un spot ajouté à la main
+    l'a été en connaissance de cause, et il n'est pas reconstituable.
+
+    Deux exceptions, qui priment sur le verdict du trait de côte :
+    - un spot où Jules a déjà surfé est un spot, quoi qu'en dise OSM (et la
+      clé étrangère `RESTRICT` de `surf_sessions` ferait de toute façon
+      échouer la suppression) ;
+    - un spot en favori ou masqué est référencé par un identifiant dans
+      `spot_preferences`, qui n'a pas de clé étrangère pour le nettoyer : le
+      supprimer laisserait un lien mort sur le téléphone.
+    """
+    if not dropped_keys:
+        return 0
+
+    result = await db.execute(
+        select(Spot).where(
+            Spot.source == SpotSource.OSM.value,
+            Spot.osm_id.in_([osm_id for _, osm_id in dropped_keys]),
+        )
+    )
+    wanted = set(dropped_keys)
+    candidates = [
+        spot
+        for spot in result.scalars().all()
+        if (spot.osm_type, spot.osm_id) in wanted
+    ]
+    if not candidates:
+        return 0
+
+    spot_ids = [spot.id for spot in candidates]
+
+    surfed = set(
+        (
+            await db.execute(
+                select(SurfSession.spot_id).where(SurfSession.spot_id.in_(spot_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    referenced: set[int] = set()
+    for preferences in (
+        (await db.execute(select(SpotPreference))).scalars().all()
+    ):
+        referenced |= {int(i) for i in (preferences.favorite_spot_ids or [])}
+        referenced |= {int(i) for i in (preferences.hidden_spot_ids or [])}
+
+    deleted = 0
+    for spot in candidates:
+        if spot.id in surfed:
+            logger.info(
+                "Spot %s gardé malgré le filtre côtier : des sessions y sont "
+                "enregistrées",
+                spot.slug,
+            )
+            continue
+        if spot.id in referenced:
+            logger.info(
+                "Spot %s gardé malgré le filtre côtier : il est en favori ou "
+                "masqué",
+                spot.slug,
+            )
+            continue
+        logger.info(
+            "Suppression de %s (%s) : pas de mer à moins de %d m",
+            spot.slug,
+            spot.name,
+            int(MAX_COAST_DISTANCE_M),
+        )
+        await db.delete(spot)
+        deleted += 1
+
+    if dry_run:
+        await db.rollback()
+    else:
+        await db.commit()
+    return deleted
+
+
 # ── Orchestration ──────────────────────────────────────────────────────────
 
 
@@ -493,27 +690,59 @@ async def run(
         candidates = parse_elements(payload)
         logger.info("%d candidats nommés", len(candidates))
 
-        dropped = 0
+        dropped_keys: list[tuple[str, int]] = []
+        abandoned: list[tuple[int, int]] = []
         if not skip_coastline:
-            candidates, dropped = await orient_candidates(client, candidates)
+            candidates, dropped_keys, abandoned = await orient_candidates(
+                client, candidates
+            )
             logger.info(
                 "%d spots côtiers retenus, %d écartés (pas de mer à moins de %d m)",
                 len(candidates),
-                dropped,
+                len(dropped_keys),
                 int(MAX_COAST_DISTANCE_M),
             )
 
         async with async_session() as db:
             stats = await upsert_spots(db, candidates, dry_run)
+            stats["deleted_inland"] = await delete_inland_spots(
+                db, dropped_keys, dry_run
+            )
 
-        stats["dropped_inland"] = dropped
+        stats["dropped_inland"] = len(dropped_keys)
+        stats["abandoned_tiles"] = len(abandoned)
+
         logger.info(
-            "Spots : %d créés, %d mis à jour, %d ignorés (source=user)",
+            "Spots : %d créés, %d mis à jour, %d supprimés (non côtiers), "
+            "%d ignorés (source=user)",
             stats["created"],
             stats["updated"],
+            stats["deleted_inland"],
             stats["skipped_user"],
         )
+
+        if abandoned:
+            logger.warning(
+                "%d tuile(s) abandonnée(s) : leurs spots sont restés sans "
+                "orientation et n'ont PAS été filtrés. À rejouer :",
+                len(abandoned),
+            )
+            for command in replay_commands(abandoned):
+                logger.warning("    %s", command)
+
         return stats
+
+
+def replay_commands(tiles: Sequence[tuple[int, int]]) -> list[str]:
+    """Commandes `--bbox` prêtes à coller pour rattraper les tuiles perdues."""
+    commands = []
+    for tile in tiles:
+        min_lat, min_lon, max_lat, max_lon = tile_bbox(tile)
+        commands.append(
+            "python -m scripts.import_osm_spots --bbox "
+            f"{min_lat:.2f},{min_lon:.2f},{max_lat:.2f},{max_lon:.2f}"
+        )
+    return commands
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
