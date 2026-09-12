@@ -49,6 +49,33 @@ class Settings(BaseSettings):
     tides_api_key: str = ""
     forecast_ingest_interval_hours: int = 3
 
+    # Open-Meteo : gratuit, sans clé, en usage non commercial. Les URL sont en
+    # configuration et non en dur pour pouvoir corriger un changement d'API sans
+    # redéployer du code, jamais pour changer de fournisseur en douce.
+    openmeteo_marine_url: str = "https://marine-api.open-meteo.com/v1/marine"
+    openmeteo_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
+    openmeteo_archive_url: str = (
+        "https://historical-forecast-api.open-meteo.com/v1/forecast"
+    )
+    # Modèle de vagues demandé nommément. Ne JAMAIS le changer en cours de
+    # route : un biais constant s'annule dans l'apprentissage, un biais qui
+    # change casse tout l'historique (cf. PROJET.md §7.3).
+    forecast_wave_model: str = "meteofrance_wave"
+    # Écrite sur chaque ligne de `forecasts`. À incrémenter à la main le jour
+    # où Météo-France recalibre MFWAM : c'est la seule trace qui permettra de
+    # segmenter l'historique d'apprentissage avant / après.
+    forecast_model_version: str = "mfwam-2025"
+    # Cache des spots « potentiels » : au-delà, on réinterroge à l'ouverture.
+    forecast_cache_hours: int = 3
+    # Plafond dur d'appels par passe d'ingestion (cf. PROJET.md §6).
+    forecast_call_cap: int = 600
+    # Au-delà, l'écran est servi depuis la base et le reste se fait derrière.
+    forecast_on_demand_timeout_s: float = 5.0
+
+    # Overpass — catalogue OSM, interrogé uniquement par le script d'import
+    # mensuel, jamais depuis l'API.
+    overpass_url: str = "https://overpass-api.de/api/interpreter"
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _force_async_driver(cls, value: str) -> str:

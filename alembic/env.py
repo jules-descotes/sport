@@ -11,7 +11,11 @@ from app.db.database import Base
 
 # Import des modèles : sans eux, `Base.metadata` est vide et l'autogénération
 # proposerait de supprimer toutes les tables.
+from app.models.daily_log import DailyLog  # noqa: F401
+from app.models.forecast import Forecast, Observation  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
+from app.models.spot import Spot, SpotPreference  # noqa: F401
+from app.models.surf_session import SurfSession  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 config = context.config

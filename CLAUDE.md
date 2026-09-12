@@ -43,6 +43,7 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 - Front seul : `cd frontend && npm run dev` (port 3000)
 - Tests : `pytest tests/ -v`
 - API docs local : http://localhost:8000/docs
+- Import OSM : `python -m scripts.import_osm_spots [--bbox min_lat,min_lon,max_lat,max_lon] [--dry-run]`
 
 > Contrairement à Okomi, **`frontend/.env.local` pointe vers le back LOCAL** (`http://localhost:8000/api/v1`). Le dev local tape le local.
 
@@ -75,6 +76,7 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 - **Un seul hôte, déclaré partout.** `sport.atelier-okomi.fr` sans `www`, cohérent dans `SITE_URL`, `NEXT_PUBLIC_SITE_URL`, le manifest PWA et le cookie de session. Okomi a un désalignement apex/www non résolu — ne pas le reproduire.
 - **Open-Meteo est gratuit en usage non commercial.** Si le projet devient commercial un jour, la source change.
 - **Ne jamais changer de source ni de modèle de vagues en cours de route.** Modèle retenu : MFWAM via Open-Meteo. `forecasts` porte la source ET la version du modèle — les modèles de vagues sont recalibrés tous les ans ou deux, et un biais qui change casse tout l'historique d'apprentissage.
+- **`sport=surfing` d'OSM ne désigne pas des spots, mais des commerces.** Vérifié sur le terrain le 12/09 : sur la côte basco-landaise, les **68 objets** `sport=surfing` sont *tous* des magasins, des écoles ou des clubs — pas un seul spot. Idem à Santa Cruz (13/13) et sur la Gold Coast (12/13). Les vrais spots sont dans les **`natural=beach` nommées** (Plage de la Gravière, Les Culs Nus, Parlementia, Pavillon Royal…) et dans `natural=reef`. L'import ratisse donc les trois, écarte tout objet portant `shop`, `club`, `amenity`, `office`, `tourism`, `craft`, `building` ou `leisure`, et **rejette tout candidat à plus de 5 km du trait de côte** (plages de lac, vagues de rivière).
 - **Ne pas ré-héberger les flux de webcams** : iframe ou lien sortant uniquement.
 - **Aucune donnée CAFPI ici.** Projet strictement perso, sur le temps perso.
 - Le back Railway peut redémarrer à froid : prévoir un `/health` (comme Okomi) et un état de chargement propre côté front.
@@ -123,6 +125,29 @@ TIDES_API_KEY=
 FORECAST_INGEST_INTERVAL_HOURS=3
 ```
 
+### À ajouter sur Railway au lot 1
+Toutes ces variables ont une valeur par défaut dans `config.py` : l'application
+démarre sans elles. Les deux premières méritent d'être **posées explicitement**,
+parce qu'elles décident de la cohérence de l'historique d'apprentissage ; les
+autres ne servent qu'à corriger un incident sans redéployer.
+
+```
+FORECAST_WAVE_MODEL=meteofrance_wave   # à poser explicitement — ne JAMAIS changer
+FORECAST_MODEL_VERSION=mfwam-2025      # à poser explicitement — bump à la main
+                                       # le jour où Météo-France recalibre MFWAM
+FORECAST_CACHE_HOURS=3                 # cache des spots « potentiels »
+FORECAST_CALL_CAP=600                  # plafond dur par passe d'ingestion
+FORECAST_ON_DEMAND_TIMEOUT_S=5         # au-delà : on sert la base, on complète derrière
+OVERPASS_URL=https://overpass-api.de/api/interpreter
+OPENMETEO_MARINE_URL=https://marine-api.open-meteo.com/v1/marine
+OPENMETEO_FORECAST_URL=https://api.open-meteo.com/v1/forecast
+OPENMETEO_ARCHIVE_URL=https://historical-forecast-api.open-meteo.com/v1/forecast
+```
+
+Aucune clé d'API n'est nécessaire : Open-Meteo et Overpass sont gratuits et sans
+authentification en usage non commercial. `WINDY_WEBCAMS_API_KEY` reste vide —
+les webcams sont saisies à la main par URL sur la fiche spot au lot 1.
+
 ## Variables d'environnement — Vercel (front)
 ```
 NEXT_PUBLIC_API_URL=https://api-sport.atelier-okomi.fr/api/v1
@@ -132,7 +157,7 @@ NEXT_PUBLIC_APP_NAME=Sport
 
 ## État d'avancement
 - [x] Lot 0 — repo, infra, auth, coquille PWA — **code terminé le 2026-09-12**, mise en ligne à faire
-- [ ] Lot 1 — spots, ingestion météo, écran d'accueil, webcams
+- [x] Lot 1 — spots, ingestion météo, écran d'accueil, webcams — **code terminé le 2026-09-12**, import OSM à lancer en production
 - [ ] Lot 2 — log de session, matos, notation, hors-ligne
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 4 — training
@@ -156,13 +181,77 @@ NEXT_PUBLIC_APP_NAME=Sport
 - 10 tests pytest verts, `npm run lint` et `npm run build` propres, CI GitHub Actions
 
 ### Lot 0 — ce qui reste (hors code, à faire à la main)
-- [ ] Créer le dépôt GitHub `jules-descotes/sport` et pousser
+- [x] Créer le dépôt GitHub `jules-descotes/sport` et pousser
 - [ ] Railway : service back (Dockerfile) + Postgres dédié, variables d'environnement
 - [ ] Vercel : projet front sur `/frontend`, variables `NEXT_PUBLIC_*`
 - [ ] OVH : CNAME `sport` et `api-sport` sur `atelier-okomi.fr`
 - [ ] Installer la PWA sur le téléphone et vérifier le plein écran iOS
 
-### À décider avant le lot 1 (cf. PROJET.md §11)
-- [ ] Liste des 8 à 12 spots de départ (seules les coordonnées sont indispensables)
-- [ ] Surf seul, ou surf + foil dès le départ
-- [ ] Marées : API payante ou table statique annuelle
+### Lot 1 — ce qui est livré (2026-09-12)
+**Catalogue**
+- `scripts/import_osm_spots.py` — Overpass mondial, rejouable tous les mois,
+  idempotent sur la clé `(osm_type, osm_id)`, **ne touche jamais aux spots
+  `source='user'`**. Options `--bbox`, `--skip-coastline`, `--dry-run`
+- Orientation de côte **calculée** : cap du segment `natural=coastline` le plus
+  proche, lissé sur 500 m ; la convention OSM « terre à gauche, mer à droite »
+  donne `onshore_dir_deg` = cap + 90°. Jamais calculée à la volée dans l'API
+- `spots.tier` (`home` / `potential` / `catalog`) recalculé à chaque connexion,
+  changement de favoris et changement de position (> 5 km). Favoris plafonnés à 20
+- `spot_preferences` : rayon, favoris, masqués, domicile, dernière position
+- `POST /spots`, `GET /spots/nearby`, `GET|PATCH /spots/{ref}`,
+  `POST /spots/{ref}/favorite`, `/hide`, `GET|PUT /spots/preferences`,
+  `POST /spots/position`. Routes fixes déclarées avant les paramétrées
+
+**Ingestion**
+- `forecast_ingest` planifié : **spots `home` uniquement**
+- À la demande sur `/recommend` et `/spots/{ref}/forecast` si le cache dépasse
+  3 h ; au-delà de 5 s, la réponse part de la base et le reste se complète dans
+  une tâche détachée (`refreshing` dans la réponse)
+- `ON CONFLICT (spot_id, ts, source) DO UPDATE`, plafond dur 600 appels par
+  passe, backoff exponentiel sur 429 en respectant `Retry-After`
+- Trois appels par spot : houle MFWAM, puis niveau de la mer et température
+  d'eau (hors modèle de vagues), puis vent en nœuds
+- **Backfill** à la création d'une session, y compris rétroactive et sur un spot
+  jamais ingéré : archive Open-Meteo sur T−2 h → T0 → volet `observed`. Un échec
+  d'archive n'empêche jamais l'enregistrement
+- `observations` créée **vide** (CANDHIS au lot 1 bis), `daily_log` + endpoints
+
+**Score et reco**
+- `services/scoring.py` — règles génériques, sans aucune fenêtre par spot.
+  Taille et vent sont des **facteurs**, pas des termes : un jour à plat ou un
+  coup de vent onshore écrase la note au lieu de se faire compenser
+- `GET /recommend` sert l'accueil **et** le comparateur en un appel : verdict
+  OUI / NON / PEUT-ÊTRE sur la prochaine fenêtre de jour, meilleur créneau,
+  grille heures × spots sur 5 jours, phrase en français
+- Lever et coucher du soleil calculés localement (`services/sun.py`) : pas
+  d'appel supplémentaire, et les créneaux de nuit sont écartés
+
+**Front**
+- Accueil « verdict en très grand », swipe `daily_log`, comparateur heures ×
+  spots, fiche spot (webcam, courbe de houle et niveau de la mer en SVG à la
+  main, favori / masquer), carte avec ajout par appui long, profil (domicile +
+  rayon). Géoloc avec repli sur le domicile
+- `TileMap` écrit à la main plutôt qu'une librairie de cartographie, attribution
+  ODbL affichée en permanence
+- **170 tests pytest verts**, `npm run lint` et `npm run build` propres
+
+**Vérifié en conditions réelles le 12/09** : Open-Meteo (prévision et archive),
+Overpass (70 spots importés sur la côte basco-landaise, orientations correctes —
+Parlementia NO, Ciboure N dans sa baie), rejeu de l'import idempotent,
+`/recommend` et session rétroactive de bout en bout.
+
+### Lot 1 — ce qui reste (hors code)
+- [ ] Lancer `python -m scripts.import_osm_spots` en production (monde entier,
+      compter plusieurs heures — Overpass est bénévole et renvoie des 429)
+- [ ] Valider `sea_level_height_msl` contre l'annuaire SHOM sur quelques marées
+- [ ] Saisir les URL de webcams des spots maison (`PATCH /spots/{ref}`)
+- [ ] Relancer l'import tous les mois (à la main, ou cron Railway plus tard)
+
+### Décidé le 12/09 pour le lot 1 (cf. PROJET.md §11)
+- Spots : **catalogue mondial OpenStreetMap** (`sport=surfing`, Overpass), affichage filtré par **géolocalisation en direct + rayon du profil**, ajout manuel depuis la carte. Jamais de scraping de sites de prévi.
+- **Ingestion à trois niveaux, jamais « tous les spots tout le temps »** : spots maison (favoris, ≤ 20) en planifié toutes les 3 h ; spots potentiels (rayon + position courante) **à la demande à l'ouverture de l'app**, cache 3 h ; le reste du catalogue jamais. Plafond dur 600 appels par passe, backoff sur 429.
+- **Backfill à l'enregistrement d'une session** : archive Open-Meteo sur T−2 h → T0 pour remplir `observed`, quel que soit le spot. Le modèle de goût s'entraîne sur `observed`.
+- Orientation de la côte **calculée** depuis le trait de côte OSM, pas saisie.
+- Discipline : **surf seul à l'écran** en V1, colonne conservée.
+- Marées : **Open-Meteo `sea_level_height_msl`**, à valider contre l'annuaire SHOM.
+- CANDHIS : jeton pas encore reçu → lot 1 bis.

@@ -9,13 +9,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.daily_log import router as daily_log_router
+from app.api.routes.recommend import router as recommend_router
+from app.api.routes.sessions import router as sessions_router
+from app.api.routes.spots import router as spots_router
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.database import async_session
 
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
 # Alembic la cible de l'autogénération).
+from app.models.daily_log import DailyLog  # noqa: F401
+from app.models.forecast import Forecast, Observation  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
+from app.models.spot import Spot, SpotPreference  # noqa: F401
+from app.models.surf_session import SurfSession  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 # Les journaux applicatifs doivent remonter dans les logs Railway.
@@ -102,6 +110,10 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(spots_router, prefix="/api/v1")
+app.include_router(recommend_router, prefix="/api/v1")
+app.include_router(daily_log_router, prefix="/api/v1")
+app.include_router(sessions_router, prefix="/api/v1")
 
 
 @app.get("/")

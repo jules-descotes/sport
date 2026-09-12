@@ -3,18 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
+from app.db.types import JSONVariant
 from app.models.enums import Discipline
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-# JSONB en Postgres, JSON en SQLite : même code, même API SQLAlchemy.
-JSONVariant = JSON().with_variant(JSONB(), "postgresql")
 
 
 class Profile(Base):

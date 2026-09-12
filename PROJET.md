@@ -127,7 +127,8 @@ CLAUDE.md  PROJET.md
 **Global** — `users` · `profiles` (taille, poids, niveau, disciplines) · `body_metrics` (date, poids, tour de taille, photo R2)
 
 **Surf**
-- `spots` — slug, nom, lat/lon, type (beach/reef/point), orientation de la plage, fenêtres idéales (houle min/max, période min, secteur de vent offshore, marée), niveau requis, URL webcam
+- `spots` — **catalogue mondial** importé d'OpenStreetMap (`sport=surfing`), complété à la main par Jules : slug, nom, lat/lon, pays, type (beach/reef/point), **orientation de la côte calculée** depuis le trait de côte OSM (pas saisie), source (`osm` / `user`), URL webcam. Colonne `is_active` : seuls les spots actifs sont ingérés (cf. §6)
+- `spot_preferences` — par utilisateur : rayon d'affichage (km), spots favoris, spots masqués
 - `forecasts` — spot_id, ts, hauteur/période/direction de houle, composantes de swell, vent moyen et rafale, température de l'eau, **source + version du modèle**. **Contrainte unique `(spot_id, ts, source)`**
 - `observations` — mesures réelles (bouée CANDHIS, station de vent) : station_id, ts, Hm0, Tp, T02, direction, vent. Table **distincte** de `forecasts` : ce n'est pas la même grandeur, on ne les mélange jamais dans un même vecteur
 - `tides` — spot_id, ts, hauteur, pleine/basse mer, marnage du jour
@@ -156,13 +157,27 @@ CLAUDE.md  PROJET.md
 | Houle, période, direction, swell — **prévision** | **Open-Meteo Marine API**, modèle **MFWAM (Météo-France)** explicitement sélectionné. Archive MFWAM depuis oct. 2021, ERA5-Ocean depuis 1940 | gratuit, sans clé, usage non commercial |
 | Houle — **mesure réelle** | **CANDHIS (Cerema)** — `candhis.cerema.fr/API/v1/`, bouée de la côte basque. Alimente le modèle dernière minute et la calibration | gratuit, **jeton à demander** à candhis@cerema.fr |
 | Vent, pluie, température de l'air | Open-Meteo Forecast API | gratuit, sans clé |
-| Marées | WorldTides ou table annuelle importée une fois (le SHOM est payant) | **à décider** |
+| Marées | **Open-Meteo Marine — `sea_level_height_msl`** (même appel que la houle). C'est un modèle, pas une prédiction harmonique : **à valider contre l'annuaire SHOM** sur quelques marées avant de s'y fier | gratuit, zéro intégration en plus |
+| Catalogue de spots | **OpenStreetMap via Overpass API** — `natural=beach` nommées, `natural=reef` nommés et `sport=surfing` **dépouillé du commerce**, import mensuel. Couverture inégale : l'app permet d'ajouter un spot depuis la carte | gratuit, licence ODbL (attribution) |
 | Webcams | Windy Webcams API v3 pour le catalogue + iframe vers les webcams locales (Biarritz, Anglet, Landes) | clé gratuite |
 | Aliments FR | Table Ciqual 2025 (ANSES / data.gouv.fr) | gratuit, import unique |
 | Produits au code-barres | Open Food Facts | gratuit, sans clé |
 | Exercices | wger (open source) pour amorcer | gratuit |
 
 > **IMPORTANT** — **Pas de scraping.** Tout est en API propre : plus simple, légal, plus fiable. Et l'archive Open-Meteo permet de **reconstituer rétroactivement** les conditions des sessions passées si Jules les saisit.
+
+> **IMPORTANT — `sport=surfing` ne désigne pas des spots.** Vérifié le 12/09 en interrogeant Overpass : sur la côte basco-landaise, les **68 objets** `sport=surfing` sont *tous* des magasins, des écoles ou des clubs. Zéro spot. Même chose à Santa Cruz (13 objets, 13 commerces) et sur la Gold Coast (12 sur 13). Les vrais spots sont dans les **`natural=beach` nommées** — Plage de la Gravière, Les Culs Nus, Parlementia, Pavillon Royal, Lafitenia — et dans `natural=reef`. L'import ratisse donc les trois sources, écarte tout objet portant `shop`, `club`, `amenity`, `office`, `tourism`, `craft`, `building` ou `leisure`, et **rejette tout candidat à plus de 5 km du trait de côte** : sans ce dernier filtre, un catalogue mondial de plages nommées se remplit de plages de lac.
+
+> **IMPORTANT — Pas de scraping de Surfline, MSW ou Windguru pour le catalogue.** C'est contraire à leurs conditions d'utilisation et ça casse au premier changement de page. OSM est la seule base mondiale ouverte ; là où elle est vide, Jules ajoute le spot en deux taps.
+
+> **IMPORTANT — Le catalogue est mondial, l'ingestion ne l'est pas. Trois niveaux :**
+> - **Spots maison** (favoris, ≤ 20) : ingestion **planifiée** toutes les 3 h. C'est le seul niveau qui capture la prévision *au moment où elle est faite* — indispensable pour la calibration prévision ↔ mesure, pour les notifications de la veille au soir, et pour renseigner le `daily_log` les jours où l'app n'est pas ouverte.
+> - **Spots potentiels** (rayon du profil + autour de la position courante) : **à la demande**, à l'ouverture de l'app, cache de 3 h par spot. Zéro appel tant que personne ne regarde.
+> - **Tout le reste du catalogue** : rien. Visible sans prévision, activable en un tap.
+>
+> Budget : Open-Meteo gratuit = 10 000 appels/jour. 20 spots maison × 2 appels × 8 passes = 320 ; une ouverture d'app sur 15 spots = 30. On est très loin du plafond, et le plafond reste codé en dur (600 appels par passe maximum, backoff sur 429).
+
+> **IMPORTANT — Le passé se récupère, la prévision passée non.** À l'enregistrement d'une session (ou d'une session rétroactive), on **remonte l'archive Open-Meteo** pour la fenêtre T−2 h → T0 et on remplit le volet `observed` du `conditions_snapshot` — pour n'importe quel spot du monde, sans l'avoir ingéré avant. En revanche, **la prévision telle qu'elle était la veille n'est pas reconstituable** : l'API Previous Runs d'Open-Meteo ne couvre que la météo de surface, pas les vagues, et sur 3 mois. Le volet `forecast` n'est donc garanti que sur les spots maison.
 
 > **IMPORTANT** — Prévision et mesure sont **deux grandeurs différentes**, stockées dans deux tables. La bouée n'existe pas dans le futur : elle ne peut pas servir au modèle moyen terme. En revanche, le couple (prévision, mesure) s'accumule **toutes les heures dès le jour 1** — soit ~8 700 points par an, sans aller à l'eau. De quoi mesurer l'erreur du fournisseur et afficher une barre d'incertitude sur les recos.
 
@@ -210,6 +225,8 @@ Deux usages distincts, deux modèles, deux écrans.
 > *Proche de ta session du 12/10/25 notée 5/5 — tu étais en 6'2.*
 
 ### 7.3 Cohérence des sources
+
+- **Le modèle de goût s'entraîne sur `observed`** (archive Open-Meteo remontée à l'enregistrement de la session, bouée quand elle existe). C'est la grandeur disponible pour *toutes* les sessions, y compris sur un spot de voyage jamais ingéré. Il est servi sur la prévision ; l'écart prévision ↔ observé se mesure séparément sur les spots maison, qui sont les seuls à capturer les deux.
 
 - **Ne jamais changer de source ou de modèle en cours de route.** Un biais systématique constant s'annule dans l'apprentissage ; un biais qui change casse tout l'historique.
 - Stocker **la source et la version du modèle** sur chaque ligne de `forecasts`. Les modèles de vagues sont recalibrés tous les ans ou deux.
@@ -259,14 +276,15 @@ Liste vivante. Tout ce qui est ici est **stocké** dès le lot 1 ; seules les li
 | Lot | Contenu | Effort |
 |---|---|---|
 | **0** | Repo, Dockerfile + railway.json copiés, Postgres Railway, Vercel, DNS, auth JWT, shell PWA + barre basse, **déployé en ligne** | 1 j |
-| **1** | Spots, ingestion Open-Meteo/MFWAM + CANDHIS (APScheduler), **`daily_log` (swipe quotidien)**, écran « je vais à l'eau ? », webcams | 2,5 j |
+| **1** | Catalogue OSM + orientation de côte, activation par rayon/géoloc, ingestion Open-Meteo/MFWAM (houle, vent, niveau marin) pour les spots actifs, **`daily_log`**, écran « je vais à l'eau ? », comparateur, fiche spot, webcams | 3 j |
+| **1 bis** | Bouée CANDHIS + station de vent → `observations`, dès réception du jeton | 0,5 j |
 | **2** | Log de session surf, matos, double notation, **`conditions_snapshot` en fenêtre T−2h**, file hors-ligne, **`POST /sessions/quick` + raccourci iPhone** | 2,5 j |
 | **3** | Reco par règles → ridge, **double horizon** (moyen terme / dernière minute), phrase d'explication par plus proche voisin | 1,5 j |
 | **4** | Training : exercices, programmes, mode séance plein écran, streak | 2 j |
 | **5** | Nutrition : import Ciqual, journal, cible calorique, menu de la semaine | 2 j |
 | **6** | Stats et corrélations conditions ↔ note | 1 j |
 
-≈ **12,5 jours de dev effectif**.
+≈ **13,5 jours de dev effectif**.
 
 > **IMPORTANT** — **Mise en ligne à la fin du lot 0**, pas à la fin du lot 6. Un projet perso qui n'est pas installable sur le téléphone dans la première soirée ne sort jamais. Et l'ingestion démarre au lot 1 : chaque jour d'ingestion est un jour de données pour le modèle, et le `daily_log` commence à accumuler les labels négatifs bien avant que la reco existe.
 
@@ -316,9 +334,9 @@ Liste vivante. Tout ce qui est ici est **stocké** dès le lot 1 ; seules les li
 
 ## 11. À décider avant de coder
 
-- [ ] **Liste des spots** — 8 à 12 max pour démarrer (Anglet, Biarritz, Bidart, Guéthary, Hendaye, Hossegor, Seignosse, Capbreton ?). Seules les coordonnées sont indispensables : l'orientation et les fenêtres idéales ne servent qu'au cold start, une estimation grossière suffit, le modèle apprendra le reste.
-- [ ] **Disciplines suivies** : surf seul, ou surf + foil dès le départ ?
-- [ ] **Marées** : API payante ou table statique annuelle importée une fois ?
+- [x] **Spots** — catalogue mondial OSM, affichage filtré par géolocalisation en direct et rayon du profil, ajout manuel possible (décidé le 12/09)
+- [x] **Disciplines** — surf seul à l'écran pour la V1 ; la colonne `discipline` existe quand même (décidé le 12/09)
+- [x] **Marées** — Open-Meteo `sea_level_height_msl`, à valider contre le SHOM (décidé le 12/09)
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.schemas.user import LoginRequest, ProfileUpdate, Token, UserRead
 from app.services.auth_service import authenticate_user, get_current_active_user
+from app.services.spot_tiers import get_or_create_preferences, recompute_tiers
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,6 +48,13 @@ async def login(
 
     token = create_access_token({"sub": user.email})
     _set_session_cookie(response, token)
+
+    # Les niveaux d'ingestion se recalculent à chaque connexion : le catalogue
+    # a pu grossir depuis le dernier import OSM, et un spot nouvellement importé
+    # dans le rayon doit devenir « potentiel » sans attendre.
+    preferences = await get_or_create_preferences(db, user.id)
+    await recompute_tiers(db, preferences)
+
     return Token(access_token=token)
 
 
