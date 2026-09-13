@@ -25,6 +25,11 @@ import logging
 
 from sqlalchemy import select
 
+# `app.main` et rien d'autre : c'est lui qui importe **tous** les modèles, donc
+# le seul endroit où le registre SQLAlchemy est complet. Importer `User` seul
+# fait échouer la configuration de son mapper sur `Profile`, qui n'est alors
+# nulle part — constaté au premier lancement en production.
+import app.main  # noqa: F401
 from app.db.database import async_session
 from app.models.user import User
 from app.services.exercise_images import borrow_missing_images
