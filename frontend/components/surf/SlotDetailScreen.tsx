@@ -91,36 +91,53 @@ export function SlotDetailScreen({
   slug,
   ts,
   onClose,
+  variant = "screen",
 }: {
   slug: string;
   ts: string;
   onClose: () => void;
+  /**
+   * `panel` : rendu dans la colonne de droite de l'écran Surf, à côté du
+   * tableau, sur desktop (décidé le 13/09). Le contenu ne change pas — c'est
+   * le même créneau et les mêmes chiffres — seule la boîte change : pas de
+   * `<main>` (il y en a déjà un sur la page), une bordure, et un libellé de
+   * fermeture qui dit « fermer » plutôt que « retour », puisqu'on ne quitte
+   * rien.
+   */
+  variant?: "screen" | "panel";
 }) {
   const { data, isPending, error } = useQuery({
     queryKey: ["spot-slot", slug, ts],
     queryFn: () => api.spotSlot(slug, ts),
   });
 
+  const panel = variant === "panel";
+  const Frame = panel ? "div" : "main";
+  const frameClass = panel
+    ? "overflow-hidden rounded-card border border-line bg-card pb-6"
+    : "pb-10";
+  const backLabel = panel ? "Fermer le détail" : "Retour au tableau";
+
   if (isPending) {
     return (
-      <main className="px-5 py-10">
+      <Frame className={`${frameClass} px-5 py-10`}>
         <p className="text-[14px] text-mute">Lecture du créneau…</p>
-      </main>
+      </Frame>
     );
   }
 
   if (error || !data) {
     return (
-      <main className="px-5 py-10 text-center">
+      <Frame className={`${frameClass} px-5 py-10 text-center`}>
         <p className="text-[16px] text-ink">Créneau indisponible.</p>
         <button
           type="button"
           onClick={onClose}
           className="mt-4 min-h-touch rounded-button border border-line bg-card px-5 text-[15px] font-semibold text-ink-2"
         >
-          Retour au tableau
+          {backLabel}
         </button>
-      </main>
+      </Frame>
     );
   }
 
@@ -129,12 +146,12 @@ export function SlotDetailScreen({
   const deltas = DELTA_ROWS.filter((row) => data.delta[row.key] !== undefined);
 
   return (
-    <main className="pb-10">
+    <Frame className={frameClass}>
       <header className="flex items-center gap-3 px-5 pb-1 pt-4">
         <button
           type="button"
           onClick={onClose}
-          aria-label="Retour au tableau"
+          aria-label={backLabel}
           className="-ml-2 flex h-touch w-touch shrink-0 items-center justify-center rounded-button text-ink-2"
         >
           <IconBack className="h-5 w-5" />
@@ -369,6 +386,6 @@ export function SlotDetailScreen({
           </p>
         )}
       </section>
-    </main>
+    </Frame>
   );
 }

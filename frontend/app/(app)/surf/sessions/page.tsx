@@ -289,7 +289,10 @@ export default function SessionsPage() {
           Historique indisponible. Réessaie quand le réseau revient.
         </p>
       ) : data && data.length > 0 ? (
-        <ul className="mx-5 overflow-hidden rounded-card border border-line bg-card">
+        /* Desktop : deux colonnes de lignes. Une liste de 240 sessions par an
+           sur 1 600 px de large laisserait un mètre de vide entre le nom du
+           spot et sa note ; couper en deux garde l'œil sur la ligne. */
+        <ul className="mx-5 overflow-hidden rounded-card border border-line bg-card lg:grid lg:grid-cols-2">
           {data.map((session) => (
             <SessionRow key={session.id} session={session} />
           ))}

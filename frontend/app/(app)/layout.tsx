@@ -59,7 +59,13 @@ export default function AppLayout({
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col">
+    /* **Largeur.** Mobile : une colonne, bord à bord. Desktop : jusqu'à
+       1600 px, et les écrans s'en servent pour poser leurs colonnes
+       (décidé le 13/09 — « fini le contenu centré en colonne étroite »).
+       La borne est ici, une seule fois, et non dans chaque page : une page
+       qui déciderait de sa propre largeur maximale finirait décalée des
+       autres au premier oubli. */
+    <div className="mx-auto flex min-h-dvh w-full max-w-[1600px] flex-col">
       {/* La barre basse est fixe : on réserve sa hauteur plus la zone sûre iOS. */}
       <div className="flex-1 pb-[calc(76px+env(safe-area-inset-bottom))]">
         {children}

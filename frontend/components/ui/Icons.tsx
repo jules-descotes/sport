@@ -317,3 +317,83 @@ export function IconRestore({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Rafraîchir — la flèche qui reboucle. Même dessin qu'IconRestore, inversé :
+ *  l'une ramène une session, l'autre relance une requête. */
+export function IconRefresh({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5" />
+      <path d="M20 4v4h-4" />
+    </svg>
+  );
+}
+
+/** Lune — la marée, et le coefficient qui va avec. */
+export function IconMoon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+    </svg>
+  );
+}
+
+/** Réglages — les critères d'un spot favori. */
+export function IconSliders({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </svg>
+  );
+}
+
+/** Poignée de déplacement — l'ordre des favoris. */
+export function IconDrag({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01" />
+    </svg>
+  );
+}
+
+/** Flamme — une série de jours consécutifs, sans jugement. */
+export function IconFlame({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3c3 3.5 4.5 6 4.5 8.5a4.5 4.5 0 0 1-9 0C7.5 9 9 6.5 12 3z" />
+      <path d="M12 21a3 3 0 0 0 3-3c0-1.5-1-2.5-3-4.5-2 2-3 3-3 4.5a3 3 0 0 0 3 3z" />
+    </svg>
+  );
+}
+
+/** Code-barres — le scan d'un produit au journal de nutrition. */
+export function IconBarcode({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 6v12M7.5 6v12M11 6v8M14.5 6v12M18 6v12M20.5 6v8" />
+    </svg>
+  );
+}
+
+/** Balance — la pesée hebdomadaire. */
+export function IconScale({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
+      <path d="M8 10.5a4 4 0 0 1 8 0" />
+      <path d="M12 10.5 13.6 8" />
+    </svg>
+  );
+}
+
+/** Panier — la liste de courses du menu de la semaine. */
+export function IconBasket({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M3.5 9h17l-1.6 9.2a2 2 0 0 1-2 1.8H7.1a2 2 0 0 1-2-1.8z" />
+      <path d="M8.5 9 11 4M15.5 9 13 4" />
+    </svg>
+  );
+}

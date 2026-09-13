@@ -439,6 +439,16 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - **Sessions** : création manuelle et modification des anciennes **depuis le navigateur**, pas seulement le raccourci.
 - **Programmes d'entraînement** : exercices importés depuis des bases **ouvertes** (wger, free-exercise-db) ; les formules sont composées à partir d'eux pour les objectifs du document design. **Aucun scraping de sites commerciaux de programmes** (droits d'auteur, CGU, et la même leçon que `sport=surfing` : vérifier la donnée avant de s'y fier).
 - **HTTPS partout** : HSTS, redirection http → https, `upgrade-insecure-requests`, aucune ressource http (webcams comprises).
+
+### Décidé le 13/09 (suite) — retours après deux jours d'usage, à livrer en parallèle du lot 5
+- **Notation plus fine** : demi-points sur l'échelle 1-5 (stockés ×2 en entier), et **segments horaires optionnels** (`session_segments` : heure, note conditions, note perso). Chaque segment noté s'aligne sur la ligne horaire de `forecasts` — c'est un point d'apprentissage à part entière.
+- **Plusieurs spots favoris**, chacun avec des **critères larges saisis par Jules** (`spot_rules` : houle min/max, période min, secteurs de houle et de vent acceptés, vent max, phase de marée). Quand un créneau des 3 prochains jours correspond, Jour l'annonce (« Parlementia devrait marcher dim. 10 h »). C'est l'*a priori* du §7.4, mais c'est le sien — il prime sur l'orientation calculée.
+- **Coefficient de marée** : calculé à partir du niveau marin Open-Meteo **à Brest** (définition SHOM, U = 3,05 m, N0 = niveau moyen), le coefficient étant national par définition. Validé contre l'annuaire SHOM ; affiché « ≈ » si l'écart dépasse 5 points. Au survol dans les prévisions, dans le détail de session.
+- **Énergie** affichée dans le détail et l'historique des sessions (même forme et même constante que l'écran Surf).
+- **Desktop** : les écrans utilisent la largeur — max 1600 px, multi-colonnes, tableau horaire étendu à 2-3 jours visibles. Fini le contenu centré en colonne étroite.
+- **Cache client** des prévisions : affichage immédiat depuis IndexedDB, rafraîchissement seulement si la donnée a plus de 2 h (stale-while-revalidate). Le cache serveur de 3 h reste.
+- **Profil** : stats sympas — surf (sessions, heures, note moyenne, spot n°1, série en cours), nutrition (jours dans la cible), training (formules respectées / prévues).
+- **Suivi d'habitudes quotidiennes** (`habits`, `habit_events`) : compteurs libres définis par Jules, saisie en un tap depuis Jour, ton neutre — jamais de rouge ni de morale. Servira plus tard à croiser avec le ressenti.
 - `OVERPASS_URL` : poser en variable Railway l'instance qui a fonctionné (overpass-api.de bannit l'IP de sortie Railway). `railway.json` est déprécié au profit de `.railway/railway.ts` — migration avant le 2026-12-01.
 
 ### Lot 2 ter — ce qui est livré (2026-09-13)

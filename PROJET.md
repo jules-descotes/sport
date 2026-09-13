@@ -349,7 +349,8 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 - [x] **Ordre des lots** — 1 ter → 2 → 4 → 5 → 3 → 6 (décidé le 12/09 soir)
 - [x] **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil, et **prévision heure par heure façon Windguru** sur l'écran Surf (flèches de direction, énergie de houle), résumé 3 h sur Jour (décidé le 13/09 après première utilisation en ligne)
 - [x] **Sessions créables et modifiables depuis le navigateur**, pas seulement via le raccourci iPhone (13/09)
-- [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09). *Fait : consignes rédigées en français dans `services/training_catalog.py`, images et groupes musculaires importés par `scripts/import_exercises.py`, source et licence sur chaque ligne.*
+- [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09)
+- [x] **Retours d'usage du 13/09** : demi-points et segments horaires de notation, plusieurs favoris avec critères saisis, coefficient de marée via Brest, énergie dans les sessions, desktop élargi, cache client 2 h, stats de profil, suivi d'habitudes quotidiennes — détail dans `CLAUDE.md` « Décidé le 13/09 (suite) ». *Fait : consignes rédigées en français dans `services/training_catalog.py`, images et groupes musculaires importés par `scripts/import_exercises.py`, source et licence sur chaque ligne.*
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

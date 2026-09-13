@@ -41,8 +41,19 @@ import type { ForecastPoint, SunDay } from "@/lib/types";
  * largeur, de tomber pile sur ses colonnes.
  */
 
-/** Largeur d'une colonne d'heure. 46 px : au-dessus de la cible de 44 px. */
+/**
+ * Largeur d'une colonne d'heure — **46 px au doigt, 30 px à la souris**.
+ *
+ * 46 px sur téléphone : la cible tactile de 44 px du CLAUDE.md, et pas un
+ * pixel de moins. Au-dessus de 1024 px, le pointeur est une souris et la règle
+ * des 44 px ne s'applique plus en largeur ; la hauteur de ligne, elle, ne
+ * bouge pas. Ce sont ces 30 px qui font tenir **deux jours entiers** — 48
+ * heures — dans les 1 440 px demandés le 13/09, colonne des libellés figée
+ * comprise. À 46 px il n'en tiendrait qu'un et demi, et une matinée coupée en
+ * deux ne se compare pas.
+ */
 const COL_WIDTH = 46;
+const DESKTOP_COL_WIDTH = 30;
 /** Largeur de la colonne figée des libellés. */
 const LABEL_WIDTH = 62;
 /** Hauteur de la mini-courbe de marée. */
@@ -66,6 +77,8 @@ interface HourlyTableProps {
   /** Ligne du swell secondaire, dépliée ou non. */
   secondaryOpen: boolean;
   onToggleSecondary: () => void;
+  /** Largeur d'une colonne d'heure — `COL_WIDTH` au doigt, moins à la souris. */
+  colWidth?: number;
 }
 
 function groupByDay(points: ForecastPoint[]): Day[] {
@@ -123,7 +136,13 @@ function RowLabel({
  * affichée, pas sur la journée : une courbe qui se remettrait à l'échelle à
  * chaque jour ferait croire à des marnages égaux.
  */
-function TideCurve({ points }: { points: ForecastPoint[] }) {
+function TideCurve({
+  points,
+  colWidth,
+}: {
+  points: ForecastPoint[];
+  colWidth: number;
+}) {
   const levels = points.map((point) => point.sea_level_m);
   const known = levels.filter((value): value is number => value !== null);
   if (known.length < 2) {
@@ -137,12 +156,12 @@ function TideCurve({ points }: { points: ForecastPoint[] }) {
   const low = Math.min(...known);
   const high = Math.max(...known);
   const span = high - low || 1;
-  const width = points.length * COL_WIDTH;
+  const width = points.length * colWidth;
 
   // Le point est au centre de sa colonne : la courbe passe par les heures, pas
   // par les bords des cellules.
   const coords = points.map((point, index) => {
-    const x = index * COL_WIDTH + COL_WIDTH / 2;
+    const x = index * colWidth + colWidth / 2;
     const level = point.sea_level_m;
     const y =
       level === null
@@ -214,6 +233,7 @@ export function HourlyTable({
   onSelect,
   secondaryOpen,
   onToggleSecondary,
+  colWidth = COL_WIDTH,
 }: HourlyTableProps) {
   const days = useMemo(() => groupByDay(points), [points]);
 
@@ -236,7 +256,7 @@ export function HourlyTable({
     );
   }
 
-  const width = LABEL_WIDTH + points.length * COL_WIDTH;
+  const width = LABEL_WIDTH + points.length * colWidth;
 
   /** Classe commune d'une cellule d'heure : la nuit s'éteint. */
   const cellTone = (point: ForecastPoint, base: string) =>
@@ -264,7 +284,7 @@ export function HourlyTable({
         <colgroup>
           <col style={{ width: LABEL_WIDTH }} />
           {points.map((point) => (
-            <col key={point.ts} style={{ width: COL_WIDTH }} />
+            <col key={point.ts} style={{ width: colWidth }} />
           ))}
         </colgroup>
 
@@ -537,7 +557,7 @@ export function HourlyTable({
               Marée
             </RowLabel>
             <td colSpan={points.length} className="border-b border-line p-0">
-              <TideCurve points={points} />
+              <TideCurve points={points} colWidth={colWidth} />
             </td>
           </tr>
 
@@ -606,4 +626,4 @@ export function HourlyTable({
   );
 }
 
-export { COL_WIDTH, LABEL_WIDTH };
+export { COL_WIDTH, DESKTOP_COL_WIDTH, LABEL_WIDTH };

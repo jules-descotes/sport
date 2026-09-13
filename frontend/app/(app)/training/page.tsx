@@ -328,204 +328,218 @@ export default function TrainingPage() {
         subtitle="Objectifs mesurés, formules, séances."
       />
 
-      {/* Le rappel passe devant : un objectif qu'on ne mesure plus n'est plus
-          un objectif. */}
-      {toMeasure.length > 0 && !measuring ? (
-        <section className="px-5 pb-4">
-          <button
-            type="button"
-            onClick={() => setMeasuring(toMeasure[0])}
-            className="flex w-full items-center gap-3 rounded-card bg-accent px-5 py-4 text-left text-on-accent"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] opacity-75">
-                À mesurer
-              </span>
-              <span className="mt-1 block truncate font-display text-[26px] font-bold uppercase leading-none tracking-tight">
-                {toMeasure.map((item) => item.name).join(" · ")}
-              </span>
-            </span>
-          </button>
-        </section>
-      ) : null}
-
-      {measuring ? (
-        <section className="px-5 pb-5">
-          <MeasureWheel
-            objective={measuring}
-            pending={measure.isPending}
-            onCancel={() => setMeasuring(null)}
-            onSubmit={(value) =>
-              measure.mutate({ id: measuring.id, value })
-            }
-          />
-        </section>
-      ) : null}
-
-      <section className="flex flex-col gap-3 px-5" aria-label="Objectifs">
-        {objectives.map((objective) => (
-          <ObjectiveGauge
-            key={objective.id}
-            objective={objective}
-            behind={objective.slug === behindSlug}
-            onMeasure={() => setMeasuring(objective)}
-          />
-        ))}
-      </section>
-
-      {/* La séance du jour : une seule, remplaçable en un tap. */}
-      {chosen ? (
-        <section className="px-5 pt-6" aria-label="Séance du jour">
-          <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-            La séance du jour
-          </h2>
-          <article className="overflow-hidden rounded-card border border-line bg-card">
-            <div className="px-5 pt-5">
-              <h3 className="font-display text-[32px] font-bold uppercase leading-none tracking-tight text-ink">
-                {chosen.name}
-              </h3>
-              <p className="tabular mt-2 flex items-center gap-1.5 text-[14px] text-ink-2">
-                <IconClock className="h-4 w-4 shrink-0" />
-                {chosen.duration_min} min · {chosen.items.length} exercices
-              </p>
-              <p className="mt-2 text-[14px] leading-snug text-mute">
-                {swapped ? chosen.principle : proposal.reason}
-              </p>
-            </div>
-
-            <div className="flex gap-3 px-5 pb-5 pt-4">
+      {/* Desktop (décidé le 13/09) : jauges · formules · séance du jour. De
+          gauche à droite : où j'en suis, ce que je peux faire, ce que je fais
+          maintenant. Sur téléphone, la même matière dans l'ordre vertical de
+          la décision — et le rappel « mesurer » devant tout. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start lg:gap-0">
+        {/* ── Où j'en suis ────────────────────────────────────────────── */}
+        <div>
+          {/* Le rappel passe devant : un objectif qu'on ne mesure plus n'est
+              plus un objectif. */}
+          {toMeasure.length > 0 && !measuring ? (
+            <section className="px-5 pb-4">
               <button
                 type="button"
-                onClick={() => start.mutate(chosen)}
-                disabled={start.isPending}
-                className="flex min-h-[56px] flex-[2] items-center justify-center gap-2 rounded-button bg-accent px-4 text-[17px] font-semibold text-on-accent disabled:opacity-50"
-              >
-                <IconDumbbell className="h-5 w-5" />
-                {start.isPending ? "Ouverture…" : "Commencer"}
-              </button>
-              {proposal.alternatives.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setPickerOpen((open) => !open)}
-                  aria-expanded={pickerOpen}
-                  className="min-h-[56px] flex-1 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
-                >
-                  Autre chose
-                </button>
-              ) : null}
-            </div>
-
-            {pickerOpen ? (
-              <ul className="border-t border-line">
-                {[
-                  ...(swapped && proposal.formula ? [proposal.formula] : []),
-                  ...proposal.alternatives,
-                ]
-                  .filter((formula) => formula.id !== chosen.id)
-                  .map((formula) => (
-                    <li
-                      key={formula.id}
-                      className="border-b border-line last:border-0"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSwapped(formula);
-                          setPickerOpen(false);
-                        }}
-                        className="flex min-h-touch w-full items-center gap-3 px-5 py-2.5 text-left"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-semibold text-ink">
-                            {formula.name}
-                          </span>
-                          <span className="block truncate text-[12px] text-mute">
-                            {formula.duration_min} min ·{" "}
-                            {formula.weekly_target > 0
-                              ? `${formula.done_this_week} / ${formula.weekly_target} cette semaine`
-                              : "à la demande"}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            ) : null}
-          </article>
-
-          {proposal.surf_streak >= 3 ? (
-            <p className="pt-2 text-[12px] leading-snug text-mute">
-              {proposal.surf_streak} jours de surf d&apos;affilée : le renfo est
-              écarté aujourd&apos;hui.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="px-5 pt-6" aria-label="Formules">
-        <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-          Les formules
-        </h2>
-        <div className="flex flex-col gap-3">
-          {formulas
-            .filter((formula) => formula.variant_of === null)
-            .map((formula) => (
-              <FormulaCard
-                key={formula.id}
-                formula={formula}
-                starting={start.isPending}
-                onStart={(item) => start.mutate(item)}
-              />
-            ))}
-        </div>
-        <p className="pt-2 text-[12px] leading-snug text-mute">
-          Chaque formule a deux variantes, proposées quand elle revient trop
-          souvent — une séance faite tous les matins pendant six mois se fait de
-          moins en moins bien.
-        </p>
-      </section>
-
-      <ExerciseLibrary />
-
-      {recent.length > 0 ? (
-        <section className="px-5 pt-6" aria-label="Séances récentes">
-          <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-            Dernières séances
-          </h2>
-          <ul className="overflow-hidden rounded-card border border-line bg-card">
-            {recent.map((workout) => (
-              <li
-                key={workout.id}
-                className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0"
+                onClick={() => setMeasuring(toMeasure[0])}
+                className="flex w-full items-center gap-3 rounded-card bg-accent px-5 py-4 text-left text-on-accent"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold text-ink">
-                    {workout.formula_name}
+                  <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] opacity-75">
+                    À mesurer
                   </span>
-                  <span className="tabular block text-[12px] text-mute">
-                    {shortDate(workout.started_at)}
-                    {workout.duration_min !== null
-                      ? ` · ${durationLabel(workout.duration_min)}`
-                      : ""}
-                    {/* Écourtée, et dite comme telle : c'est une information
-                        sur la formule, pas un échec à cacher. */}
-                    {workout.cut_short ? " · écourtée" : ""}
+                  <span className="mt-1 block truncate font-display text-[26px] font-bold uppercase leading-none tracking-tight">
+                    {toMeasure.map((item) => item.name).join(" · ")}
                   </span>
                 </span>
-                <span
-                  className={`tabular flex h-9 w-9 shrink-0 items-center justify-center rounded-chip font-display text-[18px] font-bold leading-none ${
-                    workout.feeling === null
-                      ? "border border-line bg-soft text-mute"
-                      : scoreClass(workout.feeling)
-                  }`}
-                >
-                  {workout.feeling ?? "—"}
-                </span>
-              </li>
+              </button>
+            </section>
+          ) : null}
+
+          {measuring ? (
+            <section className="px-5 pb-5">
+              <MeasureWheel
+                objective={measuring}
+                pending={measure.isPending}
+                onCancel={() => setMeasuring(null)}
+                onSubmit={(value) => measure.mutate({ id: measuring.id, value })}
+              />
+            </section>
+          ) : null}
+
+          <section className="flex flex-col gap-3 px-5" aria-label="Objectifs">
+            {objectives.map((objective) => (
+              <ObjectiveGauge
+                key={objective.id}
+                objective={objective}
+                behind={objective.slug === behindSlug}
+                onMeasure={() => setMeasuring(objective)}
+              />
             ))}
-          </ul>
-        </section>
-      ) : null}
+          </section>
+        </div>
+
+        {/* ── Ce que je peux faire ────────────────────────────────────── */}
+        <div>
+          <section className="px-5 pt-6 lg:pt-0" aria-label="Formules">
+            <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
+              Les formules
+            </h2>
+            <div className="flex flex-col gap-3">
+              {formulas
+                .filter((formula) => formula.variant_of === null)
+                .map((formula) => (
+                  <FormulaCard
+                    key={formula.id}
+                    formula={formula}
+                    starting={start.isPending}
+                    onStart={(item) => start.mutate(item)}
+                  />
+                ))}
+            </div>
+            <p className="pt-2 text-[12px] leading-snug text-mute">
+              Chaque formule a deux variantes, proposées quand elle revient trop
+              souvent — une séance faite tous les matins pendant six mois se
+              fait de moins en moins bien.
+            </p>
+          </section>
+
+          <ExerciseLibrary />
+        </div>
+
+        {/* ── Ce que je fais maintenant ───────────────────────────────── */}
+        <div>
+          {/* La séance du jour : une seule, remplaçable en un tap. */}
+          {chosen ? (
+            <section className="px-5 pt-6 lg:pt-0" aria-label="Séance du jour">
+              <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
+                La séance du jour
+              </h2>
+              <article className="overflow-hidden rounded-card border border-line bg-card">
+                <div className="px-5 pt-5">
+                  <h3 className="font-display text-[32px] font-bold uppercase leading-none tracking-tight text-ink">
+                    {chosen.name}
+                  </h3>
+                  <p className="tabular mt-2 flex items-center gap-1.5 text-[14px] text-ink-2">
+                    <IconClock className="h-4 w-4 shrink-0" />
+                    {chosen.duration_min} min · {chosen.items.length} exercices
+                  </p>
+                  <p className="mt-2 text-[14px] leading-snug text-mute">
+                    {swapped ? chosen.principle : proposal.reason}
+                  </p>
+                </div>
+
+                <div className="flex gap-3 px-5 pb-5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => start.mutate(chosen)}
+                    disabled={start.isPending}
+                    className="flex min-h-[56px] flex-[2] items-center justify-center gap-2 rounded-button bg-accent px-4 text-[17px] font-semibold text-on-accent disabled:opacity-50"
+                  >
+                    <IconDumbbell className="h-5 w-5" />
+                    {start.isPending ? "Ouverture…" : "Commencer"}
+                  </button>
+                  {proposal.alternatives.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen((open) => !open)}
+                      aria-expanded={pickerOpen}
+                      className="min-h-[56px] flex-1 rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
+                    >
+                      Autre chose
+                    </button>
+                  ) : null}
+                </div>
+
+                {pickerOpen ? (
+                  <ul className="border-t border-line">
+                    {[
+                      ...(swapped && proposal.formula ? [proposal.formula] : []),
+                      ...proposal.alternatives,
+                    ]
+                      .filter((formula) => formula.id !== chosen.id)
+                      .map((formula) => (
+                        <li
+                          key={formula.id}
+                          className="border-b border-line last:border-0"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSwapped(formula);
+                              setPickerOpen(false);
+                            }}
+                            className="flex min-h-touch w-full items-center gap-3 px-5 py-2.5 text-left"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[15px] font-semibold text-ink">
+                                {formula.name}
+                              </span>
+                              <span className="block truncate text-[12px] text-mute">
+                                {formula.duration_min} min ·{" "}
+                                {formula.weekly_target > 0
+                                  ? `${formula.done_this_week} / ${formula.weekly_target} cette semaine`
+                                  : "à la demande"}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                ) : null}
+              </article>
+
+              {proposal.surf_streak >= 3 ? (
+                <p className="pt-2 text-[12px] leading-snug text-mute">
+                  {proposal.surf_streak} jours de surf d&apos;affilée : le renfo
+                  est écarté aujourd&apos;hui.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {recent.length > 0 ? (
+            <section className="px-5 pt-6" aria-label="Séances récentes">
+              <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
+                Dernières séances
+              </h2>
+              <ul className="overflow-hidden rounded-card border border-line bg-card">
+                {recent.map((workout) => (
+                  <li
+                    key={workout.id}
+                    className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-semibold text-ink">
+                        {workout.formula_name}
+                      </span>
+                      <span className="tabular block text-[12px] text-mute">
+                        {shortDate(workout.started_at)}
+                        {workout.duration_min !== null
+                          ? ` · ${durationLabel(workout.duration_min)}`
+                          : ""}
+                        {/* Écourtée, et dite comme telle : c'est une
+                            information sur la formule, pas un échec à
+                            cacher. */}
+                        {workout.cut_short ? " · écourtée" : ""}
+                      </span>
+                    </span>
+                    <span
+                      className={`tabular flex h-9 w-9 shrink-0 items-center justify-center rounded-chip font-display text-[18px] font-bold leading-none ${
+                        workout.feeling === null
+                          ? "border border-line bg-soft text-mute"
+                          : scoreClass(workout.feeling)
+                      }`}
+                    >
+                      {workout.feeling ?? "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 }
