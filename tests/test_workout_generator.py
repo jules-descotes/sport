@@ -52,7 +52,10 @@ CLASSIFICATION_CASES = [
     ("Barbell Bench Press", ["chest", "barbell"], "poitrine", "poussee"),
     ("Incline Dumbbell Press", ["chest", "dumbbell"], "poitrine", "poussee"),
     ("Push-up", ["chest", "body only"], "poitrine", "poussee"),
-    ("Dips", ["triceps", "body only"], "poitrine", "poussee"),
+    # Triceps annoncé par la base → bras. C'est **l'anatomie qui décide** du
+    # groupe : le nom dit « dips », qu'on rangerait spontanément en poitrine,
+    # mais la version triceps travaille les bras et la base le dit.
+    ("Dips", ["triceps", "body only"], "bras", "poussee"),
     ("Overhead Press", ["shoulders", "barbell"], "epaules", "poussee"),
     ("Lateral Raise", ["shoulders", "dumbbell"], "epaules", "extension"),
     ("Face Pull", ["shoulders", "cable"], "epaules", "tirage"),
@@ -109,7 +112,7 @@ def test_what_is_not_recognised_stays_to_be_classified() -> None:
     lui fait proposer un soulevé de terre en séance de mobilité, et c'est bien
     pire. Même leçon que `sport=surfing`, appliquée aux exercices.
     """
-    taxonomy = classify("Zercher Carry Variation XYZ", hints=["???"])
+    taxonomy = classify("Zottman Complex Variation XYZ", hints=["???"])
 
     assert taxonomy.group == UNCLASSIFIED
     assert not taxonomy.classified

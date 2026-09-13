@@ -71,58 +71,109 @@ GROUP_LABELS = {
     UNCLASSIFIED: "À classer",
 }
 
-# Anglais **et** français : la moitié du catalogue vient de bases anglophones,
-# l'autre est écrite ici. Deux dictionnaires divergeraient.
-# **L'ordre compte, ici aussi.** « Back Squat » contient « back » : lu dans
-# l'ordre alphabétique, il partirait dans le dos. Les groupes dont le nom est le
-# plus souvent un faux ami — le dos — passent donc après ceux qui portent un
-# mouvement sans ambiguïté.
-GROUP_WORDS: dict[str, tuple[str, ...]] = {
+# **L'anatomie décide du groupe, le mouvement n'en décide qu'à défaut.**
+#
+# Les deux dictionnaires sont séparés, et la lecture se fait en deux passes.
+# C'est la correction du 13/09, après une relecture du catalogue importé en
+# production : « Lower Back Curl » sortait en *abdos* et « Overhand Cable Curl »
+# aussi, parce que « curl » vivait dans les mots du groupe *bras* et qu'un mot
+# de mouvement rangé parmi des muscles finit toujours par gagner contre le bon.
+#
+# Passe 1 — les **muscles**, sur les seuls indices de la base d'origine. C'est
+# la donnée la plus fiable qu'on ait : les deux bases annoncent leurs muscles,
+# et elles ne se trompent pas de corps.
+# Passe 2 — muscles **et** mouvements, sur le nom entier. Elle ne sert que
+# lorsque la base n'a rien dit.
+#
+# Anglais et français dans les mêmes listes : la moitié du catalogue vient de
+# bases anglophones, l'autre est écrite ici, et deux dictionnaires
+# divergeraient.
+
+MUSCLE_WORDS: dict[str, tuple[str, ...]] = {
     "abdos": (
         "abdominal", "abdominals", "abs", "core", "oblique", "obliques",
-        "crunch", "plank", "hollow", "waist", "transverse",
-        "abdos", "abdominaux", "gainage", "ceinture abdominale", "obliques",
+        "waist", "transverse", "rectus abdominis",
+        "abdos", "abdominaux", "ceinture abdominale",
     ),
     "jambes": (
         "quadriceps", "quads", "hamstring", "hamstrings", "calf", "calves",
-        "leg", "legs", "squat", "lunge", "leg press", "leg curl",
-        "jambe", "jambes", "quadriceps", "ischio", "ischio-jambiers",
-        "mollet", "mollets", "fente", "fentes",
+        "soleus", "gastrocnemius", "leg", "legs",
+        "jambe", "jambes", "ischio", "ischio-jambiers", "mollet", "mollets",
     ),
     "hanches": (
-        "hip", "hips", "glute", "glutes", "abductor", "adductor",
-        "hip flexor", "psoas", "piriformis", "pigeon",
-        "hanche", "hanches", "fessier", "fessiers", "psoas", "adducteurs",
+        "hip", "hips", "glute", "glutes", "gluteus", "abductor", "abductors",
+        "adductor", "adductors", "hip flexor", "psoas", "piriformis",
+        "hanche", "hanches", "fessier", "fessiers", "adducteurs",
     ),
     "poitrine": (
-        "chest", "pectoral", "pectorals", "pecs", "bench press", "push-up",
-        "pushup", "push up", "fly", "dip", "dips",
-        "poitrine", "pectoraux", "pompe", "pompes",
+        "chest", "pectoral", "pectorals", "pecs", "serratus",
+        "poitrine", "pectoraux",
     ),
     "epaules": (
-        "shoulder", "shoulders", "deltoid", "delts", "rotator cuff",
-        "overhead press", "lateral raise", "front raise", "face pull",
+        "shoulder", "shoulders", "deltoid", "deltoids", "delts",
+        "rotator cuff",
         "epaule", "epaules", "deltoides", "coiffe",
     ),
     "bras": (
-        "biceps", "triceps", "forearm", "forearms", "brachialis", "curl",
-        "bras", "avant-bras", "biceps", "triceps", "flexion des bras",
+        "biceps", "triceps", "forearm", "forearms", "brachialis",
+        "bras", "avant-bras",
     ),
-    # Après « jambes » et « hanches » : « Back Squat » et « Hip Thrust »
-    # contiennent « back » et « hip », et ce ne sont ni l'un ni l'autre des
-    # exercices de dos.
     "dos": (
-        "lat", "lats", "latissimus", "trapezius", "traps", "rhomboid",
-        "erector spinae", "lower back", "upper back", "middle back", "back",
-        "row", "pulldown", "pull-up", "pullup", "chin-up",
+        "lat", "lats", "latissimus", "latissimus dorsi", "trapezius", "traps",
+        "rhomboid", "rhomboids", "erector spinae", "lower back", "upper back",
+        "middle back", "back", "spine", "neck",
         "dos", "dorsaux", "trapezes", "lombaires", "chaine posterieure",
-        "tirage", "traction",
+        "nuque",
     ),
     "corps-entier": (
-        "full body", "total body", "burpee", "clean", "snatch", "thruster",
-        "turkish get-up", "get up", "bear crawl", "farmer",
-        "corps entier", "burpee", "arrache", "epaule-jete", "portage",
+        "full body", "total body", "cardio", "plyometrics",
+        "corps entier",
     ),
+}
+
+# Le repli : des **mouvements** dont on sait ce qu'ils travaillent. Lus sur le
+# nom entier, et seulement quand la base d'origine n'a annoncé aucun muscle.
+MOVEMENT_GROUP_WORDS: dict[str, tuple[str, ...]] = {
+    "abdos": (
+        "crunch", "plank", "hollow", "sit-up", "situp", "leg raise",
+        "gainage", "planche ventrale", "planche laterale",
+    ),
+    "jambes": (
+        "squat", "lunge", "leg press", "leg curl", "calf raise",
+        "fente", "fentes", "accroupi",
+    ),
+    "hanches": (
+        "hip thrust", "glute bridge", "pigeon", "deadlift",
+        "souleve de terre", "pont fessier",
+    ),
+    "poitrine": (
+        "bench press", "push-up", "pushup", "push up", "fly", "flye",
+        "dip", "dips",
+        "pompe", "pompes",
+    ),
+    "epaules": (
+        "overhead press", "lateral raise", "front raise", "face pull",
+        "shoulder dislocate", "passage de baton",
+    ),
+    "bras": (
+        "curl", "triceps extension", "pushdown", "skullcrusher",
+        "flexion des bras",
+    ),
+    "dos": (
+        "row", "pulldown", "pull-up", "pullup", "chin-up", "shrug",
+        "tirage", "traction", "rowing",
+    ),
+    "corps-entier": (
+        "burpee", "clean", "snatch", "thruster", "turkish get-up",
+        "bear crawl", "farmer", "carry",
+        "arrache", "portage",
+    ),
+}
+
+# Conservé pour la compatibilité de lecture : l'union des deux, dans l'ordre.
+GROUP_WORDS: dict[str, tuple[str, ...]] = {
+    group: MUSCLE_WORDS[group] + MOVEMENT_GROUP_WORDS[group]
+    for group in MUSCLE_WORDS
 }
 
 
@@ -491,11 +542,22 @@ def classify(
     haystack = normalize(" ".join([name, *hints]))
     name_only = normalize(name)
 
+    # Passe 1 : les muscles annoncés par la base. C'est la donnée la plus
+    # fiable qu'on ait, et elle ne contient aucun nom de mouvement.
     group = UNCLASSIFIED
-    for candidate, words in GROUP_WORDS.items():
-        if _hit(haystack, words):
+    muscle_hay = normalize(" ".join(hints))
+    for candidate, words in MUSCLE_WORDS.items():
+        if _hit(muscle_hay, words):
             group = candidate
             break
+
+    # Passe 2 : le nom entier, mouvements compris. Elle ne sert que si la base
+    # n'a rien dit — sans quoi « Lower Back Curl » repartirait dans les bras.
+    if group == UNCLASSIFIED:
+        for candidate, words in GROUP_WORDS.items():
+            if _hit(haystack, words):
+                group = candidate
+                break
 
     pattern = UNCLASSIFIED
     for candidate, words in PATTERN_WORDS:
@@ -600,6 +662,7 @@ MOVEMENT_FR: tuple[tuple[str, str], ...] = (
     ("dead bug", "Dead bug"),
     ("deadbug", "Dead bug"),
     ("pallof press", "Pallof press"),
+    ("lower back curl", "Extension lombaire"),
     ("back extension", "Extension lombaire"),
     ("hyperextension", "Extension lombaire"),
     ("superman", "Superman"),
