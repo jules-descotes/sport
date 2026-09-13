@@ -297,11 +297,12 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 | ✅ | **A → D** | Desktop 1600 px et cache client · coefficient de marée via Brest et énergie dans les sessions · favoris multiples avec critères saisis (`spot_rules`) et annonces sur Jour · demi-points et segments horaires | 2,5 j | fait |
 | ✅ | **5** | Nutrition : import Ciqual, Open Food Facts au code-barres, cible calorique recalibrée par la balance, journal, menu de la semaine, pesée | 2 j | fait |
 | ✅ | **F** | Habitudes quotidiennes (`habits`, `habit_events`) et statistiques de profil | 1 j | fait |
+| ✅ | **n° 3 / n° 4** | Type de vagues · minuteur testé au navigateur (Playwright) · seuils personnels de qualité · dépense du jour · training en français avec images et **générateur de séances** · habitudes à réduire · classement des favoris · webcams par variable | 3 j | fait |
 | 1 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
 | 2 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
 | — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-≈ **20 jours de dev effectif**, dont 18 déjà faits.
+≈ **23 jours de dev effectif**, dont 21 déjà faits.
 
 > **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente. *(Fait le 12/09 : migration `0003`, clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. `run_ts` est arrondi à l'heure — sans quoi chaque redémarrage à froid de Railway écrirait un run de plus pour la même prévision.)*
 
@@ -362,6 +363,18 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 - [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09)
 - [x] **Retours d'usage du 13/09** : demi-points et segments horaires de notation, plusieurs favoris avec critères saisis, coefficient de marée via Brest, énergie dans les sessions, desktop élargi, cache client 2 h, stats de profil, suivi d'habitudes quotidiennes — détail dans `CLAUDE.md` « Décidé le 13/09 (suite) ». **Tout est livré et en ligne le 13/09**, étapes A à G.
 - [x] **Coefficient de marée** — mesuré contre l'annuaire SHOM : biais −1,7 point, écart maximal 6 sur dix pleines mers. Au-dessus de la tolérance de 5, donc affiché avec « ≈ ». Le détail, la forme de l'erreur et la marche à suivre pour rejouer la mesure sont dans `docs/COEFFICIENT-MAREE.md` (décidé le 13/09)
+- [x] **Retours n° 3 et n° 4 du 13/09** — type de vagues sur la session et ses
+      segments, minuteur de séance couvert par des tests navigateur, seuils de
+      qualité personnels (ils teintent **et** notent), dépense du jour, training
+      entièrement en français avec images et générateur déterministe, habitudes
+      à plafond, classement des favoris par la prévision, hôtes de webcam par
+      variable d'environnement. **Tout est livré et en ligne le 13/09 au soir** ;
+      détail dans `CLAUDE.md`.
+- [x] **Un exercice sans nom français ou sans image n'est jamais proposé** — ni
+      par le générateur, ni dans une formule. Il reste consultable dans la
+      bibliothèque. Une séance se lit à bout de bras, les mains au sol : un nom
+      anglais coûte une traduction mentale, une image absente coûte de se
+      souvenir du mouvement, et dans les deux cas on s'arrête (13/09)
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

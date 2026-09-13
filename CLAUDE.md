@@ -184,6 +184,11 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Étape D — demi-points, segments horaires — **en ligne le 2026-09-13**
 - [x] Lot 5 — nutrition : Ciqual, cible recalibrée, journal, menu, pesée — **en ligne le 2026-09-13**, import Ciqual à lancer en production
 - [x] Étape F — habitudes quotidiennes, stats de profil — **en ligne le 2026-09-13**
+- [x] Lot 5 bis — menu déjeuner/dîner, « pas là », fiches recettes, unités d'achat — **code terminé le 2026-09-13**
+- [x] Retours n° 3 et n° 4 (13/09) — type de vagues, minuteur testé au navigateur,
+      seuils personnels, dépense du jour, training en français avec images et
+      générateur, habitudes à réduire, classement des favoris, webcams —
+      **en ligne le 2026-09-13**
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 6 — stats et corrélations conditions ↔ note
 
@@ -294,6 +299,156 @@ Dans l'ordre où ça débloque le plus de choses.
 Restent des lots précédents : import OSM de la côte française à rejouer
 (`OVERPASS_URL` sur une autre instance), import d'exercices, raccourci iOS,
 matos réel, URL de webcams, `STORAGE_BACKEND=r2` pour les photos.
+
+
+### Retours n° 3 et n° 4 — ce qui est livré (2026-09-13, soir)
+
+Neuf étapes, un push chacune, chacune vérifiée en production après coup.
+
+**Le 500 des segments, et le mensonge CORS.** `PATCH /sessions/{id}` avec des
+segments répondait 500, et le navigateur appelait ça une erreur CORS — on a
+donc cherché une origine mal déclarée pendant que la base refusait une ligne.
+`apply_segments` réaffectait la collection entière ; SQLAlchemy écrit les
+insertions **avant** les suppressions, et la deuxième ligne de 8 h tombait sur
+`uq_session_segments_session_hour`. Les segments sont maintenant appariés par
+heure et modifiés sur place. Le mensonge CORS, lui, tient à l'ordre des
+couches : une exception non rattrapée remonte dans `ServerErrorMiddleware`, qui
+est **au-dessus** de `CORSMiddleware`. `app.add_exception_handler(Exception, …)`
+atterrit au même endroit — la correction est un middleware déclaré **avant**
+CORS (`core/errors.py`), qui rend un JSON sobre avec un identifiant d'erreur.
+
+**Le minuteur de séance.** Huit tests Playwright pilotent la vraie construction
+de production, en Chromium, en Chromium à 390 px et en WebKit — le moteur de
+Safari. **Ils sont verts partout : l'arithmétique du minuteur n'a jamais été le
+problème**, et ce commit le dit plutôt que d'inventer un correctif. Ce qui
+était fragile, c'est tout ce qui l'entoure sur iOS : un `AudioContext` neuf par
+bip (créé hors geste il démarre `suspended`, ne se referme jamais, et Safari en
+tolère quatre par page — du cinquième repos, plus aucun son), et un Wake Lock
+demandé au montage, là où iOS le refuse. Les deux vivent maintenant dans
+`lib/session-timer.ts`, réclamés au **premier tap** dans le mode séance, sous
+une règle testée branche par branche : rien là-dedans ne lève, rien n'est
+attendu, rien n'est sur le chemin du minuteur. S'ils échouent, le minuteur
+tourne quand même, sans son — jamais l'inverse.
+
+**Type de vagues** — taille, longueur, forme, sur la session **et** sur ses
+segments (migration 0013). Un segment renseigné prime pour son heure. Repliés
+sous « décrire les vagues » : le risque du projet est la friction de saisie,
+et trois champs dépliés coûteraient un regard sur chacune des 240 notations
+annuelles. Filtrables dans l'historique, et le crible lit **la session et ses
+segments** — sinon il raterait exactement les sessions que les segments servent
+à décrire. Corrigé au passage : `SurfSessionCreate` n'avait pas de champ
+`segments`, et Pydantic jetait en silence ceux que l'écran « Ajouter une
+session » envoyait depuis le 13/09.
+
+**Seuils personnels** (migration 0014, `user_thresholds`). Huit nombres qui
+disent où commence le bon. Ils teintent le tableau horaire **et** calculent la
+note — un seul jeu pour les deux, servi avec la prévision, parce que deux
+sources finiraient par montrer une cellule « bonne » sous une note de 2. Sous
+le minimum, la cellule est **neutre** et non un palier bas : un palier bas se
+lit « un peu de quelque chose de bien », et 5 s de période n'est pas un peu de
+bonne période. Le vent est le seul axe inversé et la seule cellule chaude du
+tableau ; jamais de rouge.
+
+> ⚠️ **Les notes de démarrage ont bougé, et c'est voulu.** Avec les chiffres de
+> Jules, une mer propre de 1,4 m passe de 5 à **4**, et une mer propre de 2,5 m
+> devient le 5 — c'est ce que veut dire « mieux en grossissant ». Une journée à
+> 1,2 m sous 10 nœuds de mer passe de 3 à **2** : les deux grandeurs sont
+> exactement sur les bornes qu'il a posées, et deux bornes atteintes par le bas
+> ne font pas une journée moyenne. Les deux tests de référence de
+> `test_scoring.py` sont réécrits pour le dire, pas relâchés.
+
+**Dépense du jour.** Socle de 3 MET — « surf, général » au compendium, la seule
+valeur publiée du calcul — plus un bonus de durée décroissant et un bonus de
+taille de vagues déclarée (+1 moyennes, +2 grandes). Une taille **non
+renseignée vaut zéro**, comme « petites » : deviner « moyennes » gonflerait la
+cible de toutes les sessions que personne n'a décrites, et une cible trop haute
+ne se voit pas, elle se mange. `GET /expenditure`, dans son module, parce que
+c'est l'écran Jour qui la lit le matin — et c'est le **même calcul** que celui
+qui alimente la cible calorique.
+
+**Training en français, avec images, et un générateur.** Traductions humaines
+de wger d'abord, puis un glossaire déterministe qui **compose** (« bench
+press » + « barbell » → « Développé couché à la barre »). Ce qu'il ne sait pas
+dire reste `NULL` plutôt que de produire « Barre Hip Thrust ». Taxonomie en
+migration 0016 : groupe, pattern, matériel, difficulté, temps-ou-reps,
+unilatéral — **l'anatomie décide du groupe, le mouvement n'en décide qu'à
+défaut**, en deux passes séparées, parce qu'un mot de mouvement rangé parmi des
+muscles finit toujours par gagner contre le bon. Éligibilité sans exception :
+pas de nom français ou pas d'image, jamais proposé. Le générateur est
+déterministe, sans LLM, et rend **trois angles** et non trois tirages.
+
+> **Le `--sample` a servi, et c'est tout son intérêt.** La relecture avant
+> écriture a montré que le pluriel n'était pas géré — « Bench Mid Rows »,
+> « Calf Raises » — ce qui laissait 319 des 876 exercices de free-exercise-db
+> en « à classer ». Après correction : 6 groupes non classés, et **457 sur 876
+> éligibles au générateur**.
+
+**Habitudes à réduire** (migration 0017). `target_direction` vaut `min` ou
+`max`. **L'écran ne change pas entre les deux** : un compteur, un objectif, une
+tendance à 7 et 30 jours. Pas de rouge, pas de message, pas de série perdue.
+
+**Classement des favoris.** Note de journée = part des heures de jour qui
+correspondent aux critères **×** qualité moyenne sur ces heures. Un produit, pas
+une somme : un spot excellent une heure et un spot correct toute la journée ne
+se départagent pas par addition. Un favori sans critères est classé sur le seul
+score et **signalé** ; un favori sans prévision est rangé en bas et **pas noté**.
+La fiche de critères répond « sur les 3 prochains jours ça matcherait N heures ».
+
+**Webcams.** `frame-src` pilotée par `NEXT_PUBLIC_WEBCAM_FRAME_HOSTS`, qui
+**s'ajoute** aux défauts — une variable mal écrite ne doit pas retirer toutes
+les webcams d'un coup. Les hôtes relevés à l'inspecteur (loujo.fr, skaping,
+vision-environnement, youtube-nocookie) sont dans les défauts. La fiche dit
+qu'il faut l'URL de **l'iframe** et sonde l'adresse à l'enregistrement : un 404
+ou un refus d'encadrement sont des **avertissements**, jamais des refus.
+
+**754 pytest + 121 vitest + 8 Playwright verts**, `npm run lint` et
+`npm run build` propres.
+
+### Ce qui a changé dans les formules (recomposition du 13/09)
+
+Sept lignes sur vingt-deux ont été remplacées ; **quinze ont été gardées telles
+quelles**, faute d'équivalent avec une image. C'est le bon résultat : une
+formule amputée est moins bonne qu'une ligne sans photo, et une ligne fausse
+est pire que les deux.
+
+| Formule | Retiré | Remplacé par |
+|---|---|---|
+| Post-surf | Cobra | Chat-vache |
+| Post-surf | Passage de bâton | Cercles d'épaules |
+| Post-surf — épaules | Cobra | Chat-vache |
+| Post-surf — express | Passage de bâton | Cercles d'épaules |
+| Post-surf — express | Cobra | Chat-vache |
+| Souplesse — ischios | Chien tête en bas | Chat-vache |
+| Souplesse — haut du corps | Cobra | Chat-vache |
+
+**Gardés tels quels, faute d'équivalent** : Rotation thoracique, Chien tête en
+bas, Torsion allongée, Passage de bâton (dans Post-surf — épaules et Souplesse
+— haut du corps), Cobra (dans Réveil — dos), **Pop-up à sec** (Renfo surf et
+Renfo — jambes). Le pop-up n'existe dans aucune base ouverte, et c'est exactement
+l'exercice qu'il ne fallait pas remplacer : la première version de la règle lui
+avait substitué un « développé épaules à la poulie ».
+
+**Six exercices maison restent sans image** — Chien tête en bas, Cobra, Passage
+de bâton, Pop-up à sec, Rotation thoracique, Torsion allongée. Aucun n'a
+d'équivalent dans les bases ouvertes. Leur donner une photo voisine ferait faire
+le mauvais mouvement ; ils restent donc sans image et hors du générateur.
+
+### Retours n° 3 et n° 4 — ce qui reste à la main
+
+- [ ] **Poser tes seuils** (Profil → Tes seuils) si les défauts ne te vont pas.
+      Ils changent les couleurs **et** les notes : c'est le réglage qui a le
+      plus d'effet sur ce que tu lis le matin.
+- [ ] **Décrire les vagues** d'une ou deux sessions (taille surtout) : c'est ce
+      qui rend la dépense du jour et les futures cibles auxiliaires utiles.
+- [ ] **Poser les critères** des favoris qui n'en ont pas — la fiche te dit
+      maintenant combien d'heures ils retiendraient sur trois jours.
+- [ ] **Relancer `python -m scripts.import_exercises` puis
+      `python -m scripts.repair_training`** après chaque import : c'est ce
+      couple qui pose la taxonomie, les noms français et les images.
+- [ ] **Vérifier le mode séance au soleil**, sur le téléphone : les tests
+      couvrent le minuteur, pas la lisibilité de l'image à un mètre.
+- [ ] **Poser `NEXT_PUBLIC_WEBCAM_FRAME_HOSTS` sur Vercel** le jour où une
+      webcam vient d'un hôte absent des défauts.
 
 ### Lot 0 — ce qui est livré (2026-09-12)
 - Dépôt git sur `main`, remote `jules-descotes/sport`, `.gitignore` + `.gitattributes` (LF)
@@ -566,7 +721,112 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - **Cache client** des prévisions : affichage immédiat depuis IndexedDB, rafraîchissement seulement si la donnée a plus de 2 h (stale-while-revalidate). Le cache serveur de 3 h reste.
 - **Profil** : stats sympas — surf (sessions, heures, note moyenne, spot n°1, série en cours), nutrition (jours dans la cible), training (formules respectées / prévues).
 - **Suivi d'habitudes quotidiennes** (`habits`, `habit_events`) : compteurs libres définis par Jules, saisie en un tap depuis Jour, ton neutre — jamais de rouge ni de morale. Servira plus tard à croiser avec le ressenti.
+
+### Décidé le 13/09 (retours n° 3) — après livraison du lot 5
+- **Type de vagues** sur la session, trois axes optionnels : taille (petite / moyenne / grande), longueur (courtes / moyennes / longues), forme (creuse / molle / déferlante). Enregistrés comme catégories ; ce sont des **descripteurs des conditions observées**, donc des cibles auxiliaires possibles pour le modèle (prédire « creuse » depuis période et vent), pas seulement des étiquettes.
+- **Le minuteur de séance ne démarre pas** (constaté en prod sur iPhone) — bug à reproduire par test navigateur avant correction. Installer Playwright en devDependency est accepté pour ça.
+- **Training : générateur de séances** — taxonomie des exercices (groupe, pattern de mouvement, matériel, difficulté 1-5), niveau de Jules par catégorie **déduit de ce qu'il a déjà fait** (charges, reps, temps tenus), génération de **plusieurs séances différentes** pour une demande (« abdos, 15 min, sans matériel »), progression douce, variété sur 14 jours. Algorithme déterministe et testable, pas de LLM.
+- **Images d'exercices** : déjà importées (free-exercise-db domaine public, wger CC BY-SA — licence stockée par ligne, CSP `img-src https:` ouverte). À **afficher** en mode séance et dans la bibliothèque, avec attribution pour les CC BY-SA. Les 13 exercices du catalogue maison sans image sont à rapprocher d'un exercice importé qui en a une.
+
+### Décidé le 13/09 (retours n° 4)
+- **Bug prod** : `PATCH /sessions/{id}` renvoie 500 quand on ajoute des segments horaires à une session existante ; le navigateur affiche une erreur CORS parce que la réponse 500 sort du `ServerErrorMiddleware` sans en-têtes. Deux corrections : la cause du 500, et un gestionnaire d'exception global qui renvoie une `JSONResponse` (donc traversée par `CORSMiddleware`).
+- **Plusieurs favoris, pour de vrai** : étoile par spot dans Surf et dans la recherche, liste des favoris réordonnable, favori principal distinct. L'UI actuelle n'en laisse voir qu'un.
+- **Favoris classés par la prévision** : chaque favori porte ses critères ; pour aujourd'hui et demain, les favoris sont **classés du meilleur au moins bon** (part des heures qui matchent × qualité dans la fenêtre), sur Jour et sur Surf.
+- **Seuils de couleur personnels** sur le tableau horaire, réglables dans Profil, défauts = ceux de Jules : période « de mieux en mieux » à partir de 8 s ; vent « top » sous 10 kt puis de plus en plus marqué ; houle « ça commence » à 1,2 m puis mieux en grossissant. Les cellules se teintent par **qualité pour Jules**, plus par intensité brute.
+- **Dépense du jour sur Jour** : kcal estimées — surf par MET modulé par la durée et la taille des vagues déclarée, séances par formule — affichées comme estimation, avec la répartition.
+- **Training en français** : tout ce qui est visible est en français. Traductions FR de wger importées quand elles existent ; glossaire déterministe pour le reste ; un exercice sans nom FR **ou sans image** n'est pas éligible au générateur ni aux formules. Les formules existantes (Post-surf incluse) sont recomposées avec des exercices qui ont les deux.
+- **Habitudes à réduire** : type d'objectif « maximum » (par jour / semaine) en plus de « minimum » ; l'affichage reste neutre — un compteur et une tendance, pas de rouge.
+- **Webcams** : l'URL saisie est celle de l'**iframe du fournisseur** (récupérée via l'inspecteur du navigateur sur la page de l'office de tourisme — les pages elles-mêmes chargent les cadres dynamiquement). Les hôtes de fournisseurs (loujo.fr, viewsurf, skaping, vision-environnement, youtube-nocookie) rejoignent la `frame-src`, pilotée par variable d'environnement plutôt qu'en dur.
 - `OVERPASS_URL` : poser en variable Railway l'instance qui a fonctionné (overpass-api.de bannit l'IP de sortie Railway). `railway.json` est déprécié au profit de `.railway/railway.ts` — migration avant le 2026-12-01.
+
+### Décidé le 13/09 (retours n° 5) — le menu de la semaine, pour de vrai
+- **Le menu ne prévoit que le déjeuner et le dîner.** Un petit déjeuner ne se
+  choisit pas le dimanche pour le mardi, il se répète ; un en-cas planifié est
+  un en-cas qu'on ne mange pas. Quatorze créneaux au lieu de vingt-huit. Les
+  quatre repas restent dans le **journal** : on mange toujours le matin.
+- **« Je ne suis pas chez moi »** (`meal_plan_items.status = 'away'`) : le
+  créneau n'affiche plus de plat, la génération ne lui en donne pas, et
+  surtout **ses ingrédients sortent de la liste de courses**. Se déclare avant
+  ou après la génération, et **survit à un « tout régénérer »** — c'est une
+  contrainte de la semaine, pas une proposition de l'algorithme.
+- **Interchanger** : échanger deux créneaux (statut compris), ou poser une
+  recette précise sur un créneau. Le tirage propose, on dispose — y compris une
+  recette étiquetée pour un autre repas.
+- **Fiche recette** : ingrédients, étapes, macros, **étoile et note libre**
+  (`recipe_notes`, table à part — le semis réécrit les recettes, il ne doit
+  jamais pouvoir effacer ce qu'on en a dit). Modifier une recette du catalogue
+  **la dédouble** en version `user` que le semis ignore ; le menu de la semaine
+  en cours et des suivantes la suit, les semaines passées gardent l'original.
+- **Liste de courses dans l'unité d'achat** : `piece` pour ce qui se compte
+  (œufs, bananes, courgettes), `ml` pour ce qui se verse, `g` pour le reste et
+  c'est le défaut. Le gramme reste la grandeur stockée — la pièce est une
+  conversion d'affichage, comme le 6'2 d'une planche.
+
+### Lot 5 bis — ce qui est livré (2026-09-13)
+
+**Le menu à deux repas**
+- `PLANNED_MEALS = ("lunch", "dinner")`, distinct de `MEALS` qui sert au
+  journal. Les parts de `breakfast` et `snack` **restent** dans `MEAL_SHARE`
+  alors qu'on ne les planifie plus : ce sont elles qui laissent au déjeuner et
+  au dîner leur juste taille. Les retirer aurait réparti la journée entière sur
+  deux plats, et le générateur aurait proposé des dîners à 900 kcal
+- `day_share()` — **un seul endroit** dit quelle part de la cible le menu
+  couvre (0,65, moins quand un repas se prend dehors). Elle sert à la
+  génération *et* au remplacement d'un plat : si le bouton « un autre plat »
+  visait la journée entière quand la génération vise 65 %, chaque tap
+  proposerait plus gros que ce qu'il remplace, et le menu dériverait vers le
+  haut à mesure qu'on le corrige
+- Les créneaux vides sont **rendus quand même**. Un jeudi soir sans ligne se
+  relit trois fois ; un jeudi soir « à choisir » se corrige d'un tap
+
+**Pas chez moi**
+- `POST /nutrition/plan/away`. Le plat d'origine n'est pas effacé : rentrer
+  finalement le remet en place. S'il a été régénéré entre-temps, on en tire un —
+  revenir chez soi ne doit pas laisser un trou
+- La part calorique d'un créneau sauté n'est **pas reversée** sur le repas
+  suivant : dîner dehors n'est pas une raison de prévoir un déjeuner à 900 kcal
+
+**Recettes**
+- `recipes.source` / `user_id` / `based_on_id`, et `recipe_notes` (favori, note
+  libre, compteur de fois cuisinée). `POST`, `PATCH`, `DELETE`, `PUT .../note`
+- **Le fork est la décision qui porte le reste.** Le semis remplace les
+  ingrédients en bloc et rejoue après chaque import Ciqual : une modification
+  écrite sur une ligne semée disparaîtrait sans un mot, des semaines plus tard
+- Les slugs perso sont **préfixés `perso-`** : aucune recette du catalogue ne
+  commence par là, donc une recette écrite à la main ne peut pas occuper le
+  slug d'une recette que le catalogue ajoutera demain — ce qui ferait échouer
+  le semis sur la contrainte d'unicité, au premier accès à l'écran
+- **`ensure_seeded` compte le catalogue, pas la table.** Une recette perso
+  écrite avant le premier accès à l'écran suffisait à convaincre le semis qu'il
+  avait déjà tourné : la banque tenait en un plat, et le menu proposait sept
+  fois le même. Trouvé par un test, pas à l'usage
+
+**Unités d'achat** — `services/food_units.py`
+- Trois unités et pas une de plus. Les masses unitaires sont des **moyennes
+  assumées** (un œuf à 55 g), arrondies **au-dessus** : on ne met pas 2,7 œufs
+  dans un panier, et arrondir au plus proche ferait manquer un ingrédient une
+  fois sur deux
+- La conversion vient **après** l'agrégation : on arrondit une fois, sur le
+  total, jamais recette par recette
+- Le pluriel se cherche en **seconde passe** plutôt qu'en normalisant : la
+  règle qui fait de « carottes » une « carotte » ferait d'« ananas » un
+  « anana ». `NFD` ne décompose pas « œ » — la substitution est explicite
+
+**Écrans** — fiche recette plein cadre (étoile, note, modification), feuille
+d'actions par créneau (voir, autre plat, choisir, échanger, pas là),
+bibliothèque `/nutrition/recettes` (toutes / favorites / les miennes, et
+« écrire une recette »).
+
+**Migration `0015`**. **622 tests pytest + 121 vitest verts**, `npm run lint` et
+`npm run build` propres.
+
+### Lot 5 bis — ce qui reste (hors code)
+- [ ] Sans la table Ciqual, les recettes n'ont pas de macros et le générateur
+      travaille au coût neutre : le menu tient, mais il ne vise rien. L'import
+      Ciqual reste le premier déblocage
+- [ ] Vérifier la liste de courses **dans le rayon** : les masses unitaires de
+      `food_units.py` sont des moyennes, et c'est à l'usage qu'on verra si un
+      concombre à 300 g ou une baguette à 250 g demandent un ajustement
 
 ### Lot 2 ter — ce qui est livré (2026-09-13)
 
