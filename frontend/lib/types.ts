@@ -593,16 +593,138 @@ export type ExerciseCategory = "mobility" | "strength" | "core";
 
 export interface Exercise {
   id: number;
-  slug: string;
+  /** Le nom d'origine. Gardé pour retrouver l'exercice dans sa base : un
+   *  « Développé couché à la barre » ne se cherche pas sur wger sous ce
+   *  nom-là. **Ce n'est pas ce qu'on affiche** — voir `name_fr`. */
   name: string;
+  slug: string;
+  /** Le nom **affiché**, toujours. Nul quand on n'a pas su le dire en
+   *  français, et l'exercice n'est alors jamais proposé (`eligible`). */
+  name_fr: string | null;
+  description_fr: string | null;
   category: ExerciseCategory;
   muscle_group: string | null;
   instructions: string | null;
   image_url: string | null;
+  /** Les deux photos de free-exercise-db : départ et arrivée. C'est leur
+   *  alternance qui montre le mouvement. */
+  images: string[];
   /** Toujours renseignés : `builtin`, `wger`, `free-exercise-db`. */
   source: string;
   license: string | null;
   source_url: string | null;
+
+  // ── Taxonomie (13/09) ───────────────────────────────────────────────────
+  group_key: string;
+  pattern: string;
+  equipment: string;
+  /** 1 à 5. 3 par défaut, et c'est assumé. */
+  difficulty: number;
+  /** `temps` ou `reps` : un gainage se tient, une traction se compte. */
+  effort_kind: string;
+  /** « Par côté » double la durée d'une séance. */
+  unilateral: boolean;
+  /** Nom français **et** image. Non éligible = consultable, jamais proposé. */
+  eligible: boolean;
+  group_label: string;
+  pattern_label: string;
+  equipment_label: string;
+}
+
+// ── Le générateur de séances (décidé le 13/09, retours n° 3) ─────────────
+
+export const EXERCISE_GROUPS = [
+  "abdos",
+  "dos",
+  "epaules",
+  "jambes",
+  "hanches",
+  "poitrine",
+  "bras",
+  "corps-entier",
+] as const;
+export type ExerciseGroup = (typeof EXERCISE_GROUPS)[number];
+
+export const EXERCISE_GROUP_LABELS: Record<ExerciseGroup, string> = {
+  abdos: "Abdos",
+  dos: "Dos",
+  epaules: "Épaules",
+  jambes: "Jambes",
+  hanches: "Hanches",
+  poitrine: "Poitrine",
+  bras: "Bras",
+  "corps-entier": "Corps entier",
+};
+
+export const EQUIPMENTS = [
+  "aucun",
+  "elastique",
+  "halteres",
+  "barre-traction",
+  "kettlebell",
+  "machine",
+] as const;
+export type EquipmentKey = (typeof EQUIPMENTS)[number];
+
+export const EQUIPMENT_LABELS: Record<EquipmentKey, string> = {
+  aucun: "Aucun",
+  elastique: "Élastique",
+  halteres: "Haltères",
+  "barre-traction": "Barre de traction",
+  kettlebell: "Kettlebell",
+  machine: "Machine",
+};
+
+export const INTENTS = ["entretien", "progression", "recuperation"] as const;
+export type Intent = (typeof INTENTS)[number];
+
+export const INTENT_LABELS: Record<Intent, string> = {
+  entretien: "Entretien",
+  progression: "Progression",
+  recuperation: "Récupération",
+};
+
+/** Le niveau d'un groupe, **et d'où il vient**. La provenance est affichée :
+ *  « déduit de 14 séries » se discute, « niveau 3 » ne se discute pas. */
+export interface GroupLevel {
+  group: string;
+  group_label: string;
+  level: number;
+  /** `deduit` · `defaut` · `manuel` */
+  origin: string;
+  sets_counted: number;
+  best_reps: number | null;
+  best_seconds: number | null;
+}
+
+export interface GeneratedItem {
+  exercise: Exercise;
+  sets: number;
+  reps: number | null;
+  duration_s: number | null;
+  rest_s: number;
+  note: string | null;
+  /** Les deux minutes d'échauffement, prises dans la mobilité du groupe. */
+  warmup: boolean;
+}
+
+export interface GeneratedWorkout {
+  key: string;
+  name: string;
+  /** La ligne qui justifie la séance. Pas de la décoration : une proposition
+   *  qu'on ne comprend pas se remplace au hasard. */
+  principle: string;
+  duration_min: number;
+  items: GeneratedItem[];
+}
+
+export interface GenerateResponse {
+  workouts: GeneratedWorkout[];
+  levels: GroupLevel[];
+  pool_size: number;
+  /** Pourquoi il n'y a rien à proposer, en clair. Un écran blanc n'apprend
+   *  rien. */
+  reasons: string[];
 }
 
 export interface FormulaItem {

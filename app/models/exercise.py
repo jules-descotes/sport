@@ -80,9 +80,79 @@ class Exercise(Base):
     # Noms anglais connus dans les bases ouvertes — la clé de rapprochement.
     aliases: Mapped[Optional[list]] = mapped_column(JSONVariant, nullable=True)
 
+    # ── Taxonomie (décidée le 13/09) ───────────────────────────────────────
+    #
+    # Ce que le **générateur de séances** a besoin de savoir. Le `pattern`
+    # compte plus que le groupe pour composer : trois tirages d'affilée font
+    # une séance de tirage quel que soit le muscle visé, et c'est ce qu'il faut
+    # éviter de produire par accident.
+    #
+    # `a-classer` quand on n'a rien pu dire — **une valeur, pas un `NULL`** :
+    # « à classer » est un état qu'on peut compter, filtrer et corriger, là où
+    # un `NULL` se confondrait avec « pas encore importé ». Un exercice à
+    # classer est simplement inutile au générateur ; un exercice mal classé lui
+    # ferait proposer un soulevé de terre en séance de mobilité, ce qui est
+    # bien pire (cf. `services/exercise_taxonomy.py`).
+    group_key: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="a-classer", server_default="a-classer"
+    )
+    pattern: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="a-classer", server_default="a-classer"
+    )
+    equipment: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="a-classer", server_default="a-classer"
+    )
+    # De 1 à 5. Le milieu par défaut, et c'est assumé.
+    difficulty: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3"
+    )
+    # `temps` ou `reps` : un gainage se tient, une traction se compte.
+    effort_kind: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="reps", server_default="reps"
+    )
+    # « Par côté » double la durée d'une séance.
+    unilateral: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=func.false()
+    )
+
+    # ── Français et images ─────────────────────────────────────────────────
+    #
+    # `name_fr` nullable **et le restant** : un exercice sans nom français
+    # n'entre ni dans le générateur ni dans une formule. Semer une traduction
+    # approximative vaudrait moins que ne rien dire — « Barbell Hip Thrust » au
+    # milieu d'une séance ne se lit pas à bout de bras.
+    name_fr: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    description_fr: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # La liste complète. free-exercise-db en donne deux par exercice, et c'est
+    # leur alternance qui montre le mouvement ; `image_url` reste la première,
+    # pour les écrans qui n'en veulent qu'une.
+    images: Mapped[Optional[list]] = mapped_column(JSONVariant, nullable=True)
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=func.true()
     )
+
+    # ── Ce qui rend un exercice utilisable (décidé le 13/09, retours n° 4) ──
+
+    @property
+    def display_name(self) -> str:
+        """Le nom tel qu'il s'affiche. Français d'abord, toujours."""
+        return self.name_fr or self.name
+
+    @property
+    def is_eligible(self) -> bool:
+        """Peut-il entrer dans une formule ou dans une séance générée ?
+
+        **Nom français ET image.** Les deux, et pour la même raison : une
+        séance se lit à bout de bras, à un mètre, les mains au sol. Un nom
+        anglais demande une traduction mentale ; une absence d'image demande de
+        se souvenir du mouvement. Dans les deux cas on s'arrête, et une séance
+        où l'on s'arrête ne se fait pas.
+
+        La bibliothèque, elle, montre **tout** : un exercice non éligible reste
+        consultable, il n'est simplement jamais proposé.
+        """
+        return bool(self.name_fr) and bool(self.image_url)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

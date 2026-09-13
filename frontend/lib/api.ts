@@ -11,7 +11,10 @@ import type {
   ExerciseCategory,
   Food,
   FoodHit,
+  GenerateResponse,
+  GroupLevel,
   FoodLogEntry,
+  Formula,
   GearType,
   GearWithUsage,
   Habit,
@@ -500,6 +503,48 @@ export const api = {
   /** Supprime une séance ouverte par erreur. */
   deleteWorkout: (id: number) =>
     request<void>(`/training/workouts/${id}`, { method: "DELETE" }),
+
+  /** Le niveau de chaque groupe, **déduit** de ce qui a été fait. Huit lignes,
+   *  toujours : un groupe jamais travaillé apparaît quand même, au niveau 2. */
+  trainingLevels: () => request<GroupLevel[]>("/training/levels"),
+
+  /** Corriger un niveau, ou rendre la main à la déduction (`level: null`). */
+  setTrainingLevel: (group: string, level: number | null) =>
+    request<GroupLevel[]>("/training/levels", {
+      method: "PUT",
+      body: JSON.stringify({ group, level }),
+    }),
+
+  /** Trois séances, ou moins — jamais trois fois la même. Déterministe :
+   *  fermer l'écran et le rouvrir rend exactement les mêmes. */
+  composeWorkout: (data: {
+    groups: string[];
+    duration_min?: number;
+    equipment?: string[];
+    intent?: string;
+    variant?: number;
+  }) =>
+    request<GenerateResponse>("/training/compose", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** Sauve une séance générée comme formule personnelle. Elle est régénérée
+   *  côté serveur depuis la demande : une formule est de la donnée
+   *  d'apprentissage, elle ne vient pas du client. */
+  saveComposedWorkout: (data: {
+    key: string;
+    name: string;
+    groups: string[];
+    duration_min?: number;
+    equipment?: string[];
+    intent?: string;
+    variant?: number;
+  }) =>
+    request<Formula>("/training/compose/save", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   workouts: (limit = 50) =>
     request<Workout[]>(`/training/workouts${query({ limit })}`),

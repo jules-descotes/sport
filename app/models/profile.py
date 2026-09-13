@@ -53,6 +53,15 @@ class Profile(Base):
         Integer, ForeignKey("spots.id", ondelete="SET NULL"), nullable=True
     )
     # Liste de valeurs de `Discipline` — surf seul au départ, foil ensuite.
+    # Corrections manuelles du niveau d'entraînement, par groupe musculaire.
+    # Une colonne JSON plutôt qu'une table : ce sont au plus huit entiers, ils
+    # se lisent toujours ensemble, et une table coûterait une jointure à chaque
+    # génération de séance. Absente ou vide = tout est déduit de l'historique
+    # (cf. `services/workout_level.py`).
+    training_levels: Mapped[Optional[dict]] = mapped_column(
+        JSONVariant, nullable=True
+    )
+
     disciplines: Mapped[list[str]] = mapped_column(
         JSONVariant, nullable=False, default=lambda: [Discipline.SURF.value]
     )

@@ -338,3 +338,34 @@ def fake_archive(monkeypatch, archive_bundle):
         return calls
 
     return _install
+
+
+@pytest.fixture
+async def seeded_exercise(db_session):
+    """Un exercice rangé, pour tester le niveau déduit.
+
+    Rangé à la main dans le test plutôt que semé par le catalogue : on veut que
+    le test dise **quel** groupe il travaille, sans dépendre de ce que le semis
+    a décidé ce mois-ci.
+    """
+    from app.models.exercise import Exercise
+
+    exercise = Exercise(
+        slug="test-gainage",
+        name="Gainage de test",
+        name_normalized="gainage de test",
+        name_fr="Gainage de test",
+        category="core",
+        muscle_group="ceinture abdominale",
+        image_url="https://example.test/gainage.png",
+        source="builtin",
+        group_key="abdos",
+        pattern="gainage-statique",
+        equipment="aucun",
+        difficulty=3,
+        effort_kind="temps",
+    )
+    db_session.add(exercise)
+    await db_session.commit()
+    await db_session.refresh(exercise)
+    return exercise

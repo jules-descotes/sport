@@ -12,6 +12,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.daily_log import router as daily_log_router
 from app.api.routes.expenditure import router as expenditure_router
 from app.api.routes.gear import router as gear_router
+from app.api.routes.generator import router as generator_router
 from app.api.routes.habits import router as habits_router
 from app.api.routes.nutrition import router as nutrition_router
 from app.api.routes.recommend import router as recommend_router
@@ -163,6 +164,9 @@ app.include_router(expenditure_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(gear_router, prefix="/api/v1")
 app.include_router(training_router, prefix="/api/v1")
+# Après `training_router` : ses routes fixes (`/training/overview`…) sont
+# déjà déclarées, et celles-ci le sont aussi — aucune n'est paramétrée.
+app.include_router(generator_router, prefix="/api/v1")
 app.include_router(nutrition_router, prefix="/api/v1")
 app.include_router(habits_router, prefix="/api/v1")
 

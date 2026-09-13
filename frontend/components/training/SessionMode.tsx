@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  ExerciseCredit,
+  ExerciseImage,
+} from "@/components/training/ExerciseImage";
 import { IconCheck, IconPlus } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { ScreenLock, SessionAudio, vibrate } from "@/lib/session-timer";
@@ -411,7 +415,7 @@ export function SessionMode({
             {clock(restLeft)}
           </p>
           <p className="max-w-[320px] text-center text-[16px] leading-snug text-ink-2">
-            Ensuite : {step.item.exercise.name}
+            Ensuite : {step.item.exercise.name_fr ?? step.item.exercise.name}
           </p>
           <div className="flex w-full max-w-[360px] gap-3">
             <button
@@ -434,17 +438,20 @@ export function SessionMode({
       ) : (
         <>
           <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            {item.exercise.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.exercise.image_url}
-                alt=""
-                className="max-h-[30vh] w-auto rounded-card border border-line bg-card object-contain"
-              />
-            ) : null}
+            {/* L'image en grand, **sous le nom**, et les deux photos en
+                alternance quand elles existent : c'est leur va-et-vient qui
+                montre le mouvement, et c'est ce qu'on cherche à un mètre, les
+                mains au sol. Sans image, un pictogramme du groupe — jamais un
+                cadre vide, qui fait attendre un chargement qui ne vient pas
+                (décidé le 13/09). */}
+            <ExerciseImage
+              exercise={item.exercise}
+              animate
+              className="max-h-[30vh] w-auto"
+            />
 
             <h1 className="font-display text-[40px] font-bold uppercase leading-[0.95] tracking-tight text-ink">
-              {item.exercise.name}
+              {item.exercise.name_fr ?? item.exercise.name}
             </h1>
 
             <p className="tabular font-display text-[30px] font-bold leading-none text-accent">
@@ -459,11 +466,15 @@ export function SessionMode({
               {item.tempo ? ` · tempo ${item.tempo}` : ""}
             </p>
 
-            {item.exercise.instructions ? (
+            {item.exercise.description_fr ?? item.exercise.instructions ? (
               <p className="max-w-[420px] text-[15px] leading-snug text-ink-2">
-                {item.exercise.instructions}
+                {item.exercise.description_fr ?? item.exercise.instructions}
               </p>
             ) : null}
+
+            {/* L'attribution, discrète mais présente : wger est en CC BY-SA,
+                et la licence exige de citer la source. */}
+            <ExerciseCredit exercise={item.exercise} />
 
             {/* Minuteur de maintien, pour les exercices tenus. */}
             {item.duration_s ? (

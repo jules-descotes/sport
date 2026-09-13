@@ -5,12 +5,19 @@ import { useMemo, useState } from "react";
 
 import { MeasureWheel } from "@/components/training/MeasureWheel";
 import { ObjectiveGauge } from "@/components/training/ObjectiveGauge";
+import { Composer } from "@/components/training/Composer";
+import {
+  ExerciseCredit,
+  ExerciseImage,
+} from "@/components/training/ExerciseImage";
+import { LevelPanel } from "@/components/training/LevelPanel";
 import { SessionMode } from "@/components/training/SessionMode";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import {
   IconChevronDown,
   IconClock,
   IconDumbbell,
+  IconPlus,
   IconSearch,
 } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
@@ -198,31 +205,44 @@ function ExerciseLibrary() {
                   key={exercise.id}
                   className="flex gap-3 rounded-card border border-line bg-card p-3"
                 >
-                  {exercise.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={exercise.image_url}
-                      alt=""
-                      loading="lazy"
-                      className="h-16 w-16 shrink-0 rounded-cell border border-line bg-soft object-cover"
-                    />
-                  ) : null}
+                  {/* Vignette, avec repli en pictogramme du groupe : un cadre
+                      vide fait croire à un chargement qui ne vient jamais. */}
+                  <ExerciseImage
+                    exercise={exercise}
+                    className="h-16 w-20 shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="text-[15px] font-semibold text-ink">
-                      {exercise.name}
+                      {exercise.name_fr ?? exercise.name}
                     </p>
-                    {exercise.instructions ? (
-                      <p className="mt-0.5 line-clamp-3 text-[13px] leading-snug text-ink-2">
-                        {exercise.instructions}
-                      </p>
+                    {/* Le nom d'origine, en petit, quand il diffère : c'est
+                        sous celui-là qu'on retrouve l'exercice dans sa base. */}
+                    {exercise.name_fr && exercise.name_fr !== exercise.name ? (
+                      <p className="text-[12px] text-mute">{exercise.name}</p>
                     ) : null}
-                    {/* Source et licence, sur chaque ligne : une image CC BY-SA
-                        ne s'affiche pas comme une image du domaine public. */}
-                    <p className="mt-1 truncate text-[11px] text-mute">
-                      {exercise.muscle_group ? `${exercise.muscle_group} · ` : ""}
-                      {exercise.source}
-                      {exercise.license ? ` · ${exercise.license}` : ""}
+                    <p className="mt-0.5 line-clamp-3 text-[13px] leading-snug text-ink-2">
+                      {exercise.description_fr ?? exercise.instructions ?? ""}
                     </p>
+                    <p className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-mute">
+                      <span>{exercise.group_label}</span>
+                      <span>· {exercise.pattern_label}</span>
+                      <span>· {exercise.equipment_label}</span>
+                      <span>· difficulté {exercise.difficulty}</span>
+                      {/* Non éligible n'est pas caché : il est simplement
+                          jamais proposé, et l'écran dit pourquoi. */}
+                      {!exercise.eligible ? (
+                        <span>
+                          ·{" "}
+                          {!exercise.name_fr
+                            ? "pas de nom français"
+                            : "pas d'image"}{" "}
+                          — jamais proposé
+                        </span>
+                      ) : null}
+                    </p>
+                    {/* L'attribution : une image CC BY-SA ne s'affiche pas
+                        comme une image du domaine public. */}
+                    <ExerciseCredit exercise={exercise} className="mt-1" />
                   </div>
                 </li>
               ))}
@@ -243,6 +263,7 @@ export default function TrainingPage() {
   } | null>(null);
   const [swapped, setSwapped] = useState<Formula | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const overview = useQuery({
     queryKey: ["training-overview"],
@@ -276,6 +297,25 @@ export default function TrainingPage() {
       (item.ratio ?? -1) < (worst.ratio ?? -1) ? item : worst,
     ).slug;
   }, [overview.data]);
+
+  if (composerOpen) {
+    return (
+      <Composer
+        onClose={() => setComposerOpen(false)}
+        onStart={async (formulaId) => {
+          // La séance composée est d'abord **sauvée comme formule**, puis
+          // lancée. Deux raisons : le mode séance ne sait démarrer que depuis
+          // une formule, et une séance faite sans être gardée ne laisserait
+          // aucune trace — donc rien pour déduire le niveau la prochaine fois.
+          setComposerOpen(false);
+          const fresh = await api.trainingOverview();
+          const formula = fresh.formulas.find((item) => item.id === formulaId);
+          queryClient.setQueryData(["training-overview"], fresh);
+          if (formula) start.mutate(formula);
+        }}
+      />
+    );
+  }
 
   if (session) {
     return (
@@ -403,7 +443,23 @@ export default function TrainingPage() {
               souvent — une séance faite tous les matins pendant six mois se
               fait de moins en moins bien.
             </p>
+
+            {/* Composer, c'est l'inverse des formules : au lieu de choisir
+                dans ce qui existe, on dit ce qu'on veut et on obtient trois
+                façons de le faire (décidé le 13/09). */}
+            <button
+              type="button"
+              onClick={() => setComposerOpen(true)}
+              className="mt-3 flex min-h-[56px] w-full items-center justify-center gap-2 rounded-button border border-line bg-card px-4 text-[16px] font-semibold text-ink"
+            >
+              <IconPlus className="h-5 w-5" />
+              Composer une séance
+            </button>
           </section>
+
+          {/* Le niveau déduit, replié : on le regarde le jour où une
+              proposition semble trop facile ou trop dure. */}
+          <LevelPanel />
 
           <ExerciseLibrary />
         </div>

@@ -34,6 +34,7 @@ from app.models.objective import Objective
 from app.models.surf_session import SurfSession
 from app.models.workout import WorkoutSession
 from app.services.training_catalog import (
+    BUILTIN_TAXONOMY,
     EXERCISES,
     FORMULAS,
     OBJECTIVES,
@@ -81,6 +82,27 @@ async def seed_exercises(db: AsyncSession) -> int:
         exercise.muscle_group = entry.get("muscle_group")
         exercise.instructions = entry.get("instructions")
         exercise.aliases = list(entry.get("aliases") or [])
+
+        # Ces trente exercices sont écrits ici, en français : leur nom **est**
+        # leur nom français, et leurs consignes aussi. Rien à traduire.
+        exercise.name_fr = entry["name"]
+        if exercise.description_fr is None:
+            exercise.description_fr = entry.get("instructions")
+
+        # Taxonomie posée à la main (cf. `BUILTIN_TAXONOMY`) : une règle
+        # grossière rangerait la fente basse hanche ouverte dans les jambes et
+        # la planche avec touche d'épaule dans le gainage statique, et le
+        # générateur proposerait autre chose que ce qu'on a écrit.
+        taxonomy = BUILTIN_TAXONOMY.get(entry["slug"])
+        if taxonomy is not None:
+            (
+                exercise.group_key,
+                exercise.pattern,
+                exercise.equipment,
+                exercise.difficulty,
+                exercise.effort_kind,
+                exercise.unilateral,
+            ) = taxonomy
 
     await db.commit()
     return created

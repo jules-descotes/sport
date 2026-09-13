@@ -90,6 +90,58 @@ OBJECTIVES: tuple[dict[str, Any], ...] = (
 # bases ouvertes. C'est la clé de rapprochement de l'import — il enrichit une
 # ligne existante au lieu d'en créer une deuxième sous un autre nom.
 
+# ── La taxonomie du catalogue maison, à la main ────────────────────────────
+#
+# Les 1 661 exercices importés sont classés par règles
+# (`services/exercise_taxonomy.py`), avec une relecture d'échantillon avant
+# écriture. **Ces trente-là ne le sont pas** : ils sont rédigés ici, un par un,
+# et les ranger à la main coûte trente lignes une fois pour toutes.
+#
+# C'est ce qui fait la différence là où une règle se trompe : la fente basse
+# hanche ouverte est de la **mobilité de hanche**, pas un étirement de jambe ;
+# la planche avec touche d'épaule est de l'**anti-rotation**, pas du gainage
+# statique ; le pop-up est une **poussée**. Aucune de ces trois nuances ne
+# s'attrape depuis un nom, et toutes les trois changent ce que le générateur
+# propose.
+#
+# `(groupe, pattern, matériel, difficulté, temps-ou-reps, unilatéral)`.
+BUILTIN_TAXONOMY: dict[str, tuple[str, str, str, int, str, bool]] = {
+    # Mobilité
+    "chat-vache": ("dos", "mobilite", "aucun", 1, "temps", False),
+    "rotation-thoracique": ("dos", "mobilite", "aucun", 2, "temps", True),
+    "fente-hanche": ("hanches", "mobilite", "aucun", 2, "temps", True),
+    "chien-tete-en-bas": ("dos", "mobilite", "aucun", 2, "temps", False),
+    "flexion-avant": ("jambes", "etirement", "aucun", 2, "temps", False),
+    "cercles-epaules": ("epaules", "mobilite", "aucun", 1, "temps", False),
+    "dislocation-batons": ("epaules", "mobilite", "aucun", 2, "reps", False),
+    "pigeon": ("hanches", "etirement", "aucun", 3, "temps", True),
+    "etirement-mollets": ("jambes", "etirement", "aucun", 1, "temps", True),
+    "cobra": ("dos", "mobilite", "aucun", 2, "temps", False),
+    "torsion-au-sol": ("dos", "mobilite", "aucun", 1, "temps", True),
+    "accroupi-profond": ("hanches", "mobilite", "aucun", 3, "temps", False),
+    # Gainage
+    "planche": ("abdos", "gainage-statique", "aucun", 2, "temps", False),
+    "planche-laterale": ("abdos", "gainage-statique", "aucun", 3, "temps", True),
+    "hollow-body": ("abdos", "gainage-statique", "aucun", 3, "temps", False),
+    "dead-bug": ("abdos", "anti-rotation", "aucun", 2, "reps", True),
+    "bird-dog": ("abdos", "anti-rotation", "aucun", 2, "reps", True),
+    "releve-jambes": ("abdos", "flexion", "aucun", 3, "reps", False),
+    "pallof": ("abdos", "anti-rotation", "elastique", 3, "reps", True),
+    "gainage-dynamique": ("abdos", "anti-rotation", "aucun", 3, "reps", True),
+    # Renforcement
+    "pompes": ("poitrine", "poussee", "aucun", 3, "reps", False),
+    "pop-up": ("corps-entier", "poussee", "aucun", 3, "reps", False),
+    "rotateurs-elastique": ("epaules", "tirage", "elastique", 2, "reps", True),
+    "ytw-elastique": ("epaules", "tirage", "elastique", 2, "reps", False),
+    "rowing-elastique": ("dos", "tirage", "elastique", 2, "reps", False),
+    "squat": ("jambes", "squat", "aucun", 2, "reps", False),
+    "fente-avant": ("jambes", "fente", "aucun", 3, "reps", True),
+    "pont-fessier": ("hanches", "charniere", "aucun", 2, "reps", False),
+    "souleve-terre-une-jambe": ("hanches", "charniere", "aucun", 4, "reps", True),
+    "superman": ("dos", "extension", "aucun", 2, "temps", False),
+}
+
+
 EXERCISES: tuple[dict[str, Any], ...] = (
     # ── Mobilité ───────────────────────────────────────────────────────────
     {

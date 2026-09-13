@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.types import UtcDatetime
 
@@ -73,14 +73,65 @@ class ExerciseRead(BaseModel):
 
     id: int
     slug: str
+    # Le nom d'origine. Gardé pour la bibliothèque et pour retrouver l'exercice
+    # dans sa base : un « Développé couché à la barre » ne se cherche pas sur
+    # wger sous ce nom-là.
     name: str
+    # Le nom **affiché**, toujours. Nul quand on n'a pas su le dire en
+    # français, et l'exercice n'est alors jamais proposé (cf. `eligible`).
+    name_fr: Optional[str] = None
+    description_fr: Optional[str] = None
     category: str
     muscle_group: Optional[str] = None
     instructions: Optional[str] = None
     image_url: Optional[str] = None
+    # Les deux photos de free-exercise-db : c'est leur alternance qui montre le
+    # mouvement. Une seule image ne dit pas ce qui bouge.
+    images: list[str] = []
     source: str
     license: Optional[str] = None
     source_url: Optional[str] = None
+
+    # ── Taxonomie (13/09) ──────────────────────────────────────────────────
+    group_key: str = "a-classer"
+    pattern: str = "a-classer"
+    equipment: str = "a-classer"
+    difficulty: int = 3
+    effort_kind: str = "reps"
+    unilateral: bool = False
+    # Nom français **et** image. Un exercice non éligible reste consultable
+    # dans la bibliothèque ; il n'est simplement jamais proposé.
+    eligible: bool = False
+    # Les libellés français, calculés au bord : l'écran n'a pas à porter une
+    # seconde copie du dictionnaire (règle E.3 du 13/09 — tout ce qui est
+    # visible dans Training est en français).
+    group_label: str = "À classer"
+    pattern_label: str = "À classer"
+    equipment_label: str = "À classer"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive(cls, value: Any) -> Any:
+        """Éligibilité et libellés, depuis la ligne de l'ORM."""
+        if not hasattr(value, "group_key"):
+            return value
+        from app.services.exercise_taxonomy import (
+            EQUIPMENT_LABELS,
+            GROUP_LABELS,
+            PATTERN_LABELS,
+        )
+
+        data = {
+            name: getattr(value, name)
+            for name in cls.model_fields
+            if hasattr(value, name)
+        }
+        data["images"] = list(value.images or ([value.image_url] if value.image_url else []))
+        data["eligible"] = value.is_eligible
+        data["group_label"] = GROUP_LABELS.get(value.group_key, "À classer")
+        data["pattern_label"] = PATTERN_LABELS.get(value.pattern, "À classer")
+        data["equipment_label"] = EQUIPMENT_LABELS.get(value.equipment, "À classer")
+        return data
 
 
 class FormulaItemRead(BaseModel):
