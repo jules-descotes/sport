@@ -1,7 +1,7 @@
 """13/09 (retours n° 4) — un objectif d'habitude peut être un plafond
 
 Revision ID: 0017
-Revises: 0015
+Revises: 0016
 Create Date: 2026-09-13
 
 Jusqu'ici un objectif d'habitude était forcément un minimum : « cinq mobilités
@@ -29,7 +29,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0017"
-down_revision: Union[str, Sequence[str], None] = "0015"
+down_revision: Union[str, Sequence[str], None] = "0016"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
