@@ -13,6 +13,7 @@ import {
 } from "@/components/surf/HourlyTable";
 import { SlotDetailScreen } from "@/components/surf/SlotDetailScreen";
 import { SpotPicker } from "@/components/surf/SpotPicker";
+import { SpotSwitcher } from "@/components/surf/SpotSwitcher";
 import { SurfTabs } from "@/components/surf/SurfTabs";
 import { IconPlus, IconSearch, IconStar } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
@@ -116,6 +117,16 @@ function SurfScreen() {
   });
 
   const spot = forecast.data?.spot;
+  /**
+   * Le spot affiché, tel que la barre de passage doit le montrer.
+   *
+   * `forecast.data.spot` n'arrive qu'avec la prévision ; la pastille active
+   * serait donc éteinte pendant tout le chargement, c'est-à-dire exactement
+   * quand on vient de toucher une autre pastille. Les favoris, eux, sont déjà
+   * là : on y lit le spot par son slug, et la barre répond au doigt.
+   */
+  const currentSpot =
+    spot ?? favorites.data?.find((favorite) => favorite.slug === slug) ?? null;
   // Mémoïsé : `?? []` fabriquerait un tableau neuf à chaque rendu, et l'effet
   // de défilement se redéclencherait sans fin.
   const points = useMemo(() => forecast.data?.points ?? [], [forecast.data]);
@@ -229,6 +240,16 @@ function SurfScreen() {
       </header>
 
       <SurfTabs />
+
+      {/* Passer d'un spot maison à l'autre en un tap (13/09). Sous les onglets
+          et au-dessus du tableau : c'est le premier geste de l'écran, avant
+          même de lire une colonne. */}
+      <SpotSwitcher
+        favorites={favorites.data ?? []}
+        current={currentSpot}
+        homeSpotId={homeSpotId}
+        onSelect={setSlug}
+      />
 
       {forecast.isPending ? (
         <p className="px-5 text-[14px] text-mute">Lecture des prévisions…</p>

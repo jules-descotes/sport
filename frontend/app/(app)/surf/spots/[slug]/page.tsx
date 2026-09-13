@@ -12,13 +12,16 @@ import { ApiError, api } from "@/lib/api";
 import { compass, num, scoreClass } from "@/lib/format";
 
 /**
- * Fiche spot : webcam, courbe de houle sur cinq jours, niveau de la mer,
- * favori secondaire et masquage.
+ * Fiche spot : critères, courbe de houle sur cinq jours, favori secondaire,
+ * masquage, et la webcam **tout en bas**.
  *
- * Ce n'est pas une destination — la barre basse en compte trois, et elle n'en
- * comptera pas quatre. C'est le détail d'un spot, ouvert depuis l'écran Surf
- * pour ce que la grille ne montre pas : la webcam et la forme de la houle sur
- * cinq jours.
+ * Ce n'est pas une destination — la barre basse en compte cinq, et elle n'en
+ * comptera pas six. C'est le détail d'un spot, ouvert depuis l'écran Surf pour
+ * ce que la grille ne montre pas : les critères, la forme de la houle sur cinq
+ * jours, et l'image.
+ *
+ * L'ordre des sections est celui de la décision : ce qui la fonde d'abord, ce
+ * qui la confirme ensuite.
  *
  * Le favori **du profil** se définit sur Surf : c'est lui qui porte l'écran
  * Jour. Le bouton ci-dessous ajoute un favori *secondaire* — vingt au maximum,
@@ -119,14 +122,6 @@ export default function SpotPage({
           ça vaut mieux que la webcam. */}
       <SpotRulesForm slug={slug} />
 
-      {/* Webcam : iframe ou lien sortant, jamais de ré-hébergement du flux
-          (droits et bande passante, cf. PROJET.md §10). Le choix entre les
-          deux est dans `components/surf/Webcam.tsx`. */}
-      <section className="px-5">
-        <Webcam url={spot.webcam_url} name={spot.name} />
-        <WebcamForm slug={slug} current={spot.webcam_url} />
-      </section>
-
       <section className="px-5 pt-5">
         <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
           Houle sur 5 jours
@@ -207,6 +202,23 @@ export default function SpotPage({
           fermée.
         </p>
       ) : null}
+
+      {/* Webcam **en dernier** (13/09). Elle ouvrait la fiche ; elle la ferme
+          désormais. L'ordre de la page suit celui de la décision : les
+          critères, puis les chiffres, puis l'image qui confirme. La webcam est
+          le coup d'œil de vérification, pas la porte d'entrée — et c'est en
+          plus la seule section qui charge un tiers.
+
+          Iframe ou lien sortant, jamais de ré-hébergement du flux (droits et
+          bande passante, cf. PROJET.md §10). Le choix entre les deux est dans
+          `components/surf/Webcam.tsx`. */}
+      <section className="px-5 pt-6">
+        <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-mute">
+          Webcam
+        </h2>
+        <Webcam url={spot.webcam_url} name={spot.name} />
+        <WebcamForm slug={slug} current={spot.webcam_url} />
+      </section>
     </main>
   );
 }
