@@ -328,6 +328,15 @@ def apply_segments(
 
     Un segment sans aucune note est **ignoré** : c'est une ligne que Jules a
     ouverte puis laissée vide, pas un renseignement.
+
+    **Les lignes existantes sont modifiées sur place, pas remplacées.** C'est le
+    correctif du 13/09 : réaffecter la collection entière fait écrire les
+    nouvelles lignes *avant* que SQLAlchemy ne supprime les orphelines — l'ordre
+    de flush est insertions, puis mises à jour, puis suppressions — et
+    `uq_session_segments_session_hour` refusait la deuxième ligne de 8 h avec un
+    500. Apparier par heure évite le conflit au lieu de le rattraper, et laisse
+    en prime `created_at` tranquille : une heure re-notée n'est pas une heure
+    neuve.
     """
     from app.schemas.session import to_half
 
@@ -345,11 +354,25 @@ def apply_segments(
         )
         by_hour[hour] = (conditions, personal)
 
-    session.segments = [
-        SessionSegment(
-            started_at=hour,
-            rating_conditions_half=conditions,
-            rating_personal_half=personal,
-        )
-        for hour, (conditions, personal) in sorted(by_hour.items())
-    ]
+    # SQLite rend des datetimes naïfs : sans ce recollage, une heure relue de la
+    # base ne s'apparierait jamais à la même heure envoyée par l'écran, et le
+    # correctif ne tiendrait qu'en production (cf. `schemas/types.UtcDatetime`).
+    existing: dict[datetime, SessionSegment] = {}
+    for segment in session.segments:
+        stamp = segment.started_at
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=UTC)
+        existing[stamp.astimezone(UTC)] = segment
+
+    kept: list[SessionSegment] = []
+    for hour, (conditions, personal) in sorted(by_hour.items()):
+        row = existing.get(hour)
+        if row is None:
+            row = SessionSegment(started_at=hour)
+        row.rating_conditions_half = conditions
+        row.rating_personal_half = personal
+        kept.append(row)
+
+    # `delete-orphan` se charge des heures qui ne sont plus dans la liste : ce
+    # qui sort de la collection sort de la base.
+    session.segments = kept

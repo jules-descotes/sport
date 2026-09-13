@@ -19,6 +19,7 @@ from app.api.routes.spots import router as spots_router
 from app.api.routes.tides import router as tides_router
 from app.api.routes.training import router as training_router
 from app.core.config import settings
+from app.core.errors import ServerErrorJsonMiddleware
 from app.core.security import hash_password
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.database import async_session
@@ -128,6 +129,13 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+# Déclaré **avant** CORS, donc exécuté après lui : c'est toute l'astuce. Un
+# `add_exception_handler(Exception, ...)` finirait dans `ServerErrorMiddleware`,
+# au-dessus de CORS, et sa réponse 500 repartirait sans
+# `Access-Control-Allow-Origin` — le navigateur afficherait alors une erreur
+# CORS à la place du vrai statut (constaté le 13/09 sur `PATCH /sessions/1`).
+app.add_middleware(ServerErrorJsonMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

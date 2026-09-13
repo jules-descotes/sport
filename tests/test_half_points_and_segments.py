@@ -442,3 +442,208 @@ async def test_deleting_a_session_takes_its_segments(
         select(func.count()).select_from(SessionSegment)
     )
     assert remaining.scalar_one() == 0
+
+
+# ── Re-noter une heure déjà notée (bug de production du 13/09) ──────────────
+#
+# `PATCH /sessions/1` avec des segments répondait 500 en production, et le
+# navigateur affichait une erreur CORS — la réponse d'erreur sortait du
+# `ServerErrorMiddleware` sans passer par `CORSMiddleware`.
+#
+# La cause est dans le flush : remplacer la collection entière fait écrire les
+# nouvelles lignes **avant** que SQLAlchemy ne supprime les orphelines, et
+# `uq_session_segments_session_hour` refuse la deuxième ligne de 8 h.
+
+
+async def test_resending_the_same_hour_replaces_its_ratings(
+    auth_client, make_spot, fake_archive
+) -> None:
+    """Le geste qui cassait : corriger une heure déjà notée."""
+    fake_archive()
+    spot = await make_spot()
+    created = await _create(
+        auth_client, spot, started_at=NOW.isoformat(), duration_min=180
+    )
+
+    first = await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {
+                    "started_at": NOW.isoformat(),
+                    "rating_conditions": 4,
+                    "rating_personal": 3,
+                },
+                {
+                    "started_at": (NOW + timedelta(hours=1)).isoformat(),
+                    "rating_conditions": 3,
+                    "rating_personal": 3,
+                },
+            ]
+        },
+    )
+    assert first.status_code == 200, first.text
+
+    second = await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {
+                    "started_at": NOW.isoformat(),
+                    "rating_conditions": 5,
+                    "rating_personal": 4.5,
+                },
+                {
+                    "started_at": (NOW + timedelta(hours=1)).isoformat(),
+                    "rating_conditions": 3,
+                    "rating_personal": 3,
+                },
+            ]
+        },
+    )
+
+    assert second.status_code == 200, second.text
+    segments = second.json()["segments"]
+    assert [item["rating_conditions"] for item in segments] == [5.0, 3.0]
+    assert [item["rating_personal"] for item in segments] == [4.5, 3.0]
+
+
+async def test_a_segment_can_be_dropped_while_another_is_kept(
+    auth_client, make_spot, fake_archive, db_session
+) -> None:
+    """Effacer une heure notée par erreur, sans toucher aux autres."""
+    from sqlalchemy import func, select
+
+    from app.models.session_segment import SessionSegment
+
+    fake_archive()
+    spot = await make_spot()
+    created = await _create(
+        auth_client, spot, started_at=NOW.isoformat(), duration_min=180
+    )
+
+    await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {"started_at": NOW.isoformat(), "rating_conditions": 4},
+                {
+                    "started_at": (NOW + timedelta(hours=1)).isoformat(),
+                    "rating_conditions": 2,
+                },
+                {
+                    "started_at": (NOW + timedelta(hours=2)).isoformat(),
+                    "rating_conditions": 3,
+                },
+            ]
+        },
+    )
+
+    trimmed = await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {
+                    "started_at": (NOW + timedelta(hours=2)).isoformat(),
+                    "rating_conditions": 3.5,
+                }
+            ]
+        },
+    )
+
+    assert trimmed.status_code == 200, trimmed.text
+    segments = trimmed.json()["segments"]
+    assert len(segments) == 1
+    assert segments[0]["rating_conditions"] == 3.5
+
+    # Les orphelines sont parties, pas seulement détachées.
+    remaining = await db_session.execute(
+        select(func.count()).select_from(SessionSegment)
+    )
+    assert remaining.scalar_one() == 1
+
+
+async def test_an_hour_shifted_by_one_keeps_the_untouched_hours(
+    auth_client, make_spot, fake_archive
+) -> None:
+    """Le cas mixte : une heure conservée, une supprimée, une ajoutée."""
+    fake_archive()
+    spot = await make_spot()
+    created = await _create(
+        auth_client, spot, started_at=NOW.isoformat(), duration_min=180
+    )
+
+    await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {"started_at": NOW.isoformat(), "rating_conditions": 4},
+                {
+                    "started_at": (NOW + timedelta(hours=1)).isoformat(),
+                    "rating_conditions": 2,
+                },
+            ]
+        },
+    )
+
+    shifted = await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {"started_at": NOW.isoformat(), "rating_conditions": 4},
+                {
+                    "started_at": (NOW + timedelta(hours=2)).isoformat(),
+                    "rating_conditions": 5,
+                },
+            ]
+        },
+    )
+
+    assert shifted.status_code == 200, shifted.text
+    segments = shifted.json()["segments"]
+    assert [item["rating_conditions"] for item in segments] == [4.0, 5.0]
+
+
+async def test_rating_a_session_that_already_has_segments(
+    auth_client, make_spot, fake_archive
+) -> None:
+    """Le PATCH de production : les deux notes **et** les segments d'un coup."""
+    fake_archive()
+    spot = await make_spot()
+    created = await _create(
+        auth_client, spot, started_at=NOW.isoformat(), duration_min=180
+    )
+    await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "segments": [
+                {"started_at": NOW.isoformat(), "rating_conditions": 3},
+            ]
+        },
+    )
+
+    rated = await auth_client.patch(
+        f"/api/v1/sessions/{created['id']}",
+        json={
+            "rating_conditions": 4,
+            "rating_personal": 3.5,
+            "segments": [
+                {
+                    "started_at": NOW.isoformat(),
+                    "rating_conditions": 3,
+                    "rating_personal": 3,
+                },
+                {
+                    "started_at": (NOW + timedelta(hours=1)).isoformat(),
+                    "rating_conditions": 4.5,
+                    "rating_personal": 4,
+                },
+            ],
+        },
+    )
+
+    assert rated.status_code == 200, rated.text
+    body = rated.json()
+    assert body["status"] == "rated"
+    assert body["rating_conditions"] == 4.0
+    assert len(body["segments"]) == 2
