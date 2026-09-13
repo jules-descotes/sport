@@ -10,15 +10,18 @@ le générateur ni dans une formule** (cf. `Exercise.is_eligible`). Un mouvement
 qu'on ne reconnaît pas d'un coup d'œil, les mains au sol, est un mouvement
 qu'on saute.
 
-Le rapprochement se fait en trois passes, de la plus sûre à la moins sûre, et
-**il s'arrête à la première qui trouve** :
+Le rapprochement se fait en deux passes, et **il s'arrête à la première qui
+trouve** :
 
 1. **Alias exact.** Un nom anglais qu'on a écrit nous-mêmes. C'est le
    rapprochement de l'import, rejoué ici pour les lignes qu'il a manquées.
 2. **Groupe + pattern + matériel.** Même travail, même mouvement, même
    matériel : l'image montre le bon geste même si le nom diffère.
-3. **Groupe + pattern.** Le matériel tombe. Moins sûr, et c'est pour ça que
-   c'est la dernière.
+
+Un troisième tier « groupe + pattern » a été essayé le 13/09 et lancé en
+production : il a prêté la photo d'un pont fessier à la barre au soulevé de
+terre à une jambe. Même pattern, même groupe, et une image qui montre autre
+chose — c'est-à-dire exactement ce que ce module existe pour éviter.
 
 **Ce qu'aucune passe ne couvre garde son absence d'image**, et la fonction le
 dit. Coller l'image d'un mouvement voisin « pour faire joli » est exactement ce
@@ -49,7 +52,7 @@ class Borrowed:
 
     slug: str
     name: str
-    # `alias` · `groupe+pattern+materiel` · `groupe+pattern` · `aucune`
+    # `alias` · `groupe+pattern+materiel` · `aucune`
     how: str
     donor_slug: Optional[str] = None
     donor_name: Optional[str] = None
@@ -130,10 +133,6 @@ async def borrow_missing_images(
         if donor is None:
             donor = _by_taxonomy(target, donors, with_equipment=True)
             how = "groupe+pattern+materiel"
-        if donor is None:
-            donor = _by_taxonomy(target, donors, with_equipment=False)
-            how = "groupe+pattern"
-
         if donor is None:
             results.append(
                 Borrowed(slug=target.slug, name=target.name, how="aucune")

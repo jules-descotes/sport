@@ -9,18 +9,24 @@ Ce module remplace ces lignes-là, et **liste ce qu'il a remplacé**. La liste
 compte autant que le remplacement : une formule qui change sous les doigts sans
 qu'on sache ce qui a bougé n'est plus une formule à laquelle on se fie.
 
-Le remplaçant est cherché dans cet ordre :
+Le remplaçant est cherché dans cet ordre, et **les deux tiers exigent le même
+groupe** :
 
-1. **Même groupe, même pattern, même matériel, difficulté la plus proche.**
-   C'est le même travail, fait autrement.
-2. **Même groupe, même pattern.** Le matériel tombe.
-3. **Même pattern seul.** Dernier recours : le mouvement compte plus que le
-   muscle pour ce que la formule cherche à produire.
+1. Même groupe, même pattern, même matériel, difficulté la plus proche. C'est
+   le même travail, fait autrement.
+2. Même groupe, même pattern. Le matériel tombe.
 
-**Aucun remplaçant trouvé = la ligne reste.** Une formule amputée d'un exercice
-est moins bonne qu'une formule avec une ligne sans image : la séance se fait
-quand même, et on sait quoi corriger. Supprimer silencieusement laisserait une
-formule de trois minutes là où il y en avait douze.
+**Il n'y a pas de troisième tier.** Un repli sur le seul pattern a été essayé
+le 13/09 et lancé en production : il a remplacé le pop-up à sec par un
+« développé épaules à la poulie » et le chat-vache par un accroupi profond.
+Même pattern, même famille de mouvement, et aucun rapport avec ce que la
+formule cherchait à produire. Une règle qui trouve toujours quelque chose
+trouve n'importe quoi.
+
+**Aucun remplaçant trouvé = la ligne reste.** Une formule amputée est moins
+bonne qu'une formule avec une ligne sans image : la séance se fait quand même,
+et on sait quoi corriger. Et une ligne fausse est pire que les deux — on la
+fait, et on fait le mauvais exercice.
 """
 from __future__ import annotations
 
@@ -95,15 +101,10 @@ def _candidates(
         and ex.group_key == target.group_key
         and ex.pattern == target.pattern
     ]
-    same_pattern = [
-        ex for ex in pool if ex.id not in used and ex.pattern == target.pattern
-    ]
-
     out: list[tuple[str, Exercise]] = []
     for how, rows in (
         ("groupe+pattern+materiel", same_everything),
         ("groupe+pattern", same_group),
-        ("pattern", same_pattern),
     ):
         for row in sorted_by_difficulty(rows):
             out.append((how, row))

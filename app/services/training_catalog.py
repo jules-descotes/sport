@@ -154,7 +154,9 @@ EXERCISES: tuple[dict[str, Any], ...] = (
             "plafond en soufflant, puis creuse-le en inspirant. Le mouvement "
             "part du bassin, pas de la nuque."
         ),
-        "aliases": ["cat cow", "cat-cow stretch"],
+        # « Cat Stretch » est le nom sous lequel free-exercise-db le range —
+        # vérifié dans le catalogue importé, pas supposé.
+        "aliases": ["cat cow", "cat-cow stretch", "cat stretch"],
     },
     {
         "slug": "rotation-thoracique",
