@@ -8,6 +8,7 @@ import {
   PendingSessionBlock,
 } from "@/components/session/PendingSessionBlock";
 import { Freshness, PullToRefresh } from "@/components/shell/Freshness";
+import { DayMealBlock } from "@/components/nutrition/DayMealBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { MatchAnnouncements } from "@/components/surf/MatchAnnouncements";
 import { DayProposal } from "@/components/training/DayProposal";
@@ -42,29 +43,6 @@ import { useOfflineQueue } from "@/lib/useOfflineQueue";
  * qu'on note. L'ordre vertical du mobile devient un ordre de gauche à droite,
  * et rien ne change de sens : on lit toujours la mer d'abord.
  */
-
-/**
- * Emplacement d'un lot à venir.
- *
- * Il est là pour que la hiérarchie de l'écran soit juste dès maintenant, et il
- * ne promet rien qu'il ne tienne : une ligne sobre, pas un bouton mort qui
- * donne l'impression d'une panne.
- */
-function ComingSlot({ title, hint, lot }: { title: string; hint: string; lot: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-card border border-line bg-card px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-[12px] font-semibold uppercase tracking-wide text-mute">
-          {title}
-        </p>
-        <p className="mt-0.5 truncate text-[14px] text-ink-2">{hint}</p>
-      </div>
-      <span className="shrink-0 rounded-pill border border-line bg-soft px-2.5 py-1 text-[12px] font-semibold text-mute">
-        {lot}
-      </span>
-    </div>
-  );
-}
 
 export default function JourPage() {
   const geolocation = useGeolocation();
@@ -186,11 +164,10 @@ export default function JourPage() {
               choisir, revenir, ce sont trois écrans pour un geste qui en vaut
               zéro. */}
           <DayProposal />
-          <ComingSlot
-            title="Repas"
-            hint="Cible calorique et journal"
-            lot="lot 5"
-          />
+          {/* Les repas : la jauge du jour, le plat prévu, et la saisie sur
+              place. Un repas se note au moment où on le mange, pas au moment
+              où on ouvre le bon onglet. */}
+          <DayMealBlock />
           {/* Le raccourci iPhone reste le chemin normal ; celui-ci rattrape
               les sessions qu'il a manquées — téléphone resté dans la voiture,
               session d'il y a trois semaines. Discret : ce n'est pas le geste

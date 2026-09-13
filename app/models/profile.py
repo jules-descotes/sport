@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -33,6 +33,14 @@ class Profile(Base):
     height_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     level: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Mifflin-St Jeor a besoin de l'âge et du sexe (lot 5). Nullables : sans
+    # eux, la cible calorique se rabat sur une estimation **et le dit**, plutôt
+    # que d'inventer un âge. Un sexe inconnu prend la moyenne des deux
+    # constantes — 166 kcal d'écart, du même ordre que ce que la calibration
+    # rattrape en deux semaines.
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    # `male`, `female`, ou nul.
+    sex: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Le spot favori — **une seule prévision par défaut**, c'est la sienne qui
     # s'affiche sur Jour (décidé le 12/09 soir, cf. PROJET.md §11). C'est aussi
     # lui qui définit le niveau d'ingestion `home` : le job planifié ne connaît

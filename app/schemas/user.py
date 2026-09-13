@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -27,6 +27,10 @@ class ProfileRead(BaseModel):
     timezone: str = "Europe/Paris"
     # La seule prévision affichée par défaut : celle de ce spot (écran Jour).
     home_spot_id: Optional[int] = None
+    # Ce dont Mifflin-St Jeor a besoin (lot 5). Nuls : la cible calorique se
+    # rabat sur une estimation **et le dit**, plutôt que d'inventer un âge.
+    birth_date: Optional[date] = None
+    sex: Optional[str] = None
 
 
 class ProfileUpdate(BaseModel):

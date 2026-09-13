@@ -1,5 +1,6 @@
 import type {
   ApiToken,
+  BodyMetric,
   ApiTokenCreated,
   DailyLogEntry,
   DailyLogStatus,
@@ -7,11 +8,20 @@ import type {
   Discipline,
   Exercise,
   ExerciseCategory,
+  Food,
+  FoodHit,
+  FoodLogEntry,
   GearType,
   GearWithUsage,
   MatchWindow,
+  Meal,
+  MealPlan,
+  NutritionDay,
+  NutritionGoal,
+  NutritionProfile,
   Objective,
   Proposal,
+  Recipe,
   Recommendation,
   SessionJournal,
   SessionSegmentValue,
@@ -26,6 +36,7 @@ import type {
   SurfSession,
   TideCoefficientDay,
   TrainingOverview,
+  WeighInResponse,
   User,
   Workout,
 } from "./types";
@@ -445,6 +456,85 @@ export const api = {
 
   workouts: (limit = 50) =>
     request<Workout[]>(`/training/workouts${query({ limit })}`),
+
+  // ── Nutrition ─────────────────────────────────────────────────────────
+
+  /** Tout l'écran Nutrition pour une journée, en un seul aller-retour. */
+  nutritionDay: (day?: string) =>
+    request<NutritionDay>(`/nutrition/day${query({ day })}`),
+
+  /** Recherche d'aliment. Sans requête, les vingt plus journalisés — l'écran
+   *  s'ouvre sur ce qu'on mange, pas sur une liste vide. */
+  searchFoods: (q = "") => request<FoodHit[]>(`/nutrition/foods${query({ q })}`),
+
+  /** Le produit derrière un code-barres, mis en cache au premier scan. */
+  scanBarcode: (barcode: string) =>
+    request<Food>(`/nutrition/barcode/${encodeURIComponent(barcode)}`),
+
+  addFoodLog: (data: {
+    day?: string;
+    meal?: Meal;
+    food_id?: number;
+    recipe_id?: number;
+    quantity_g?: number;
+    servings?: number;
+    label?: string;
+  }) =>
+    request<FoodLogEntry>("/nutrition/log", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteFoodLog: (id: number) =>
+    request<void>(`/nutrition/log/${id}`, { method: "DELETE" }),
+
+  recipes: (params: { meal?: Meal; tag?: string } = {}) =>
+    request<Recipe[]>(`/nutrition/recipes${query(params)}`),
+
+  mealPlan: (week?: string) =>
+    request<MealPlan>(`/nutrition/plan${query({ week })}`),
+
+  /** (Re)génère la semaine. Un glouton sous contrainte, pas une IA. */
+  generateMealPlan: (week?: string) =>
+    request<MealPlan>(`/nutrition/plan${query({ week })}`, { method: "POST" }),
+
+  /** Remplace **un** repas : un menu qu'il faut régénérer en entier pour
+   *  corriger un dîner se jette. */
+  regenerateMeal: (day_index: number, meal: Meal, week?: string) =>
+    request<MealPlan>(`/nutrition/plan/regenerate${query({ week })}`, {
+      method: "POST",
+      body: JSON.stringify({ day_index, meal }),
+    }),
+
+  weighIns: () => request<BodyMetric[]>("/nutrition/weight"),
+
+  /** La pesée — et la recalibration qu'elle déclenche. */
+  addWeighIn: (data: {
+    day?: string;
+    weight_kg?: number;
+    waist_cm?: number;
+    note?: string;
+  }) =>
+    request<WeighInResponse>("/nutrition/weight", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  nutritionProfile: () => request<NutritionProfile>("/nutrition/profile"),
+
+  updateNutritionProfile: (data: {
+    goal?: NutritionGoal;
+    activity_factor?: number;
+    protein_g_per_kg?: number;
+    fat_ratio?: number;
+    birth_date?: string | null;
+    sex?: string | null;
+    height_m?: number;
+  }) =>
+    request<NutritionProfile>("/nutrition/profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   // ── Journal quotidien ─────────────────────────────────────────────────
 

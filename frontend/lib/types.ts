@@ -9,6 +9,10 @@ export interface Profile {
   timezone: string;
   /** Le spot favori : la seule prévision affichée par défaut, sur Jour. */
   home_spot_id: number | null;
+  /** Ce dont Mifflin-St Jeor a besoin (lot 5). Nuls : la cible se rabat sur
+   *  une estimation, et le dit. */
+  birth_date: string | null;
+  sex: string | null;
 }
 
 export interface User {
@@ -596,4 +600,177 @@ export interface TrainingOverview {
   formulas: Formula[];
   proposal: Proposal;
   recent: Workout[];
+}
+
+// ── Nutrition ────────────────────────────────────────────────────────────
+
+/** Les quatre repas d'une journée, dans l'ordre où ils se vivent. */
+export const MEALS = ["breakfast", "lunch", "snack", "dinner"] as const;
+export type Meal = (typeof MEALS)[number];
+
+export const MEAL_LABELS: Record<Meal, string> = {
+  breakfast: "Petit déj",
+  lunch: "Déjeuner",
+  snack: "En-cas",
+  dinner: "Dîner",
+};
+
+/** Un aliment — Ciqual ou Open Food Facts. Valeurs **pour 100 g**. */
+export interface Food {
+  id: number;
+  name: string;
+  food_group: string | null;
+  brand: string | null;
+  barcode: string | null;
+  source: string;
+  kcal_100g: number | null;
+  protein_100g: number | null;
+  carb_100g: number | null;
+  fat_100g: number | null;
+  fiber_100g: number | null;
+}
+
+export interface FoodHit extends Food {
+  /** Nombre de fois journalisé : ce qui remonte en tête de liste. */
+  recent_count: number;
+}
+
+/** Une ligne du journal. Ses valeurs sont **figées à la saisie** : un bilan de
+ *  la semaine dernière ne change pas parce qu'une base a bougé. */
+export interface FoodLogEntry {
+  id: number;
+  day: string;
+  meal: Meal;
+  food_id: number | null;
+  recipe_id: number | null;
+  label: string;
+  quantity_g: number;
+  kcal: number | null;
+  protein_g: number | null;
+  carb_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  created_at: string;
+}
+
+export interface MacroTotals {
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  fiber_g: number;
+}
+
+export interface Expenditure {
+  surf_min: number;
+  surf_kcal: number;
+  workout_min: number;
+  workout_kcal: number;
+  total_kcal: number;
+}
+
+/** La cible du jour **et de quoi elle est faite**. Une cible qui monte de
+ *  400 kcal sans dire pourquoi n'est pas croyable, et une cible pas croyable
+ *  ne se suit pas. */
+export interface NutritionTarget {
+  kcal: number;
+  protein_g: number;
+  carb_g: number;
+  fat_g: number;
+  protein_g_per_kg: number | null;
+  bmr: number;
+  base_kcal: number;
+  goal_kcal: number;
+  calibration_kcal: number;
+  expenditure: Expenditure;
+  estimated: boolean;
+  reasons: string[];
+}
+
+export interface RecipeItem {
+  label: string;
+  quantity_g: number;
+  food_id: number | null;
+}
+
+export interface Recipe {
+  id: number;
+  slug: string;
+  name: string;
+  meals: Meal[];
+  tags: string[];
+  servings: number;
+  prep_min: number;
+  steps: string | null;
+  /** Par portion. Nulles tant que Ciqual n'est pas importé — la recette reste
+   *  lisible, sans ses macros. */
+  kcal: number | null;
+  protein_g: number | null;
+  carb_g: number | null;
+  fat_g: number | null;
+  items: RecipeItem[];
+}
+
+export interface MealPlanItem {
+  day_index: number;
+  meal: Meal;
+  servings: number;
+  recipe: Recipe;
+}
+
+export interface ShoppingLine {
+  label: string;
+  quantity_g: number;
+  food_group: string | null;
+}
+
+export interface MealPlan {
+  week_start: string;
+  items: MealPlanItem[];
+  shopping: ShoppingLine[];
+}
+
+export interface NutritionDay {
+  day: string;
+  target: NutritionTarget;
+  totals: MacroTotals;
+  entries: FoodLogEntry[];
+  planned: MealPlanItem[];
+}
+
+export interface BodyMetric {
+  id: number;
+  day: string;
+  weight_kg: number | null;
+  waist_cm: number | null;
+  photo_url: string | null;
+  note: string | null;
+}
+
+/** Ce qu'a donné la recalibration déclenchée par une pesée. Elle ne fait rien
+ *  la plupart du temps, et le dit. */
+export interface Calibration {
+  applied: boolean;
+  days: number;
+  weight_change_kg: number;
+  expected_change_kg: number;
+  adjustment_kcal: number;
+  new_calibration_kcal: number;
+  reason: string;
+}
+
+export interface WeighInResponse {
+  metric: BodyMetric;
+  calibration: Calibration;
+}
+
+export type NutritionGoal = "maintain" | "cut" | "bulk";
+
+export interface NutritionProfile {
+  goal: NutritionGoal;
+  activity_factor: number;
+  protein_g_per_kg: number;
+  fat_ratio: number;
+  calibration_kcal: number;
+  calibrated_on: string | null;
 }

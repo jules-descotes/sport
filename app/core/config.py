@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     # Au-delà, l'écran est servi depuis la base et le reste se fait derrière.
     forecast_on_demand_timeout_s: float = 5.0
 
+    # Open Food Facts — complément au code-barres (lot 5). Gratuit et sans
+    # clé, comme Open-Meteo. Le `User-Agent` est **exigé** par leurs conditions
+    # d'utilisation : une base bénévole a le droit de savoir qui l'interroge.
+    openfoodfacts_url: str = "https://world.openfoodfacts.org"
+    openfoodfacts_user_agent: str = "Sport/0.1 (perso, non commercial)"
+
     # Overpass — catalogue OSM, interrogé uniquement par le script d'import
     # mensuel, jamais depuis l'API.
     overpass_url: str = "https://overpass-api.de/api/interpreter"
