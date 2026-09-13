@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -18,6 +19,43 @@ from app.services.geo import wave_energy_kj
 from app.schemas.types import UtcDatetime
 
 
+# ── La note, et son unité ──────────────────────────────────────────────────
+#
+# En base : un entier, `note × 2` (7 pour 3,5). À l'écran et sur le fil : un
+# nombre de 1 à 5 par pas de 0,5. La conversion est faite **ici, au bord**,
+# comme celle des mètres en pieds pour les planches — la base porte la
+# grandeur, l'écran porte la coutume (cf. `models/surf_session.py`).
+#
+# Le pas est vérifié, pas arrondi en silence : un client qui enverrait 3,7 se
+# le voit refuser. Arrondir accepterait une note que personne n'a saisie, et
+# l'échelle à dix crans cesserait d'être exacte.
+RATING_STEP = 0.5
+
+
+def _check_rating(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    if not (1.0 <= value <= 5.0):
+        raise ValueError("La note va de 1 à 5.")
+    doubled = value * 2
+    if abs(doubled - round(doubled)) > 1e-6:
+        raise ValueError("La note va par pas de 0,5.")
+    return round(doubled) / 2
+
+
+Rating = Annotated[Optional[float], AfterValidator(_check_rating)]
+
+
+def to_half(value: Optional[float]) -> Optional[int]:
+    """1 → 5 par pas de 0,5, vers l'entier ×2 de la base."""
+    return None if value is None else int(round(value * 2))
+
+
+def from_half(value: Optional[int]) -> Optional[float]:
+    """L'entier ×2 de la base, vers la note de 1 à 5."""
+    return None if value is None else value / 2
+
+
 class SurfSessionCreate(BaseModel):
     """Enregistrement complet — le formulaire, ou la file hors ligne.
 
@@ -30,9 +68,10 @@ class SurfSessionCreate(BaseModel):
     duration_min: Optional[int] = Field(default=None, gt=0, le=600)
     discipline: Discipline = Discipline.SURF
 
-    # Deux notes, jamais une seule (cf. CLAUDE.md, règle 6).
-    rating_conditions: Optional[int] = Field(default=None, ge=1, le=5)
-    rating_personal: Optional[int] = Field(default=None, ge=1, le=5)
+    # Deux notes, jamais une seule (cf. CLAUDE.md, règle 6). Demi-points
+    # acceptés depuis le 13/09 : 1 à 5 par pas de 0,5.
+    rating_conditions: Rating = None
+    rating_personal: Rating = None
 
     gear_id: Optional[int] = None
     wave_count: Optional[int] = Field(default=None, ge=0, le=500)
@@ -59,8 +98,13 @@ class SurfSessionUpdate(BaseModel):
     started_at: Optional[datetime] = None
     duration_min: Optional[int] = Field(default=None, gt=0, le=600)
     discipline: Optional[Discipline] = None
-    rating_conditions: Optional[int] = Field(default=None, ge=1, le=5)
-    rating_personal: Optional[int] = Field(default=None, ge=1, le=5)
+    rating_conditions: Rating = None
+    rating_personal: Rating = None
+    # Les notes heure par heure. `None` = ne touche pas aux segments existants ;
+    # une liste vide les **efface**. Les deux gestes sont distincts, et un seul
+    # champ ne pourrait pas les porter tous les deux s'il était optionnel au
+    # sens habituel — d'où le commentaire, et le test qui va avec.
+    segments: Optional[list["SessionSegmentWrite"]] = None
     gear_id: Optional[int] = None
     wave_count: Optional[int] = Field(default=None, ge=0, le=500)
     crowd: Optional[int] = Field(default=None, ge=1, le=5)
@@ -123,8 +167,63 @@ def _with_energy(entries: Any) -> list[dict[str, Any]]:
     return enriched
 
 
+class SessionSegmentWrite(BaseModel):
+    """Une heure notée, telle qu'on l'envoie.
+
+    `started_at` est **calé à l'heure pleine** par le serveur : c'est la clé
+    d'appariement avec la ligne horaire du `conditions_snapshot`, et une heure
+    à la minute près n'aurait rien à quoi se rattacher — Open-Meteo est horaire.
+    """
+
+    started_at: datetime
+    rating_conditions: Rating = None
+    rating_personal: Rating = None
+
+
+class SessionSegmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    started_at: UtcDatetime
+    rating_conditions: Optional[float] = None
+    rating_personal: Optional[float] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_half(cls, value: Any) -> Any:
+        """Convertit les entiers ×2 de la base en notes de 1 à 5."""
+        if hasattr(value, "rating_conditions_half"):
+            return {
+                "started_at": value.started_at,
+                "rating_conditions": from_half(value.rating_conditions_half),
+                "rating_personal": from_half(value.rating_personal_half),
+            }
+        return value
+
+
 class SurfSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ratings_from_half(cls, value: Any) -> Any:
+        """Les colonnes `_half` de la base deviennent des notes de 1 à 5.
+
+        Fait ici et nulle part ailleurs : c'est le seul point de passage entre
+        le stockage et le fil, et un second endroit qui diviserait par deux
+        finirait par diviser deux fois.
+        """
+        if not hasattr(value, "rating_conditions_half"):
+            return value
+        return {
+            **{
+                name: getattr(value, name)
+                for name in cls.model_fields
+                if name not in ("rating_conditions", "rating_personal")
+                and hasattr(value, name)
+            },
+            "rating_conditions": from_half(value.rating_conditions_half),
+            "rating_personal": from_half(value.rating_personal_half),
+        }
 
     @field_validator("conditions_snapshot", mode="after")
     @classmethod
@@ -180,8 +279,13 @@ class SurfSessionRead(BaseModel):
     duration_min: Optional[int] = None
     discipline: str
     status: str = SessionStatus.TO_RATE.value
-    rating_conditions: Optional[int] = None
-    rating_personal: Optional[int] = None
+    # Rendues en 1 → 5 par pas de 0,5, converties depuis les entiers ×2 de la
+    # base par `_ratings_from_half`. Le front ne voit jamais le ×2.
+    rating_conditions: Optional[float] = None
+    rating_personal: Optional[float] = None
+    # Les notes heure par heure, dans l'ordre. Vide quand la session n'a pas
+    # été détaillée — le cas de loin le plus fréquent.
+    segments: list["SessionSegmentRead"] = []
     gear_id: Optional[int] = None
     gear: Optional[GearRead] = None
     wave_count: Optional[int] = None

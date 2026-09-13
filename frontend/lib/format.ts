@@ -93,11 +93,26 @@ export function fullDayLabel(iso: string, now = new Date()): string {
 
 /**
  * Classe de couleur d'une note, échelle 1 → 5 du CLAUDE.md.
+ *
  * Le fil rouge est identique partout : accueil, comparateur, fiche spot.
+ *
+ * Depuis le 13/09, l'échelle porte les **demi-points** : 3,5 rend `score-35`,
+ * dont la couleur est le mélange des paliers 3 et 4 (`globals.css`). La note
+ * est arrondie au demi-point le plus proche et non à l'entier — une note
+ * calculée à 3,47 tombe sur 3,5, ce qui est la granularité de l'échelle.
  */
 export function scoreClass(level: number | null | undefined): string {
-  const clamped = Math.min(5, Math.max(1, Math.round(level ?? 1)));
-  return `score-${clamped}`;
+  const clamped = Math.min(5, Math.max(1, level ?? 1));
+  const half = Math.round(clamped * 2) / 2;
+  return Number.isInteger(half)
+    ? `score-${half}`
+    : `score-${Math.floor(half)}5`;
+}
+
+/** Une note telle qu'on l'écrit : « 4 », « 3,5 ». Jamais « 4,0 ». */
+export function ratingLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return num(value, value % 1 === 0 ? 0 : 1);
 }
 
 export function distanceLabel(km: number | null | undefined): string {

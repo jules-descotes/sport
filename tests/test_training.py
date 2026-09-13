@@ -363,8 +363,9 @@ async def _surf_on(db_session, user, spot, days_ago: int) -> None:
             duration_min=90,
             discipline="surf",
             status="rated",
-            rating_conditions=4,
-            rating_personal=4,
+            # Demi-points entiers en base : 8 se lit 4,0 (cf. migration 0010).
+            rating_conditions_half=8,
+            rating_personal_half=8,
         )
     )
     await db_session.commit()

@@ -34,6 +34,7 @@ from app.models.objective import (  # noqa: F401
     ObjectiveMeasurement,
 )
 from app.models.profile import Profile  # noqa: F401
+from app.models.session_segment import SessionSegment  # noqa: F401
 from app.models.spot import Spot, SpotPreference  # noqa: F401
 from app.models.spot_rule import SpotRule  # noqa: F401
 from app.models.surf_session import SurfSession  # noqa: F401

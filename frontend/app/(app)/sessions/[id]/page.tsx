@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
 
+import { SegmentTimeline } from "@/components/session/SegmentTimeline";
 import { IconBack, IconPencil, IconTrash } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import {
@@ -16,6 +17,7 @@ import {
   durationLabel,
   fullDayLabel,
   num,
+  ratingLabel,
   scoreClass,
   shortDate,
 } from "@/lib/format";
@@ -92,7 +94,7 @@ function Note({ label, value }: { label: string; value: number | null }) {
             : scoreClass(value)
         }`}
       >
-        {value ?? "—"}
+        {ratingLabel(value)}
       </p>
     </div>
   );
@@ -340,6 +342,10 @@ export default function SessionDetailPage() {
           />
         </section>
       ) : null}
+
+      {/* La frise horaire, quand elle existe. Juste avant les deux volets :
+          elle raconte la session, ils décrivent la mer. */}
+      <SegmentTimeline segments={data.segments} snapshot={snapshot} />
 
       {snapshot ? (
         <>

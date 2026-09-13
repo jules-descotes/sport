@@ -34,6 +34,7 @@ from app.models.surf_session import SurfSession
 from app.models.user import User
 from app.schemas.session import (
     QuickSessionResponse,
+    to_half,
     SessionJournal,
     SurfSessionCreate,
     SurfSessionQuick,
@@ -44,6 +45,7 @@ from app.services.auth_service import get_current_active_user
 from app.services.backfill import build_conditions_snapshot
 from app.services.sessions import (
     QUICK_DEFAULT_DURATION_MIN,
+    apply_segments,
     archive_snapshot,
     create_quick_session,
     find_duplicate,
@@ -338,8 +340,8 @@ async def create_session(
         started_at=data.started_at,
         duration_min=data.duration_min,
         discipline=data.discipline.value,
-        rating_conditions=data.rating_conditions,
-        rating_personal=data.rating_personal,
+        rating_conditions_half=to_half(data.rating_conditions),
+        rating_personal_half=to_half(data.rating_personal),
         gear_id=data.gear_id,
         wave_count=data.wave_count,
         crowd=data.crowd,
@@ -350,7 +352,7 @@ async def create_session(
     )
     _apply_status(session)
     session.conditions_snapshot = await build_conditions_snapshot(
-        db, spot, data.started_at
+        db, spot, data.started_at, duration_min=data.duration_min
     )
 
     db.add(session)
@@ -365,7 +367,7 @@ async def list_sessions(
     since: Optional[date] = Query(default=None),
     until: Optional[date] = Query(default=None),
     spot_id: Optional[int] = Query(default=None),
-    min_rating: Optional[int] = Query(default=None, ge=1, le=5),
+    min_rating: Optional[float] = Query(default=None, ge=1, le=5),
     limit: int = Query(default=50, gt=0, le=200),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_active_user),
@@ -390,7 +392,9 @@ async def list_sessions(
         # Le filtre porte sur la **note de conditions** : c'est celle qu'on
         # cherche quand on refait l'historique d'un spot. Le ressenti perso se
         # lit sur la ligne, il ne sert pas de crible.
-        query = query.where(SurfSession.rating_conditions >= min_rating)
+        query = query.where(
+            SurfSession.rating_conditions_half >= to_half(min_rating)
+        )
     if session_status is not None:
         query = query.where(SurfSession.status == session_status.value)
     if since is not None:
@@ -459,9 +463,20 @@ async def update_session(
     if previous_start.tzinfo is None:
         previous_start = previous_start.replace(tzinfo=UTC)
 
+    # Les segments se posent à part : ils ne sont pas une colonne de la
+    # session, et `None` (« ne touche à rien ») doit rester distinct de la
+    # liste vide (« efface tout »). On lit donc leur présence dans le dump et
+    # leur contenu dans le modèle — `model_dump` les aurait aplatis en
+    # dictionnaires, et `apply_segments` attend des objets typés.
+    segments_sent = "segments" in values
+    values.pop("segments", None)
+
     for field, value in values.items():
         if field == "discipline" and value is not None:
             session.discipline = value.value if hasattr(value, "value") else value
+            continue
+        if field in ("rating_conditions", "rating_personal"):
+            setattr(session, f"{field}_half", to_half(value))
             continue
         setattr(session, field, value)
 
@@ -503,8 +518,11 @@ async def update_session(
             )
 
         session.conditions_snapshot = await build_conditions_snapshot(
-            db, spot, new_start
+            db, spot, new_start, duration_min=session.duration_min
         )
+
+    if segments_sent:
+        apply_segments(session, data.segments or [])
 
     _apply_status(session)
 

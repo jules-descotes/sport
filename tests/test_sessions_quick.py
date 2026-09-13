@@ -216,8 +216,10 @@ async def test_quick_freezes_the_conditions_window(
     )
 
     snapshot = response.json()["session"]["conditions_snapshot"]
-    assert snapshot["window_hours"] == [-2, -1, 0]
-    assert [entry["offset_h"] for entry in snapshot["observed"]] == [-2, -1, 0]
+    # Le chemin rapide estime 90 min : la fenêtre couvre l'heure entamée après
+    # le départ, en plus des deux heures d'approche.
+    assert snapshot["window_hours"] == [-2, -1, 0, 1]
+    assert [entry["offset_h"] for entry in snapshot["observed"]] == [-2, -1, 0, 1]
     # Houle montante dans le jeu d'archive : la tendance doit se voir.
     assert snapshot["trends"]["observed"]["wave_height_m"] > 0
 

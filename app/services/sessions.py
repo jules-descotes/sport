@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import SessionStatus
 from app.models.profile import Profile
 from app.models.spot import Spot
+from app.models.session_segment import SessionSegment
 from app.models.surf_session import SurfSession
 from app.services.backfill import build_conditions_snapshot
 from app.services.geo import bounding_box, haversine_m
+
+if TYPE_CHECKING:
+    from app.schemas.session import SessionSegmentWrite
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +197,7 @@ async def create_quick_session(
         start_estimated=True,
     )
     session.conditions_snapshot = await build_conditions_snapshot(
-        db, spot, started_at
+        db, spot, started_at, duration_min=duration_min
     )
 
     db.add(session)
@@ -299,3 +303,53 @@ async def purge_trashed_sessions(
         await db.commit()
         logger.info("Corbeille : %d session(s) purgée(s)", len(doomed))
     return len(doomed)
+
+
+# ── Les notes heure par heure ──────────────────────────────────────────────
+
+
+def apply_segments(
+    session: SurfSession, segments: Sequence["SessionSegmentWrite"]
+) -> None:
+    """Remplace les segments d'une session par ceux qui sont envoyés.
+
+    **Un remplacement, pas une fusion.** L'écran envoie l'état entier de la
+    frise : fusionner rendrait impossible d'effacer une heure notée par erreur,
+    et un doigt mouillé en note une de temps en temps.
+
+    Chaque heure est **calée à l'heure pleine**, et c'est le cœur du mécanisme :
+    c'est cette clé qui apparie le segment à sa ligne horaire du
+    `conditions_snapshot`. Un segment à 8 h 17 n'aurait rien à quoi se
+    rattacher — Open-Meteo est horaire, et la fenêtre du snapshot aussi.
+
+    Les heures en double sont écrasées par la dernière venue, sans erreur : la
+    contrainte unique dit la même chose en base, et remonter un 409 pour un
+    doublon que le client n'a pas voulu serait une impasse à l'écran.
+
+    Un segment sans aucune note est **ignoré** : c'est une ligne que Jules a
+    ouverte puis laissée vide, pas un renseignement.
+    """
+    from app.schemas.session import to_half
+
+    by_hour: dict[datetime, tuple[Optional[int], Optional[int]]] = {}
+    for segment in segments:
+        conditions = to_half(segment.rating_conditions)
+        personal = to_half(segment.rating_personal)
+        if conditions is None and personal is None:
+            continue
+        started_at = segment.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        hour = started_at.astimezone(UTC).replace(
+            minute=0, second=0, microsecond=0
+        )
+        by_hour[hour] = (conditions, personal)
+
+    session.segments = [
+        SessionSegment(
+            started_at=hour,
+            rating_conditions_half=conditions,
+            rating_personal_half=personal,
+        )
+        for hour, (conditions, personal) in sorted(by_hour.items())
+    ]

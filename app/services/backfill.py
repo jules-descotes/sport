@@ -36,10 +36,41 @@ from app.services.scoring import TideContext
 
 logger = logging.getLogger(__name__)
 
-# La fenêtre, en heures relatives au début de la session. Trois points : c'est
-# le minimum pour lire une pente, et le maximum qu'on puisse défendre comme
-# « les conditions de cette session ».
-WINDOW_HOURS = (-2, -1, 0)
+# Les heures **avant** le début, relatives à lui. Deux points d'approche, c'est
+# le minimum pour lire une pente : une houle de 1,5 m qui monte et une houle de
+# 1,5 m qui s'écroule ne donnent pas la même session (features 12 et 13).
+LEAD_HOURS = (-2, -1)
+
+# La fenêtre de base — approche plus l'heure du départ. C'est ce que portaient
+# toutes les sessions jusqu'au 13/09, et ce que porte encore une session dont
+# on ne connaît pas la durée.
+WINDOW_HOURS = (*LEAD_HOURS, 0)
+
+# Au-delà, on n'étend plus : une session de plus de six heures est une erreur
+# de saisie, et tirer une fenêtre de douze heures multiplierait le volume du
+# snapshot pour de la donnée que personne n'a vécue.
+MAX_SESSION_HOURS = 6
+
+
+def window_offsets(duration_min: Optional[int] = None) -> tuple[int, ...]:
+    """Les heures de la fenêtre, en décalage par rapport au début.
+
+    Sans durée : T−2 h, T−1 h, T0 — la fenêtre historique.
+
+    Avec une durée : la même approche, **plus une ligne par heure entamée** de
+    la session. C'est ce qui rend les segments horaires exploitables (décidé le
+    13/09) : chaque heure notée doit pouvoir s'apparier à *ses* conditions, et
+    un segment de 10 h sur une session commencée à 8 h n'avait jusqu'ici rien à
+    quoi se rattacher.
+
+    « Entamée » et pas « pleine » : une session de 8 h 15 à 10 h 40 a vécu
+    l'heure de 10 h, et elle mérite sa ligne.
+    """
+    if duration_min is None or duration_min <= 0:
+        return WINDOW_HOURS
+    # Nombre d'heures entamées après celle du départ.
+    extra = min(MAX_SESSION_HOURS, (duration_min - 1) // 60)
+    return (*WINDOW_HOURS, *range(1, extra + 1))
 
 SNAPSHOT_FIELDS = (
     "wave_height_m",
@@ -61,14 +92,19 @@ SNAPSHOT_FIELDS = (
 )
 
 
-def window_timestamps(started_at: datetime) -> list[datetime]:
-    """Les trois heures pleines de la fenêtre, en UTC.
+def window_timestamps(
+    started_at: datetime, duration_min: Optional[int] = None
+) -> list[datetime]:
+    """Les heures pleines de la fenêtre, en UTC.
 
     Open-Meteo est horaire : on cale sur l'heure pleine plutôt que d'interpoler
     une précision qui n'existe pas dans la donnée.
     """
     reference = started_at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
-    return [reference + timedelta(hours=offset) for offset in WINDOW_HOURS]
+    return [
+        reference + timedelta(hours=offset)
+        for offset in window_offsets(duration_min)
+    ]
 
 
 def _entry(
@@ -104,7 +140,10 @@ def _trends(entries: list[dict[str, Any]]) -> dict[str, Optional[float]]:
 
 
 async def _forecast_panel(
-    db: AsyncSession, spot_id: int, timestamps: list[datetime]
+    db: AsyncSession,
+    spot_id: int,
+    timestamps: list[datetime],
+    offsets: tuple[int, ...],
 ) -> list[dict[str, Any]]:
     """Volet `forecast` : ce qui était annoncé **avant** la session.
 
@@ -128,18 +167,20 @@ async def _forecast_panel(
 
     return [
         _entry(offset, ts, by_ts[ts])
-        for offset, ts in zip(WINDOW_HOURS, timestamps)
+        for offset, ts in zip(offsets, timestamps)
         if ts in by_ts
     ]
 
 
 def observed_panel_from_bundle(
-    bundle: HourlyBundle, timestamps: list[datetime]
+    bundle: HourlyBundle,
+    timestamps: list[datetime],
+    offsets: Optional[tuple[int, ...]] = None,
 ) -> list[dict[str, Any]]:
     """Volet `observed` à partir d'une réponse d'archive déjà récupérée."""
     return [
         _entry(offset, ts, bundle.rows[ts])
-        for offset, ts in zip(WINDOW_HOURS, timestamps)
+        for offset, ts in zip(offsets or WINDOW_HOURS, timestamps)
         if ts in bundle.rows
     ]
 
@@ -183,18 +224,33 @@ async def build_conditions_snapshot(
     spot: Spot,
     started_at: datetime,
     client: Optional[OpenMeteoClient] = None,
+    duration_min: Optional[int] = None,
 ) -> dict[str, Any]:
-    """Construit le `conditions_snapshot` complet d'une session."""
-    timestamps = window_timestamps(started_at)
+    """Construit le `conditions_snapshot` complet d'une session.
 
-    forecast_panel = await _forecast_panel(db, spot.id, timestamps)
+    `duration_min` étend la fenêtre à toute la durée de la session (décidé le
+    13/09) : sans lui, un segment horaire noté à la troisième heure n'aurait
+    aucune condition à laquelle s'apparier, et ne vaudrait rien pour le modèle.
+    """
+    offsets = window_offsets(duration_min)
+    timestamps = window_timestamps(started_at, duration_min)
+
+    forecast_panel = await _forecast_panel(db, spot.id, timestamps, offsets)
     bundle = await fetch_observed(spot, timestamps, client)
-    observed = observed_panel_from_bundle(bundle, timestamps) if bundle else []
+    observed = (
+        observed_panel_from_bundle(bundle, timestamps, offsets) if bundle else []
+    )
 
     # La position dans la marée se lit sur les extrêmes du **jour**, pas sur
-    # les trois heures de la fenêtre : trois points ne disent pas où sont la
-    # pleine et la basse mer. D'où les journées entières demandées à l'archive.
-    reference = timestamps[-1]
+    # les heures de la fenêtre : trois points ne disent pas où sont la pleine
+    # et la basse mer. D'où les journées entières demandées à l'archive.
+    #
+    # La référence est **l'heure du départ** (décalage 0), et non la dernière
+    # heure de la fenêtre. Depuis que celle-ci s'étend à toute la durée, la
+    # dernière heure est la sortie de l'eau : y rapporter la marée de la
+    # session ferait basculer le « moment de la marée » de toutes les sessions
+    # longues, et la feature 7 du registre changerait de sens sans prévenir.
+    reference = timestamps[offsets.index(0)]
     tide = TideContext.from_levels(
         {ts: values.get("sea_level_m") for ts, values in bundle.rows.items()}
         if bundle
@@ -202,7 +258,7 @@ async def build_conditions_snapshot(
     )
 
     snapshot: dict[str, Any] = {
-        "window_hours": list(WINDOW_HOURS),
+        "window_hours": list(offsets),
         "reference_ts": reference.isoformat(),
         "source": "open-meteo",
         "model": settings.forecast_wave_model,

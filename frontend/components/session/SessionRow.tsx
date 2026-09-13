@@ -7,6 +7,7 @@ import {
   clockLabel,
   durationLabel,
   energyLabel,
+  ratingLabel,
   scoreClass,
   shortDate,
 } from "@/lib/format";
@@ -35,11 +36,11 @@ function Note({ value }: { value: number | null }) {
   }
   return (
     <span
-      className={`tabular flex h-8 w-8 items-center justify-center rounded-chip font-display text-[17px] font-bold leading-none ${scoreClass(
+      className={`tabular flex h-8 w-8 items-center justify-center rounded-chip font-display text-[15px] font-bold leading-none ${scoreClass(
         value,
       )}`}
     >
-      {value}
+      {ratingLabel(value)}
     </span>
   );
 }

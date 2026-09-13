@@ -337,6 +337,23 @@ export interface GearWithUsage extends Gear {
 /** `to_rate` tant que les **deux** notes ne sont pas posées. */
 export type SessionStatus = "to_rate" | "rated";
 
+/**
+ * Une heure de session, notée à part (décidé le 13/09).
+ *
+ * `started_at` est une **heure pleine** en UTC : c'est la clé d'appariement
+ * avec la ligne horaire du `conditions_snapshot`, et c'est ce qui fait du
+ * segment un point d'apprentissage plutôt qu'un détail d'affichage. Le serveur
+ * la recale de toute façon.
+ *
+ * Les notes vont de 1 à 5 par pas de 0,5, comme celles de la session. La base
+ * les stocke en entiers ×2 ; le front ne voit jamais ce ×2.
+ */
+export interface SessionSegmentValue {
+  started_at: string;
+  rating_conditions: number | null;
+  rating_personal: number | null;
+}
+
 export interface SurfSession {
   id: number;
   spot_id: number;
@@ -345,8 +362,12 @@ export interface SurfSession {
   duration_min: number | null;
   discipline: Discipline;
   status: SessionStatus;
+  /** De 1 à 5 **par pas de 0,5** depuis le 13/09. */
   rating_conditions: number | null;
   rating_personal: number | null;
+  /** Les notes heure par heure, dans l'ordre. Vide le plus souvent : la note
+   *  globale reste la référence d'affichage. */
+  segments: SessionSegmentValue[];
   gear_id: number | null;
   gear: Gear | null;
   wave_count: number | null;

@@ -200,7 +200,7 @@ async def test_a_missing_observed_panel_is_caught_up_when_rating(
     )
 
     snapshot = response.json()["conditions_snapshot"]
-    assert len(snapshot["observed"]) == 3
+    assert [entry["offset_h"] for entry in snapshot["observed"]] == [-2, -1, 0, 1]
     assert "observed_error" not in snapshot
 
 

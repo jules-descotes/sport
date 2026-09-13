@@ -21,6 +21,7 @@ from app.db.database import Base
 from app.db.types import JSONVariant
 from app.models.enums import Discipline, SessionStatus
 from app.models.gear import Gear
+from app.models.session_segment import SessionSegment
 from app.models.spot import Spot
 
 
@@ -83,10 +84,29 @@ class SurfSession(Base):
         server_default=SessionStatus.TO_RATE.value,
     )
 
-    # Les deux notes, sur 5. Nulles tant que la session n'est pas notée : une
-    # session enregistrée hors ligne sur le parking peut être notée plus tard.
-    rating_conditions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    rating_personal: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Les deux notes, sur 5, **en demi-points entiers** : la colonne porte
+    # `note × 2`, donc 7 pour 3,5 (décidé le 13/09 — « 3 ou 4 » ne suffisait
+    # pas à départager deux sessions d'une même semaine).
+    #
+    # Un entier ×2 plutôt qu'un flottant, et le nom le dit : `_half`. Un
+    # flottant sur une échelle à dix crans invite aux 3,7 et aux 4,25 que
+    # personne n'a saisis, et deux `==` sur des flottants finissent toujours
+    # par se croiser. L'entier rend l'échelle exacte et le nom rend l'unité
+    # impossible à confondre — une colonne `rating_conditions` valant 8 se
+    # lirait 8/5 au premier coup d'œil.
+    #
+    # La conversion en 1 → 5 est faite **au bord**, dans les schémas Pydantic,
+    # comme celle des mètres en pieds pour les planches : la base porte la
+    # grandeur, l'écran porte la coutume.
+    #
+    # Nulles tant que la session n'est pas notée : une session enregistrée hors
+    # ligne sur le parking peut être notée plus tard.
+    rating_conditions_half: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    rating_personal_half: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
     # La planche. `SET NULL` : désactiver du matos est le geste normal, le
     # supprimer est refusé tant qu'il porte des sessions — mais si la ligne
@@ -162,6 +182,15 @@ class SurfSession(Base):
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
 
+    # Les notes heure par heure, optionnelles. `cascade` : supprimer une
+    # session emporte ses segments — ils n'ont aucun sens sans elle.
+    segments: Mapped[list["SessionSegment"]] = relationship(
+        "SessionSegment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="SessionSegment.started_at",
+    )
+
     @property
     def is_rated(self) -> bool:
         """Les **deux** notes, jamais une seule (cf. CLAUDE.md, règle 6).
@@ -170,4 +199,7 @@ class SurfSession(Base):
         noter : c'est justement le mélange des deux que la double note existe
         pour éviter.
         """
-        return self.rating_conditions is not None and self.rating_personal is not None
+        return (
+            self.rating_conditions_half is not None
+            and self.rating_personal_half is not None
+        )

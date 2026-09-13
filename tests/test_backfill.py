@@ -241,8 +241,11 @@ async def test_create_session_freezes_the_snapshot(
     # Deux notes distinctes, jamais une seule.
     assert body["rating_conditions"] == 4
     assert body["rating_personal"] == 5
-    assert len(body["conditions_snapshot"]["observed"]) == 3
-    assert body["conditions_snapshot"]["window_hours"] == [-2, -1, 0]
+    # Session de 90 min : deux heures d'approche, l'heure du départ, et
+    # l'heure entamée après elle. C'est ce qui permet à un segment horaire de
+    # s'apparier à ses conditions (décidé le 13/09).
+    assert body["conditions_snapshot"]["window_hours"] == [-2, -1, 0, 1]
+    assert len(body["conditions_snapshot"]["observed"]) == 4
 
 
 async def test_create_session_on_unknown_spot_is_rejected(

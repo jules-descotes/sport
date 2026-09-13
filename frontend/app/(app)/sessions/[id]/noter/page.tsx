@@ -74,6 +74,7 @@ export default function NoterPage() {
       gearId: undefined,
       waves: data.wave_count ?? 0,
       notes: data.notes ?? "",
+      segments: data.segments,
     });
   }, [data]);
 
@@ -276,6 +277,10 @@ export default function NoterPage() {
               ...(gearId !== null ? { gear_id: gearId } : {}),
               wave_count: form.waves,
               notes: form.notes.trim() || null,
+              // Toujours envoyés : l'écran porte l'état entier de la frise, et
+              // une liste vide est la façon d'effacer un détail horaire posé
+              // par erreur.
+              segments: form.segments,
             })
           }
           className="flex min-h-[56px] w-full items-center justify-center rounded-button bg-accent px-5 text-[17px] font-semibold text-on-accent disabled:opacity-40"

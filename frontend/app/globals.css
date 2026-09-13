@@ -176,6 +176,52 @@
     color: #10202b;
   }
 
+  /* Les demi-points (décidé le 13/09). La couleur **interpole** entre les
+     deux paliers voisins plutôt que de sauter : une note de 3,5 qui aurait la
+     couleur exacte d'un 3 ou d'un 4 rendrait le demi-point invisible, et on
+     cesserait de le poser.
+
+     `color-mix` en oklab et non en sRGB : le mélange de deux couleurs vives en
+     sRGB passe par un gris terne au milieu, ce qui est précisément ce qu'on
+     veut éviter sur une échelle qui doit se lire au soleil.
+
+     Le texte ne suit pas la même règle que les paliers entiers, et ce n'est
+     pas un oubli : le mélange de 3 et 4 est un ton moyen chaud dans les deux
+     thèmes, où l'encre claire tombe à 2,5:1. Les demi-points hauts portent
+     donc l'encre sombre dans les deux thèmes, comme les paliers 4 et 5. */
+  .score-15 {
+    background-color: color-mix(
+      in oklab,
+      var(--sport-score-1),
+      var(--sport-score-2)
+    );
+    color: var(--sport-ink);
+  }
+  .score-25 {
+    background-color: color-mix(
+      in oklab,
+      var(--sport-score-2),
+      var(--sport-score-3)
+    );
+    color: var(--sport-ink);
+  }
+  .score-35 {
+    background-color: color-mix(
+      in oklab,
+      var(--sport-score-3),
+      var(--sport-score-4)
+    );
+    color: #10202b;
+  }
+  .score-45 {
+    background-color: color-mix(
+      in oklab,
+      var(--sport-score-4),
+      var(--sport-score-5)
+    );
+    color: #10202b;
+  }
+
   /* Séquentiel — **l'intensité, pas la qualité**. Le tableau horaire teinte
      les hauteurs de houle et les vitesses de vent avec cette échelle-là, et
      jamais avec celle des scores : une houle de 3 m est grosse, ce qui n'est

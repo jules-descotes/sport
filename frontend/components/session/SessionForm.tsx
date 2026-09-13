@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 
 import { DateWheel } from "@/components/session/DateWheel";
 import { RatingScale } from "@/components/session/RatingScale";
+import { SegmentRating } from "@/components/session/SegmentRating";
 import { TimeWheel } from "@/components/session/TimeWheel";
 import { WaveStepper } from "@/components/session/WaveStepper";
 import { SpotPicker } from "@/components/surf/SpotPicker";
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { boardLength, durationLabel, minutesBetween } from "@/lib/format";
-import type { Gear, SpotHit } from "@/lib/types";
+import type { Gear, SessionSegmentValue, SpotHit } from "@/lib/types";
 
 /**
  * Le formulaire de session — **un seul**, pour la notation et la création.
@@ -57,6 +58,8 @@ export interface SessionFormValues {
   gearId: number | null | undefined;
   waves: number;
   notes: string;
+  /** Les notes heure par heure, optionnelles. Vide = pas de détail. */
+  segments: SessionSegmentValue[];
 }
 
 interface SessionFormProps {
@@ -294,6 +297,18 @@ export function SessionForm({
           onChange={(personal) => set({ personal })}
         />
       </section>
+
+      {/* Le détail horaire, replié et discret : le chemin normal reste deux
+          taps. Il n'apparaît qu'au-delà d'une heure — en dessous, ce serait la
+          note globale écrite deux fois. */}
+      <SegmentRating
+        start={values.start}
+        end={values.end}
+        conditions={values.conditions}
+        personal={values.personal}
+        segments={values.segments}
+        onChange={(segments) => set({ segments })}
+      />
 
       <Section title="Planche">
         {boards.length === 0 ? (

@@ -14,6 +14,7 @@ import type {
   Proposal,
   Recommendation,
   SessionJournal,
+  SessionSegmentValue,
   SessionStatus,
   SlotDetail,
   Spot,
@@ -86,8 +87,13 @@ export interface SessionUpdate {
   spot_id?: number;
   started_at?: string;
   duration_min?: number;
+  /** De 1 à 5 par pas de 0,5. Le serveur refuse tout autre pas. */
   rating_conditions?: number;
   rating_personal?: number;
+  /** Absent = ne touche pas aux segments existants ; liste vide = les efface.
+   *  Les deux gestes sont distincts, et l'écran de notation ne doit pas
+   *  effacer une frise saisie la veille. */
+  segments?: SessionSegmentValue[];
   gear_id?: number;
   wave_count?: number;
   notes?: string | null;
@@ -291,6 +297,7 @@ export const api = {
     discipline?: Discipline;
     rating_conditions?: number;
     rating_personal?: number;
+    segments?: SessionSegmentValue[];
     gear_id?: number;
     wave_count?: number;
     notes?: string;

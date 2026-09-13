@@ -65,6 +65,7 @@ function NewSessionScreen() {
       gearId: undefined,
       waves: 0,
       notes: "",
+      segments: [],
     };
   });
 
@@ -102,6 +103,7 @@ function NewSessionScreen() {
         ...(gearId != null ? { gear_id: gearId } : {}),
         wave_count: form.waves,
         ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
+        ...(form.segments.length ? { segments: form.segments } : {}),
       }),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });

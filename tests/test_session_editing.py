@@ -55,7 +55,9 @@ async def test_manual_past_session_is_backfilled(
 
     assert len(calls) == 1
     snapshot = body["conditions_snapshot"]
-    assert [entry["offset_h"] for entry in snapshot["observed"]] == [-2, -1, 0]
+    # Deux heures d'approche, l'heure du départ, et l'heure entamée après :
+    # la fenêtre couvre la durée de la session depuis le 13/09.
+    assert [entry["offset_h"] for entry in snapshot["observed"]] == [-2, -1, 0, 1]
     assert snapshot["trends"]["observed"]["wave_height_m"] is not None
 
 
