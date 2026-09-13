@@ -9,14 +9,20 @@ import {
   localDayKey,
   num,
   scoreClass,
-  waveHeightClass,
   windSideShort,
-  windSpeedClass,
 } from "@/lib/format";
+import {
+  DEFAULT_THRESHOLDS,
+  energyQualityClass,
+  periodQualityClass,
+  waveQualityClass,
+  windQualityClass,
+} from "@/lib/quality-colors";
 import { slotIsPast } from "@/lib/slot-time";
 import type {
   ForecastPoint,
   SunDay,
+  Thresholds,
   TideCoefficientDay,
 } from "@/lib/types";
 
@@ -89,6 +95,15 @@ interface HourlyTableProps {
   colWidth?: number;
   /** Les coefficients des pleines mers, révélés sur la ligne marée. */
   coefficients?: TideCoefficientDay[];
+  /**
+   * Les seuils de qualité de Jules (décidé le 13/09, retours n° 4).
+   *
+   * Ce sont eux qui teintent les cellules, et ce sont **les mêmes** que ceux
+   * qui ont calculé la note côté serveur : une cellule « bonne » sous une note
+   * de 2 serait le genre d'incohérence qu'on met des mois à débusquer. Quand
+   * la prévision ne les porte pas encore, on prend ceux de Jules par défaut.
+   */
+  thresholds?: Thresholds | null;
   /**
    * L'instant courant, qui atténue les heures révolues.
    *
@@ -310,8 +325,10 @@ export function HourlyTable({
   onToggleSecondary,
   colWidth = COL_WIDTH,
   coefficients = [],
+  thresholds,
   now,
 }: HourlyTableProps) {
+  const limits = thresholds ?? DEFAULT_THRESHOLDS;
   /**
    * La ligne marée révèle les coefficients — au survol sur desktop, au tap sur
    * téléphone (décidé le 13/09).
@@ -460,8 +477,9 @@ export function HourlyTable({
                 <span
                   className={cellTone(
                     point,
-                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-semibold ${waveHeightClass(
+                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-semibold ${waveQualityClass(
                       point.wave_height_m,
+                      limits,
                     )}`,
                   )}
                 >
@@ -476,14 +494,18 @@ export function HourlyTable({
               Période
             </RowLabel>
             {points.map((point) => (
-              <td
-                key={point.ts}
-                className={cellTone(
-                  point,
-                  "border-b border-line text-center text-[14px] font-semibold text-ink",
-                )}
-              >
-                {num(point.wave_period_s, 0)}
+              <td key={point.ts} className="p-px">
+                <span
+                  className={cellTone(
+                    point,
+                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-semibold ${periodQualityClass(
+                      point.wave_period_s,
+                      limits,
+                    )}`,
+                  )}
+                >
+                  {num(point.wave_period_s, 0)}
+                </span>
               </td>
             ))}
           </tr>
@@ -501,16 +523,24 @@ export function HourlyTable({
               Énergie
             </RowLabel>
             {points.map((point) => (
-              <td
-                key={point.ts}
-                className={cellTone(
-                  point,
-                  "border-b border-line text-center text-[14px] font-medium text-ink-2",
-                )}
-              >
-                {point.wave_energy_kj === null
-                  ? "—"
-                  : num(point.wave_energy_kj, point.wave_energy_kj < 10 ? 1 : 0)}
+              <td key={point.ts} className="p-px">
+                {/* L'énergie suit la houle : elle vaut 0,49 × H² × T, et lui
+                    donner sa propre rampe ferait diverger deux cellules de la
+                    même colonne. */}
+                <span
+                  className={cellTone(
+                    point,
+                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-medium ${energyQualityClass(
+                      point.wave_height_m,
+                      point.wave_energy_kj,
+                      limits,
+                    )}`,
+                  )}
+                >
+                  {point.wave_energy_kj === null
+                    ? "—"
+                    : num(point.wave_energy_kj, point.wave_energy_kj < 10 ? 1 : 0)}
+                </span>
               </td>
             ))}
           </tr>
@@ -591,8 +621,9 @@ export function HourlyTable({
                 <span
                   className={cellTone(
                     point,
-                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-semibold ${windSpeedClass(
+                    `flex h-8 items-center justify-center rounded-cell text-[14px] font-semibold ${windQualityClass(
                       point.wind_speed_kt,
+                      limits,
                     )}`,
                   )}
                 >

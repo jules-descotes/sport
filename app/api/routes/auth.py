@@ -13,10 +13,12 @@ from app.db.database import get_db
 from app.models.api_token import ApiToken
 from app.models.spot import Spot
 from app.models.user import User
+from app.schemas.thresholds import ThresholdsRead, ThresholdsUpdate
 from app.schemas.token import ApiTokenCreate, ApiTokenCreated, ApiTokenRead
 from app.schemas.user import LoginRequest, ProfileUpdate, Token, UserRead
 from app.services.auth_service import authenticate_user, get_current_active_user
 from app.services.spot_tiers import get_or_create_preferences, recompute_tiers
+from app.services.thresholds import get_or_create as get_or_create_thresholds
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -77,6 +79,67 @@ async def logout(response: Response) -> None:
 @router.get("/me", response_model=UserRead)
 async def me(current_user: User = Depends(get_current_active_user)) -> User:
     return current_user
+
+
+# ── Les seuils de qualité (décidé le 13/09, retours n° 4) ─────────────────
+#
+# Ils vivent sous `/auth/me` et pas sous `/spots` parce qu'ils décrivent
+# **quelqu'un**, pas un lieu : ce sont les mêmes huit nombres quel que soit le
+# spot regardé. Les critères par spot, eux, sont ailleurs (`spot_rules`), et
+# c'est bien deux choses différentes — « j'aime les longues périodes » n'est
+# pas « Parlementia marche au nord-ouest ».
+
+
+@router.get("/me/thresholds", response_model=ThresholdsRead)
+async def read_thresholds(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> ThresholdsRead:
+    """Les seuils, créés aux défauts à la première lecture."""
+    row = await get_or_create_thresholds(db, current_user.id)
+    await db.commit()
+    return ThresholdsRead.model_validate(row)
+
+
+@router.put("/me/thresholds", response_model=ThresholdsRead)
+async def update_thresholds(
+    data: ThresholdsUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> ThresholdsRead:
+    """Règle un curseur, ou huit.
+
+    La correction est partielle et **repart des valeurs en place** : exiger les
+    huit obligerait l'écran à toutes les connaître pour en changer une, et une
+    valeur oubliée retomberait au défaut sans prévenir.
+
+    L'ordre des seuils d'un même axe est vérifié après fusion, pas avant : un
+    envoi qui ne porte que « très bon » doit être confronté au « bon » déjà en
+    base, sinon la règle ne dit rien.
+    """
+    row = await get_or_create_thresholds(db, current_user.id)
+
+    merged = {
+        name: getattr(row, name)
+        for name in ThresholdsRead.model_fields
+        if hasattr(row, name)
+    }
+    merged.update(data.model_dump(exclude_none=True))
+
+    try:
+        checked = ThresholdsRead(**merged)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+    for name, value in checked.model_dump().items():
+        setattr(row, name, value)
+
+    await db.commit()
+    await db.refresh(row)
+    return ThresholdsRead.model_validate(row)
 
 
 @router.put("/me/profile", response_model=UserRead)

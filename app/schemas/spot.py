@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.thresholds import ThresholdsRead
+
 from app.models.enums import SpotSource, SpotTier, SpotType
 
 
@@ -172,6 +174,12 @@ class SpotForecastResponse(BaseModel):
     run_ts: Optional[datetime] = None
     # Une entrée par journée rendue, dans l'ordre.
     sun: list[SunDay] = []
+    # Les seuils de qualité de l'utilisateur, servis **avec** la prévision
+    # (décidé le 13/09, retours n° 4). Le tableau horaire teinte ses cellules
+    # avec les mêmes nombres que ceux qui ont calculé la note : deux sources
+    # pour la même règle finiraient par montrer une cellule « bonne » sous une
+    # note de 2. Et c'est une requête de moins à l'ouverture de l'écran.
+    thresholds: Optional["ThresholdsRead"] = None
     points: list[ForecastPoint] = []
 
 

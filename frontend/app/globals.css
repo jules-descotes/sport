@@ -266,3 +266,25 @@
     outline-offset: 2px;
   }
 }
+
+@layer components {
+  /* ── Teintes de qualité (décidé le 13/09, retours n° 4) ────────────────
+     Deux classes s'ajoutent à la rampe séquentielle, et seulement deux.
+
+     `seq-quiet` — la valeur existe mais elle est **sous le minimum**. Distincte
+     de `seq-empty`, qui veut dire « pas de donnée » : on doit pouvoir lire la
+     différence entre une période de 5 s et une période inconnue.
+
+     `wind-top` — la seule cellule chaude du tableau, et elle est réservée au
+     vent qu'on espère. Le pendant froid de la rampe fait le reste ; il n'y a
+     **jamais de rouge** — le rouge dit « danger », et vingt-cinq nœuds ne sont
+     pas un danger, c'est une mauvaise journée de surf. */
+  .seq-quiet {
+    background-color: var(--sport-bg);
+    color: var(--sport-mute);
+  }
+  .wind-top {
+    background-color: color-mix(in oklab, var(--sport-accent) 22%, transparent);
+    color: var(--sport-ink);
+  }
+}

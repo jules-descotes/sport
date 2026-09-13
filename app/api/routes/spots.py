@@ -6,6 +6,7 @@ sinon FastAPI tente de lire « nearby » comme un identifiant et renvoie 422.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Optional, Sequence
 from zoneinfo import ZoneInfo
@@ -20,6 +21,7 @@ from app.models.forecast import Forecast
 from app.models.spot import Spot
 from app.models.user import User
 from app.models.spot_rule import SpotRule
+from app.schemas.thresholds import ThresholdsRead
 from app.schemas.spot_rule import (
     FavoriteOrder,
     MatchWindowRead,
@@ -56,6 +58,7 @@ from app.services.geo import (
     wave_energy_kj,
 )
 from app.services.scoring import (
+    Thresholds,
     TideContext,
     build_conditions,
     score_conditions,
@@ -73,6 +76,7 @@ from app.services.spot_rules import (
     window_details,
     window_sentence,
 )
+from app.services.thresholds import load as load_thresholds
 from app.services.tide_coefficient import (
     coefficients as tide_coefficients,
     nearest_mark,
@@ -561,6 +565,7 @@ def _build_point(
     tide: TideContext,
     rules: Optional[SpotRules] = None,
     timezone: str = "Europe/Paris",
+    thresholds: Optional[Thresholds] = None,
 ) -> ForecastPoint:
     """Une ligne de `forecasts` devient un créneau noté et prêt à l'écran.
 
@@ -570,6 +575,11 @@ def _build_point(
     horaire, résumé de Jour, détail d'un créneau — les reçoivent donc tous les
     trois, sans quoi la même heure porterait deux notes différentes selon
     l'écran.
+
+    `thresholds` porte les seuils du profil (décidé le 13/09, retours n° 4) :
+    ils construisent les barèmes du score. La rampe de couleur du tableau
+    horaire lit **les mêmes** côté front — une cellule teintée « bonne » sous
+    une note de 2 serait le genre d'incohérence qu'on met des mois à débusquer.
     """
     ts = _utc(forecast.ts)
     values = {
@@ -585,7 +595,11 @@ def _build_point(
     }
     conditions = build_conditions(ts, values, tide)
     score = score_conditions(
-        conditions, spot.onshore_dir_deg, rules, local_hour(ts, timezone)
+        conditions,
+        spot.onshore_dir_deg,
+        rules,
+        local_hour(ts, timezone),
+        thresholds,
     )
 
     # Énergie sur la **période moyenne**, la seule que MFWAM serve et la seule
@@ -679,9 +693,10 @@ async def spot_forecast(
     # commence « aujourd'hui ».
     forecasts, tide = await _forecast_window(db, spot, now, days, timezone)
     rules = (await load_spot_rules(db, current_user.id, [spot.id])).get(spot.id)
+    thresholds = await load_thresholds(db, current_user.id)
 
     points = [
-        _build_point(spot, forecast, tide, rules, timezone)
+        _build_point(spot, forecast, tide, rules, timezone, thresholds)
         for forecast in forecasts
         if not (step_hours > 1 and _utc(forecast.ts).hour % step_hours)
     ]
@@ -692,6 +707,11 @@ async def spot_forecast(
         fetched_at=await last_fetched_at(db, spot.id),
         run_ts=await latest_run_ts(db, spot.id),
         sun=_sun_days(spot, points),
+        # Les seuils voyagent **avec** la prévision : le tableau horaire teinte
+        # ses cellules avec les mêmes nombres que ceux qui ont calculé la note,
+        # et un aller-retour de plus à l'ouverture de l'écran serait une
+        # requête de trop sur un réseau de parking de plage.
+        thresholds=ThresholdsRead(**asdict(thresholds)),
         points=points,
     )
 
@@ -739,7 +759,8 @@ async def spot_slot(
     profile = current_user.profile
     timezone = profile.timezone if profile else "Europe/Paris"
     rules = (await load_spot_rules(db, current_user.id, [spot.id])).get(spot.id)
-    point = _build_point(spot, forecast, tide, rules, timezone)
+    thresholds = await load_thresholds(db, current_user.id)
+    point = _build_point(spot, forecast, tide, rules, timezone, thresholds)
     delta = await forecast_delta(db, spot, target, timezone=timezone)
 
     sunrise, sunset = sun_events(target.date(), spot.lat, spot.lon)

@@ -11,6 +11,7 @@ import {
   DESKTOP_COL_WIDTH,
   HourlyTable,
 } from "@/components/surf/HourlyTable";
+import { QualityLegend } from "@/components/surf/QualityLegend";
 import { SlotDetailScreen } from "@/components/surf/SlotDetailScreen";
 import { SpotPicker } from "@/components/surf/SpotPicker";
 import { SpotSwitcher } from "@/components/surf/SpotSwitcher";
@@ -339,6 +340,7 @@ function SurfScreen() {
                 onToggleSecondary={() => setSecondaryOpen((open) => !open)}
                 colWidth={colWidth}
                 coefficients={tides.data ?? []}
+                thresholds={forecast.data?.thresholds}
                 now={new Date()}
               />
 
@@ -353,22 +355,22 @@ function SurfScreen() {
                     />
                   ))}
                 </li>
-                <li className="flex items-center gap-1.5">
-                  Intensité
-                  {[1, 2, 3, 4, 5, 6].map((level) => (
-                    <span
-                      key={level}
-                      className={`h-2.5 w-4 rounded-chip seq-${level}`}
-                      aria-hidden
-                    />
-                  ))}
-                </li>
                 <li>Colonne pâle : nuit · colonne atténuée : heure passée</li>
                 <li>Touche une note pour le détail du créneau</li>
                 {tides.data && tides.data.length > 0 ? (
                   <li>Touche la ligne marée pour le coefficient</li>
                 ) : null}
               </ul>
+
+              {/* La rampe d'intensité a disparu de cette ligne : depuis le
+                  13/09 les cellules ne disent plus « c'est gros » mais « c'est
+                  bon pour toi », et une légende « Intensité » mentirait. Ce
+                  que veut dire chaque teinte tient dans la légende repliable,
+                  avec les seuils réellement réglés. */}
+              <QualityLegend
+                className="pt-1"
+                thresholds={forecast.data?.thresholds}
+              />
 
               <Freshness
                 className="pt-2"

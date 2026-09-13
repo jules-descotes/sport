@@ -35,7 +35,12 @@ from app.models.forecast import Forecast
 from app.models.spot import Spot
 from app.models.spot_rule import SpotRule
 from app.services.forecast_reads import latest_forecasts_select
-from app.services.scoring import TideContext, build_conditions, score_conditions
+from app.services.scoring import (
+    Thresholds,
+    TideContext,
+    build_conditions,
+    score_conditions,
+)
 from app.services.spot_rules import (
     MatchWindow,
     SpotRules,
@@ -45,6 +50,7 @@ from app.services.spot_rules import (
     tide_phase,
 )
 from app.services.sun import is_daylight
+from app.services.thresholds import load as load_thresholds
 
 # Trois jours : au-delà, une prévision de houle est une intention, et annoncer
 # « samedi prochain » ferait poser un jour de congé sur du sable.
@@ -115,6 +121,9 @@ async def upcoming_matches(
         return []
 
     rules = await rules_by_spot(db, user_id, [spot.id for spot in spots])
+    # Les seuils du profil : une annonce doit porter la même note que le
+    # tableau horaire, sinon « Parlementia devrait marcher » ouvre sur un 2.
+    thresholds = await load_thresholds(db, user_id)
     # Un spot sans critères n'est jamais annoncé : sans règles, « correspond »
     # ne veut rien dire.
     spots = [spot for spot in spots if not rules.get(spot.id, SpotRules()).empty]
@@ -179,7 +188,7 @@ async def upcoming_matches(
                 continue
 
             score = score_conditions(
-                conditions, spot.onshore_dir_deg, spot_rules, hour
+                conditions, spot.onshore_dir_deg, spot_rules, hour, thresholds
             )
             matching.append(
                 (

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { HabitSettings } from "@/components/habits/HabitSettings";
 import { ProfileStatsCards } from "@/components/habits/ProfileStatsCards";
 import { NutritionSettings } from "@/components/nutrition/NutritionSettings";
+import { ThresholdSettings } from "@/components/surf/ThresholdSettings";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { FavoriteSpots } from "@/components/surf/FavoriteSpots";
 import { SpotPicker } from "@/components/surf/SpotPicker";
@@ -204,6 +205,11 @@ export default function ProfilPage() {
           notions distinctes : réordonner ne change pas l'écran Jour, sans quoi
           on n'oserait plus réordonner (décidé le 13/09). */}
       <FavoriteSpots homeSpotId={homeSpotId} />
+
+      {/* Où commence le bon, pour lui. Ces huit nombres teintent le tableau
+          horaire **et** calculent les notes : un seul jeu pour les deux, sans
+          quoi une cellule « bonne » finirait sous une note de 2 (13/09). */}
+      <ThresholdSettings />
 
       {/* Ce que la cible calorique a besoin de savoir. Quatre réglages qu'on
           ne touche qu'une fois, et sans lesquels la cible reste une estimation

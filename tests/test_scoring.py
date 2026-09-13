@@ -13,6 +13,7 @@ import pytest
 
 from app.services.scoring import (
     Conditions,
+    Thresholds,
     TideContext,
     build_conditions,
     conditions_line,
@@ -42,13 +43,70 @@ def conditions(**kwargs) -> Conditions:
 # ── Les quatre jeux de référence ───────────────────────────────────────────
 
 
-def test_perfect_day_scores_five() -> None:
-    """1,4 m, 12 s, houle bien orientée, offshore modéré, mi-marée montante."""
+def test_a_clean_small_day_is_good_without_being_the_best() -> None:
+    """1,4 m, 12 s, houle bien orientée, offshore modéré, mi-marée montante.
+
+    **Notait 5 avant le 13/09, note 4 depuis** — et c'est le changement voulu
+    par les seuils personnels (retours n° 4). Les anciennes bandes plaçaient le
+    créneau de référence entre 1 et 2 m ; Jules a écrit que la houle
+    « commence » à 1,2 m et que c'est « mieux en grossissant ». Une mer propre
+    de 1,4 m est donc un bon jour, pas son meilleur jour. Voir
+    `test_a_clean_big_day_is_the_best_one` : c'est celui-là qui vaut 5.
+    """
     score = score_conditions(conditions(), ONSHORE_WEST)
+
+    assert score.level == 4
+    assert score.verdict == "OUI"
+    assert "vent offshore" in score.reasons
+
+
+def test_a_clean_big_day_is_the_best_one() -> None:
+    """« Mieux en grossissant » — jusqu'à `wave_big_m`, et c'est là le 5.
+
+    Le pendant du test précédent : la même journée propre, à la taille que
+    Jules a désignée comme la meilleure pour lui.
+    """
+    score = score_conditions(
+        conditions(wave_height_m=2.5, wave_period_s=13.0), ONSHORE_WEST
+    )
 
     assert score.level == 5
     assert score.verdict == "OUI"
-    assert "vent offshore" in score.reasons
+
+
+def test_the_thresholds_move_the_score() -> None:
+    """Le même créneau, deux personnes : deux notes.
+
+    C'est tout l'objet des seuils. Quelqu'un pour qui la houle commence à
+    0,8 m et est déjà bonne à 1,2 m trouve excellente la journée que Jules
+    trouve correcte.
+    """
+    small_is_fine = Thresholds(wave_min_m=0.6, wave_good_m=1.0, wave_big_m=1.5)
+
+    mine = score_conditions(conditions(), ONSHORE_WEST)
+    theirs = score_conditions(
+        conditions(), ONSHORE_WEST, thresholds=small_is_fine
+    )
+
+    assert theirs.value > mine.value
+    assert theirs.level == 5
+
+
+def test_the_defaults_reproduce_the_period_curve_of_lot_1() -> None:
+    """La non-régression qui compte : on a changé la **source** des nombres.
+
+    Avec les seuils par défaut, la courbe de période est celle écrite en dur au
+    lot 1, au point près. Si elle bougeait, on aurait changé le jugement en
+    croyant ne changer que d'où viennent les chiffres.
+    """
+    assert Thresholds().period_curve() == (
+        (4.0, 0.05),
+        (6.0, 0.20),
+        (8.0, 0.45),
+        (11.0, 0.85),
+        (14.0, 1.00),
+        (20.0, 1.00),
+    )
 
 
 def test_flat_day_scores_one_whatever_the_wind() -> None:
@@ -83,8 +141,15 @@ def test_big_onshore_day_scores_one() -> None:
     assert "vent onshore appuyé" in score.reasons
 
 
-def test_average_day_scores_in_the_middle() -> None:
-    """1,2 m, 10 s, petit vent de mer : ni un jour à rater, ni un jour à poser."""
+def test_the_bare_minimum_with_onshore_wind_is_not_worth_it() -> None:
+    """1,2 m, 10 s, dix nœuds de mer.
+
+    **Notait 3 avant le 13/09, note 2 depuis.** Les deux grandeurs sont
+    exactement aux bornes que Jules a posées : 1,2 m est le minimum de sa
+    houle, dix nœuds la limite de son « top » de vent — et ce vent-là vient de
+    la mer. Deux bornes atteintes par le bas ne font pas une journée moyenne,
+    elles font une journée qu'on regarde depuis le parking.
+    """
     score = score_conditions(
         conditions(
             wave_height_m=1.2,
@@ -95,8 +160,23 @@ def test_average_day_scores_in_the_middle() -> None:
         ONSHORE_WEST,
     )
 
-    assert score.level == 3
-    assert score.verdict == "PEUT-ÊTRE"
+    assert score.level == 2
+    assert "vent onshore" in score.reasons
+
+
+def test_the_same_size_offshore_is_a_maybe() -> None:
+    """La même houle minimale, mais le vent de terre : ça vaut le détour."""
+    score = score_conditions(
+        conditions(
+            wave_height_m=1.2,
+            wave_period_s=10.0,
+            wind_speed_kt=10.0,
+            wind_direction_deg=90.0,
+        ),
+        ONSHORE_WEST,
+    )
+
+    assert score.verdict in ("PEUT-ÊTRE", "OUI")
 
 
 # ── Ordre et monotonie ─────────────────────────────────────────────────────

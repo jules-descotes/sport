@@ -39,6 +39,7 @@ import type {
   SpotPreferences,
   SpotRules,
   SurfSession,
+  Thresholds,
   TideCoefficientDay,
   TrainingOverview,
   WeighInResponse,
@@ -198,6 +199,18 @@ export const api = {
 
   /** Les spots maison, le favori du profil en tête. N'ingère rien non plus. */
   favoriteSpots: () => request<SpotHit[]>("/spots/favorites"),
+
+  /** Les seuils de qualité — huit nombres qui teintent le tableau horaire
+   *  **et** calculent les notes. La ligne est créée aux défauts à la première
+   *  lecture : l'écran de réglage n'a jamais deux cas à distinguer. */
+  thresholds: () => request<Thresholds>("/auth/me/thresholds"),
+
+  /** Correction partielle : le serveur repart des valeurs en place. */
+  updateThresholds: (data: Partial<Thresholds>) =>
+    request<Thresholds>("/auth/me/thresholds", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   createSpot: (data: {
     name: string;

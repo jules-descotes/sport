@@ -44,28 +44,101 @@ from app.services.spot_rules import (
 # Chaque barème est une courbe affine par morceaux : (valeur, note de 0 à 1).
 # Les points intermédiaires sont interpolés, les extrêmes prolongés à plat.
 
-SIZE_CURVE: tuple[tuple[float, float], ...] = (
-    (0.30, 0.00),  # à plat
-    (0.50, 0.12),
-    (0.80, 0.80),
-    (1.00, 1.00),
-    (2.00, 1.00),  # le créneau de référence
-    (3.00, 0.55),
-    (4.50, 0.15),
-    (6.00, 0.05),  # hors de portée
-)
+# ── Les barèmes se **construisent** depuis les seuils de Jules ────────────
+#
+# Décidé le 13/09 (retours n° 4). Les courbes étaient écrites en dur : « 8 s
+# c'est moyen, 11 s c'est bien ». C'est l'avis de personne. Elles s'accrochent
+# maintenant aux huit nombres que Jules a posés dans son profil
+# (`models/thresholds.py`), et la rampe de couleur du tableau horaire
+# s'accroche exactement aux mêmes — un créneau teinté « bon » et noté 2 serait
+# le genre d'incohérence qu'on met des mois à débusquer.
+#
+# Les valeurs par défaut des seuils **redonnent les courbes d'origine, au point
+# près** pour la période : `Thresholds()` est la non-régression du lot 1, et le
+# test le vérifie. Ce n'est pas une coquetterie — ça garantit qu'on a changé la
+# source des nombres, pas la forme du jugement.
 
-# Calibrée sur la **période moyenne** servie par MFWAM, et sur elle seule
-# (cf. `build_conditions` plus bas). Valeurs relevées sur la côte landaise :
-# ~7 s pour une petite mer du vent, ~13 s pour une houle d'ouest de mars.
-PERIOD_CURVE: tuple[tuple[float, float], ...] = (
-    (4.00, 0.05),  # clapot
-    (6.00, 0.20),
-    (8.00, 0.45),
-    (11.00, 0.85),  # la houle s'ordonne
-    (14.00, 1.00),
-    (20.00, 1.00),
-)
+
+@dataclass(frozen=True)
+class Thresholds:
+    """Où commence le bon, pour cet utilisateur-là. Unités de base.
+
+    Les défauts sont ceux de Jules (cf. `schemas/thresholds.py`) : période de
+    mieux en mieux à partir de 8 s, vent top sous 10 nœuds, houle qui commence
+    à 1,2 m et s'améliore en grossissant.
+    """
+
+    period_good_s: float = 8.0
+    period_great_s: float = 12.0
+    wind_top_kt: float = 10.0
+    wind_strong_kt: float = 15.0
+    wind_very_strong_kt: float = 20.0
+    wave_min_m: float = 1.2
+    wave_good_m: float = 1.8
+    wave_big_m: float = 2.5
+
+    @classmethod
+    def from_row(cls, row: Optional[object]) -> "Thresholds":
+        """Depuis la ligne `user_thresholds`, ou les défauts si elle manque."""
+        if row is None:
+            return cls()
+        return cls(
+            **{
+                name: float(getattr(row, name))
+                for name in (
+                    "period_good_s",
+                    "period_great_s",
+                    "wind_top_kt",
+                    "wind_strong_kt",
+                    "wind_very_strong_kt",
+                    "wave_min_m",
+                    "wave_good_m",
+                    "wave_big_m",
+                )
+            }
+        )
+
+    def size_curve(self) -> tuple[tuple[float, float], ...]:
+        """Hauteur de houle → note de 0 à 1.
+
+        `wave_big_m` n'est pas un plafond de danger, c'est **la taille où c'est
+        le meilleur pour lui** : au-delà la courbe redescend d'elle-même, parce
+        qu'à un moment ça ne se surfe plus, et ça, ce n'est pas une préférence.
+        """
+        low = self.wave_min_m
+        good = self.wave_good_m
+        big = self.wave_big_m
+        return (
+            (low * 0.30, 0.00),  # à plat
+            (low * 0.60, 0.10),
+            (low, 0.60),  # ça commence — surfable, pas encore bon
+            (good, 0.95),
+            (big, 1.00),  # le créneau de référence
+            (big * 1.60, 0.55),
+            (big * 2.20, 0.15),
+            (big * 3.00, 0.05),  # hors de portée
+        )
+
+    def period_curve(self) -> tuple[tuple[float, float], ...]:
+        """Période moyenne → note de 0 à 1.
+
+        Calée sur la **période moyenne** servie par MFWAM, et sur elle seule
+        (cf. `build_conditions` plus bas). Avec les défauts 8 / 12 s, elle rend
+        exactement la courbe du lot 1.
+        """
+        good = self.period_good_s
+        great = self.period_great_s
+        return (
+            (good - 4.0, 0.05),  # clapot
+            (good - 2.0, 0.20),
+            (good, 0.45),
+            (good + 0.75 * (great - good), 0.85),  # la houle s'ordonne
+            (great + 2.0, 1.00),
+            (great + 8.0, 1.00),
+        )
+
+
+DEFAULT_THRESHOLDS = Thresholds()
 
 # Écart angulaire houle ↔ orientation du spot (feature 10 du registre).
 ALIGNMENT_CURVE: tuple[tuple[float, float], ...] = (
@@ -77,9 +150,13 @@ ALIGNMENT_CURVE: tuple[tuple[float, float], ...] = (
     (180.00, 0.05),
 )
 
-# En dessous, la mer est lisse quelle que soit la direction du vent.
+# En dessous, la mer est lisse quelle que soit la direction du vent. C'est de
+# la physique et pas un goût : ça ne se règle donc pas dans le profil.
 GLASSY_WIND_KT = 4.0
 # Au-dessus, le vent pèse de tout son poids ; entre les deux, on interpole.
+# **Réglable** : c'est `wind_very_strong_kt`, le seuil au-delà duquel Jules
+# considère que le vent décide de tout (20 nœuds par défaut). Cette constante
+# reste le repli quand aucun seuil n'est fourni.
 FULL_WIND_KT = 18.0
 # Un offshore trop fort tient la vague debout et empêche de partir.
 TOO_OFFSHORE_KT = 25.0
@@ -253,18 +330,28 @@ def wind_factor(
     wind_speed_kt: Optional[float],
     wind_direction_deg: Optional[float],
     onshore_dir_deg: Optional[float],
+    thresholds: Optional[Thresholds] = None,
 ) -> tuple[float, Optional[float]]:
     """Facteur de vent dans [WIND_FLOOR, 1], et composante offshore signée.
 
     Sans orientation de côte connue, on ne peut rien dire du sens du vent : on
     se rabat sur sa seule force, ce qui reste vrai partout — un vent fort est
     plus souvent un problème qu'un cadeau.
+
+    `thresholds.wind_very_strong_kt` remplace `FULL_WIND_KT` : c'est le vent
+    au-delà duquel Jules considère que la direction décide de tout. Le seuil de
+    mer lisse, lui, ne se règle pas — à quatre nœuds la mer est lisse, ce n'est
+    pas une préférence.
     """
     if wind_speed_kt is None:
         return 1.0, None
 
+    full = (thresholds or DEFAULT_THRESHOLDS).wind_very_strong_kt
+    # Garde-fou : un seuil posé sous la mer lisse replierait la rampe.
+    span = max(full - GLASSY_WIND_KT, 1.0)
+
     if onshore_dir_deg is None or wind_direction_deg is None:
-        strength = _clamp((wind_speed_kt - GLASSY_WIND_KT) / (FULL_WIND_KT - GLASSY_WIND_KT))
+        strength = _clamp((wind_speed_kt - GLASSY_WIND_KT) / span)
         return _clamp(1.0 - 0.55 * strength, WIND_FLOOR, 1.0), None
 
     offshore = offshore_component_kt(
@@ -274,11 +361,10 @@ def wind_factor(
     # Direction : -1 plein onshore, +1 plein offshore.
     direction_score = _clamp(0.5 + 0.5 * (offshore / max(wind_speed_kt, 1.0)))
 
-    # Amplitude : à 4 nœuds la direction n'a aucune importance, à 18 elle fait
-    # tout. Entre les deux, on mélange avec une « bonne note par défaut ».
-    weight = _clamp(
-        (wind_speed_kt - GLASSY_WIND_KT) / (FULL_WIND_KT - GLASSY_WIND_KT)
-    )
+    # Amplitude : à quatre nœuds la direction n'a aucune importance, au seuil
+    # « très fort » elle fait tout. Entre les deux, on mélange avec une « bonne
+    # note par défaut ».
+    weight = _clamp((wind_speed_kt - GLASSY_WIND_KT) / span)
     factor = (1.0 - weight) * 0.92 + weight * direction_score
 
     if offshore > TOO_OFFSHORE_KT:
@@ -292,6 +378,7 @@ def score_conditions(
     onshore_dir_deg: Optional[float] = None,
     rules: Optional["SpotRules"] = None,
     local_hour: Optional[int] = None,
+    thresholds: Optional[Thresholds] = None,
 ) -> Score:
     """Note de 1 à 5 d'un créneau.
 
@@ -306,9 +393,15 @@ def score_conditions(
     2. **Les bornes.** Correspondance complète : au moins 3. Critère dur
        raté : au plus 2.
 
+    `thresholds` porte les seuils du profil (décidé le 13/09, retours n° 4) :
+    ils construisent les barèmes de taille, de période et de vent, là où le
+    lot 1 avait des bandes écrites en dur. Sans eux, on prend les défauts, qui
+    sont ceux de Jules.
+
     Sans règles, rien ne change : c'est exactement le calcul du lot 1.
     """
     reasons: list[str] = []
+    limits = thresholds or DEFAULT_THRESHOLDS
 
     height = conditions.wave_height_m
     period = conditions.wave_period_s
@@ -322,8 +415,10 @@ def score_conditions(
             reasons=["prévision de houle indisponible"],
         )
 
-    size = _piecewise(SIZE_CURVE, height)
-    period_score = _piecewise(PERIOD_CURVE, period) if period is not None else 0.5
+    size = _piecewise(limits.size_curve(), height)
+    period_score = (
+        _piecewise(limits.period_curve(), period) if period is not None else 0.5
+    )
 
     alignment_score = 1.0
     alignment_deg: Optional[float] = None
@@ -350,7 +445,10 @@ def score_conditions(
     effective_size = size * alignment_score
 
     factor_wind, offshore = wind_factor(
-        conditions.wind_speed_kt, conditions.wind_direction_deg, onshore_dir_deg
+        conditions.wind_speed_kt,
+        conditions.wind_direction_deg,
+        onshore_dir_deg,
+        limits,
     )
 
     tide_score = 0.75
@@ -373,7 +471,7 @@ def score_conditions(
     # vent offshore » est une phrase absurde. Dès qu'il n'y a pas de vague,
     # c'est toute l'explication, et les qualités de vent ou de période ne sont
     # que du bruit.
-    if height < 0.35:
+    if height < limits.wave_min_m * 0.3:
         reasons.append("mer plate")
     elif size < 0.5:
         reasons.append("trop petit")
@@ -395,7 +493,7 @@ def score_conditions(
         elif surfable and offshore > 3.0:
             reasons.append("vent offshore")
 
-    if surfable and period is not None and period >= 12.0:
+    if surfable and period is not None and period >= limits.period_great_s:
         reasons.append("longue période")
 
     # ── Les critères de Jules, en dernier ──────────────────────────────────
@@ -504,9 +602,9 @@ def build_conditions(
     remplira au lot 1 bis.
 
     Basculer automatiquement sur la période de pic le jour où la colonne se
-    remplit changerait la grandeur notée sans prévenir : `PERIOD_CURVE` est
-    calibrée sur la période moyenne, et Tp vaut 25 à 40 % de plus que T02. Le
-    jour où l'on voudra noter sur Tp, ce sera avec sa propre courbe et une
+    remplit changerait la grandeur notée sans prévenir : `Thresholds.period_curve`
+    est calibrée sur la période moyenne, et Tp vaut 25 à 40 % de plus que T02.
+    Le jour où l'on voudra noter sur Tp, ce sera avec sa propre courbe et une
     décision explicite.
     """
     period = values.get("wave_period_s")

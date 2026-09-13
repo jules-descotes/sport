@@ -162,6 +162,29 @@ export interface TideCoefficientDay {
   marks: TideCoefficientMark[];
 }
 
+// ── Seuils personnels de qualité (décidé le 13/09, retours n° 4) ─────────
+//
+// Huit nombres qui disent **où commence le bon**, pour Jules. Ils teintent le
+// tableau horaire (`lib/quality-colors.ts`) et ils calculent la note côté
+// serveur (`services/scoring.py`) — les mêmes, servis avec la prévision, parce
+// que deux sources pour la même règle finiraient par montrer une cellule
+// « bonne » sous une note de 2.
+
+export interface Thresholds {
+  /** La période s'améliore à partir de là. En dessous : du clapot. */
+  period_good_s: number;
+  period_great_s: number;
+  /** Le seul axe inversé : moins il y en a, mieux c'est. */
+  wind_top_kt: number;
+  wind_strong_kt: number;
+  wind_very_strong_kt: number;
+  /** « Ça commence » — en dessous, la cellule reste neutre. */
+  wave_min_m: number;
+  wave_good_m: number;
+  /** La taille qu'il préfère, pas un plafond de danger. */
+  wave_big_m: number;
+}
+
 export interface SpotForecast {
   spot: Spot;
   /** Open-Meteo a dépassé les 5 s : la réponse vient de la base. */
@@ -171,6 +194,10 @@ export interface SpotForecast {
   run_ts: string | null;
   /** Une entrée par journée rendue, dans l'ordre. */
   sun: SunDay[];
+  /** Les seuils qui ont calculé les notes — et qui teintent les cellules.
+   *  Servis avec la prévision plutôt que demandés à part : c'est une requête
+   *  de moins à l'ouverture de l'écran, sur un réseau de parking de plage. */
+  thresholds: Thresholds | null;
   points: ForecastPoint[];
 }
 

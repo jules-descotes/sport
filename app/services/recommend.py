@@ -34,6 +34,7 @@ from app.services.geo import bounding_box, haversine_m
 from app.services.scoring import (
     Conditions,
     Score,
+    Thresholds,
     TideContext,
     build_conditions,
     conditions_line,
@@ -41,6 +42,7 @@ from app.services.scoring import (
 )
 from app.services.spot_matches import rules_by_spot as load_spot_rules
 from app.services.spot_rules import SpotRules, local_hour
+from app.services.thresholds import load as load_thresholds
 from app.services.sun import is_daylight, next_daylight_window
 
 # Au-delà, on ne prend plus la voiture pour aller voir.
@@ -185,6 +187,7 @@ def score_spot(
     daylight_only: bool = False,
     rules: Optional[SpotRules] = None,
     timezone: str = "Europe/Paris",
+    thresholds: Optional[Thresholds] = None,
 ) -> list[Slot]:
     """Note tous les créneaux d'un spot, nuit comprise, et dit lesquels sont de jour.
 
@@ -216,6 +219,10 @@ def score_spot(
                     spot.onshore_dir_deg,
                     rules,
                     local_hour(ts, timezone),
+                    # Les seuils du profil : la reco et le tableau horaire
+                    # notent la même heure de la même façon, ou l'un des deux
+                    # ment (décidé le 13/09, retours n° 4).
+                    thresholds,
                 ),
                 daylight=daylight,
             )
@@ -358,6 +365,7 @@ async def recommend(
     rules_by_spot = await load_spot_rules(
         db, preferences.user_id, [spot.id for spot in spots]
     )
+    thresholds = await load_thresholds(db, preferences.user_id)
 
     recommendations: list[SpotRecommendation] = []
     for spot, distance_km in pairs:
@@ -366,6 +374,7 @@ async def recommend(
             rows_by_spot.get(spot.id, []),
             rules=rules_by_spot.get(spot.id),
             timezone=timezone,
+            thresholds=thresholds,
         )
         future = [
             slot
