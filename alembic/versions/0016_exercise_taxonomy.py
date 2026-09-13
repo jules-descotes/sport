@@ -1,7 +1,7 @@
 """13/09 (retours n° 3 et n° 4) — taxonomie des exercices, français et images
 
 Revision ID: 0016
-Revises: 0015
+Revises: 0014
 Create Date: 2026-09-13
 
 Ce que le générateur de séances a besoin de savoir d'un exercice, et ce que
@@ -41,7 +41,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0016"
-down_revision: Union[str, Sequence[str], None] = "0015"
+down_revision: Union[str, Sequence[str], None] = "0014"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
