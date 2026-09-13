@@ -13,6 +13,7 @@ heure** sur cinq jours (décidé le 13/09). Ce qui se teste ici :
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -81,6 +82,41 @@ async def test_forecast_is_hourly_by_default(auth_client, make_spot, make_foreca
     # Les vingt-quatre heures sont représentées, pas seulement 0/3/6/9…
     assert len(hours) == 24
     assert len(points) > 40
+
+
+async def test_the_table_starts_at_the_beginning_of_the_day(
+    auth_client, make_spot, make_forecast
+):
+    """Le tableau de Surf montre **la matinée**, pas seulement ce qui reste.
+
+    Il s'ouvrait à l'heure courante : à 14 h, les prévisions de 6 h et de 9 h
+    étaient en base et visibles nulle part. Ce sont pourtant celles qu'on relit
+    le soir pour comprendre la session du matin — et celles sur lesquelles
+    pointent les créneaux de la bande de l'écran Jour.
+    """
+    zone = ZoneInfo("Europe/Paris")
+    now = datetime.now(UTC)
+    day_start = (
+        now.astimezone(zone)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
+
+    spot = await make_spot()
+    await make_forecast(spot, start=day_start, hours=96, run_ts=day_start)
+
+    response = await auth_client.get(
+        f"/api/v1/spots/{spot.slug}/forecast", params={"days": 3, "step_hours": 1}
+    )
+
+    points = response.json()["points"]
+    first = datetime.fromisoformat(points[0]["ts"])
+    assert first <= day_start
+
+    # Et la matinée ne se paie pas sur la fin de la prévision : trois jours
+    # demandés, trois jours servis à partir de maintenant.
+    last = datetime.fromisoformat(points[-1]["ts"])
+    assert last >= now + timedelta(days=2, hours=12)
 
 
 async def test_three_hour_step_still_serves_the_day_screen(

@@ -226,11 +226,16 @@ export function SeaBlock({ data }: { data: Recommendation }) {
         {/* Les huit créneaux de la journée, toutes les trois heures : hauteur,
             période, flèche de houle, vent et flèche, note (décidé le 13/09).
             Un tap ouvre Surf **positionné sur cette heure** — le résumé et le
-            tableau horaire sont deux échelles de la même chose. */}
+            tableau horaire sont deux échelles de la même chose.
+
+            La journée **entière**, depuis ce matin : la bande s'ouvrait à
+            l'heure courante, et à 14 h ses quatre premières colonnes étaient
+            vides. Les heures révolues sont atténuées, jamais retirées. */}
         <div className="border-t border-line px-4 pb-1 pt-3">
           <SlotBand
             slots={slots}
             day={now}
+            now={now}
             bestTs={best.ts}
             label="Les huit créneaux d'aujourd'hui"
             onSelect={(ts) =>

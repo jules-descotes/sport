@@ -156,6 +156,36 @@ function SurfScreen() {
       ?.scrollTo({ left: index * colWidth, behavior: "instant" });
   }, [requestedTs, points, colWidth]);
 
+  /**
+   * À l'ouverture sans heure demandée, le tableau se place sur **maintenant**.
+   *
+   * La fenêtre s'ouvre depuis le 13/09 au début de la journée locale et non
+   * plus à l'heure courante, pour qu'on puisse relire sa matinée. Sans ce
+   * recalage, ouvrir Surf à 14 h afficherait d'abord la nuit de la veille :
+   * on aurait gagné la matinée et perdu l'écran.
+   *
+   * Une fois par spot, et jamais après : c'est une position de départ, pas un
+   * rappel à l'ordre. Quelqu'un qui a fait défiler jusqu'à jeudi ne doit pas
+   * être ramené à aujourd'hui par un rafraîchissement de la prévision.
+   */
+  const openedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (requestedTs || slug === null || points.length === 0) return;
+    if (openedOn.current === slug) return;
+    openedOn.current = slug;
+
+    const hour = new Date();
+    hour.setMinutes(0, 0, 0);
+    const index = points.findIndex(
+      (point) => new Date(point.ts).getTime() >= hour.getTime(),
+    );
+    if (index <= 0) return;
+
+    scroller.current
+      ?.querySelector<HTMLDivElement>("[data-hourly-scroller]")
+      ?.scrollTo({ left: index * colWidth, behavior: "instant" });
+  }, [requestedTs, slug, points, colWidth]);
+
   const scrollToDay = (dayKey: string) => {
     const index = points.findIndex((point) => localDayKey(point.ts) === dayKey);
     if (index < 0) return;
@@ -309,6 +339,7 @@ function SurfScreen() {
                 onToggleSecondary={() => setSecondaryOpen((open) => !open)}
                 colWidth={colWidth}
                 coefficients={tides.data ?? []}
+                now={new Date()}
               />
 
               <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[11px] text-mute">
@@ -332,7 +363,7 @@ function SurfScreen() {
                     />
                   ))}
                 </li>
-                <li>Colonne pâle : nuit</li>
+                <li>Colonne pâle : nuit · colonne atténuée : heure passée</li>
                 <li>Touche une note pour le détail du créneau</li>
                 {tides.data && tides.data.length > 0 ? (
                   <li>Touche la ligne marée pour le coefficient</li>

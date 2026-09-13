@@ -7,8 +7,8 @@ sinon FastAPI tente de lire « nearby » comme un identifiant et renvoie 422.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-
 from typing import Optional, Sequence
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -513,20 +513,40 @@ def _label(direction_deg: Optional[float]) -> Optional[str]:
 
 
 async def _forecast_window(
-    db: AsyncSession, spot: Spot, now: datetime, days: int
+    db: AsyncSession,
+    spot: Spot,
+    now: datetime,
+    days: int,
+    timezone: str = "Europe/Paris",
 ) -> tuple[list[Forecast], TideContext]:
-    """Les prévisions du dernier run sur `days` jours, et la marée qui va avec.
+    """Les prévisions du dernier run, et la marée qui va avec.
+
+    La fenêtre s'ouvre **au début de la journée locale**, pas à l'heure
+    courante (13/09, après usage) : à 14 h, le tableau de Surf commençait à
+    14 h, et la matinée — présente en base — n'était visible nulle part. Or
+    c'est elle qu'on relit le soir pour comprendre la session du matin, et
+    c'est sur elle que pointent les créneaux de la bande de l'écran Jour, qui
+    couvre désormais la journée entière.
+
+    Le plafond suit : `days * 24` heures **à partir de maintenant** restent
+    servies, plus la portion de journée déjà écoulée. Sans ce supplément, montrer
+    la matinée coûterait le dernier jour de la prévision — on échangerait une
+    information contre une autre au lieu d'en ajouter une.
 
     La marée est construite sur **toutes** les heures chargées, jamais sur les
     seuls créneaux rendus : la pleine et la basse mer sont des extrêmes du
     jour, et une heure sur trois ne suffit pas à les trouver.
     """
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    day_start = (
+        now.astimezone(ZoneInfo(timezone))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
     result = await db.execute(
-        latest_forecasts_select(
-            [spot.id], start=now.replace(minute=0, second=0, microsecond=0)
-        )
+        latest_forecasts_select([spot.id], start=min(day_start, current_hour))
         .order_by(Forecast.ts)
-        .limit(days * 24)
+        .limit(days * 24 + 24)
     )
     forecasts = list(result.scalars().all())
     tide = TideContext.from_levels(
@@ -652,10 +672,12 @@ async def spot_forecast(
     refreshing = await ensure_fresh(db, [spot])
 
     now = datetime.now(UTC)
-    forecasts, tide = await _forecast_window(db, spot, now, days)
-
     profile = current_user.profile
     timezone = profile.timezone if profile else "Europe/Paris"
+
+    # Le fuseau est lu avant la fenêtre, et non après : c'est lui qui dit où
+    # commence « aujourd'hui ».
+    forecasts, tide = await _forecast_window(db, spot, now, days, timezone)
     rules = (await load_spot_rules(db, current_user.id, [spot.id])).get(spot.id)
 
     points = [

@@ -13,6 +13,7 @@ import {
   windSideShort,
   windSpeedClass,
 } from "@/lib/format";
+import { slotIsPast } from "@/lib/slot-time";
 import type {
   ForecastPoint,
   SunDay,
@@ -88,6 +89,13 @@ interface HourlyTableProps {
   colWidth?: number;
   /** Les coefficients des pleines mers, révélés sur la ligne marée. */
   coefficients?: TideCoefficientDay[];
+  /**
+   * L'instant courant, qui atténue les heures révolues.
+   *
+   * Le tableau couvre la journée entière depuis ce matin (13/09) : sans ce
+   * repère, rien ne distingue le 4,5 de 9 h — passé — du 4,5 de 17 h.
+   */
+  now?: Date;
 }
 
 function groupByDay(points: ForecastPoint[]): Day[] {
@@ -302,6 +310,7 @@ export function HourlyTable({
   onToggleSecondary,
   colWidth = COL_WIDTH,
   coefficients = [],
+  now,
 }: HourlyTableProps) {
   /**
    * La ligne marée révèle les coefficients — au survol sur desktop, au tap sur
@@ -340,9 +349,20 @@ export function HourlyTable({
 
   const width = LABEL_WIDTH + points.length * colWidth;
 
-  /** Classe commune d'une cellule d'heure : la nuit s'éteint. */
-  const cellTone = (point: ForecastPoint, base: string) =>
-    point.daylight ? base : `${base} opacity-45`;
+  /**
+   * Classe commune d'une cellule d'heure : la nuit s'éteint, le passé
+   * s'atténue.
+   *
+   * Deux atténuations et non une seule, parce qu'elles ne disent pas la même
+   * chose : la nuit n'était **pas une option**, la matinée en était une et
+   * elle est passée. Elles ne se cumulent pas — une heure de nuit révolue est
+   * de la nuit, point.
+   */
+  const cellTone = (point: ForecastPoint, base: string) => {
+    if (!point.daylight) return `${base} opacity-45`;
+    if (now && slotIsPast(point.ts, now, 1)) return `${base} opacity-60`;
+    return base;
+  };
 
   return (
     <div

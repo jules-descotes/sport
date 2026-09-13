@@ -2,6 +2,7 @@
 
 import { DirectionArrow } from "@/components/surf/DirectionArrow";
 import { SLOT_HOURS, num, scoreClass } from "@/lib/format";
+import { slotIsPast } from "@/lib/slot-time";
 
 /**
  * Les huit créneaux d'une journée, toutes les trois heures — **le résumé de
@@ -18,6 +19,12 @@ import { SLOT_HOURS, num, scoreClass } from "@/lib/format";
  *
  * Un tap ouvre Surf **positionné sur cette heure-là** : le résumé et le
  * tableau sont deux échelles de la même chose, pas deux écrans.
+ *
+ * Depuis le 13/09 la bande couvre **la journée entière, depuis ce matin**, et
+ * plus seulement ce qu'il en reste. Les heures révolues sont atténuées mais
+ * gardent leur couleur de note : ce qui s'est passé ce matin se lit d'un coup
+ * d'œil — « j'ai bien fait d'y aller à 9 h », « ça montait déjà à midi » — et
+ * ne se confond pas avec ce qui reste à faire.
  */
 
 interface BandSlot {
@@ -42,6 +49,12 @@ interface SlotBandProps {
   selectedTs?: string | null;
   onSelect?: (ts: string) => void;
   label?: string;
+  /**
+   * L'instant courant, qui atténue les créneaux révolus. Passé en prop plutôt
+   * que lu ici : `new Date()` dans un rendu rend le composant non
+   * déterministe, et la bande de demain n'a aucune heure passée à éteindre.
+   */
+  now?: Date;
 }
 
 function sameLocalDay(iso: string, day: Date): boolean {
@@ -60,6 +73,7 @@ export function SlotBand({
   selectedTs,
   onSelect,
   label,
+  now,
 }: SlotBandProps) {
   // Le créneau de trois heures retenu est celui qui l'ouvre : à 9 h on lit la
   // prévision de 9 h, pas la moyenne de 9 h – 12 h. Une moyenne lisserait
@@ -84,6 +98,10 @@ export function SlotBand({
         const best = slot != null && slot.ts === bestTs;
         const selected = slot != null && slot.ts === selectedTs;
         const usable = slot != null && slot.daylight && slot.score !== null;
+        // Révolu : atténué, jamais supprimé ni barré. La matrice garde ses
+        // huit colonnes, et le ton reste neutre — on ne reproche pas à
+        // quelqu'un d'avoir raté une session (cf. les habitudes, 13/09).
+        const past = slot != null && now != null && slotIsPast(slot.ts, now);
 
         // Le vent de terre lisse la vague, celui de mer la hache : la flèche
         // le dit par sa couleur, sans une ligne de légende.
@@ -150,9 +168,11 @@ export function SlotBand({
           </>
         );
 
+        const dim = past ? "opacity-55" : "";
+
         if (!onSelect || slot == null) {
           return (
-            <div key={hour} className="text-center">
+            <div key={hour} className={`text-center ${dim}`}>
               {cell}
             </div>
           );
@@ -164,8 +184,10 @@ export function SlotBand({
             type="button"
             onClick={() => onSelect(slot.ts)}
             aria-pressed={selected}
-            aria-label={`${String(hour).padStart(2, "0")} h — ouvrir le tableau horaire`}
-            className="min-h-touch text-center"
+            aria-label={`${String(hour).padStart(2, "0")} h${
+              past ? ", passé" : ""
+            } — ouvrir le tableau horaire`}
+            className={`min-h-touch text-center ${dim}`}
           >
             {cell}
           </button>

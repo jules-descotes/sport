@@ -325,10 +325,30 @@ async def recommend(
 
     spots = [spot for spot, _ in pairs]
 
+    # **La journée entière, depuis ce matin** — pas seulement ce qui en reste
+    # (13/09, après usage). La fenêtre partait de `now - 2 h`, si bien qu'à
+    # 14 h la bande de créneaux de l'écran Jour montrait quatre colonnes vides
+    # avant midi : la matinée n'était pas absente de la base, elle n'était pas
+    # demandée. Or c'est une information qu'on lit tous les jours — « ce matin
+    # était meilleur », « j'ai bien fait d'y aller à 9 h ».
+    #
+    # Le repli sur `now - 2 h` reste : à 0 h 30, le début de journée locale est
+    # *postérieur* à ce que la fenêtre couvrait, et on perdrait le créneau de
+    # 21 h qu'on avait jusque-là.
+    #
+    # Ni le verdict ni le meilleur créneau ne s'en trouvent changés : tous deux
+    # sont filtrés sur l'avenir plus bas, et `next_daylight_window` ouvre sa
+    # fenêtre à `max(now, lever)`. On élargit ce qu'on montre, pas ce qu'on
+    # conseille.
+    day_start = (
+        now.astimezone(ZoneInfo(timezone))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
     rows_by_spot = await load_forecast_rows(
         db,
         [spot.id for spot in spots],
-        now - timedelta(hours=2),
+        min(day_start, now - timedelta(hours=2)),
         now + timedelta(days=FORECAST_DAYS),
     )
 

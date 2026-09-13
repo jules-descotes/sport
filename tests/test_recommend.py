@@ -6,6 +6,7 @@ la grille complète pour le comparateur. Le tout en un aller-retour.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -49,6 +50,84 @@ async def test_recommend_scores_every_slot(
     assert any(not slot.daylight for slot in slots)
     assert result.spots[0].best.daylight
     assert result.headline is None or result.headline.daylight
+
+
+async def test_the_whole_day_is_served_not_only_what_is_left(
+    db_session, preferences, make_spot, make_forecast
+) -> None:
+    """La bande de l'écran Jour part de **ce matin**, pas de l'heure courante.
+
+    La fenêtre s'ouvrait à `now - 2 h` : à 14 h, les quatre premières colonnes
+    de la bande étaient vides alors que la matinée était en base. On la montre
+    désormais en entier — mais on continue de ne conseiller que l'avenir.
+    """
+    zone = ZoneInfo("Europe/Paris")
+    now = datetime(2026, 9, 13, 14, 20, tzinfo=zone).astimezone(UTC)
+    day_start = datetime(2026, 9, 13, 0, 0, tzinfo=zone).astimezone(UTC)
+
+    spot = await make_spot(lat=HOSSEGOR_LAT + 0.01, tier=SpotTier.HOME.value)
+    await make_forecast(
+        spot, start=day_start, hours=48, fetched_at=now, run_ts=day_start
+    )
+
+    result = await recommend(
+        db_session,
+        preferences,
+        HOSSEGOR_LAT,
+        HOSSEGOR_LON,
+        timezone="Europe/Paris",
+        now=now,
+        refresh=False,
+    )
+
+    today = now.astimezone(zone).date()
+    hours = {
+        slot.ts.astimezone(zone).hour
+        for slot in result.spots[0].slots
+        if slot.ts.astimezone(zone).date() == today
+    }
+    # Les huit colonnes de la bande, matinée comprise.
+    assert {0, 3, 6, 9, 12, 15, 18, 21} <= hours
+
+    # Et le conseil, lui, ne regarde pas en arrière : proposer 9 h à 14 h 20
+    # serait pire que de ne rien proposer.
+    assert result.spots[0].best is not None
+    assert result.spots[0].best.ts >= now - timedelta(minutes=30)
+    assert result.headline is None or result.headline.ts >= now - timedelta(minutes=30)
+
+
+async def test_a_slot_before_midnight_survives_the_small_hours(
+    db_session, preferences, make_spot, make_forecast
+) -> None:
+    """À 0 h 30, le début de journée locale est *postérieur* à `now - 2 h`.
+
+    Sans le repli, élargir à la journée aurait **rétréci** la fenêtre au moment
+    exact où l'on regarde encore la soirée qui vient de finir.
+    """
+    zone = ZoneInfo("Europe/Paris")
+    now = datetime(2026, 9, 13, 0, 30, tzinfo=zone).astimezone(UTC)
+
+    spot = await make_spot(lat=HOSSEGOR_LAT + 0.01, tier=SpotTier.HOME.value)
+    await make_forecast(
+        spot,
+        start=now - timedelta(hours=6),
+        hours=48,
+        fetched_at=now,
+        run_ts=now - timedelta(hours=6),
+    )
+
+    result = await recommend(
+        db_session,
+        preferences,
+        HOSSEGOR_LAT,
+        HOSSEGOR_LON,
+        timezone="Europe/Paris",
+        now=now,
+        refresh=False,
+    )
+
+    earliest = min(slot.ts for slot in result.spots[0].slots)
+    assert earliest <= now - timedelta(hours=2)
 
 
 async def test_recommend_ranks_the_best_spot_first(
