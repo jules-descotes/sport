@@ -241,12 +241,17 @@ function WebcamForm({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState(current ?? "");
+  const [warning, setWarning] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: (value: string) =>
       api.updateSpot(slug, { webcam_url: value.trim() || null }),
-    onSuccess: () => {
-      setOpen(false);
+    onSuccess: (spot) => {
+      // Le serveur a sondé l'adresse. Un 404 ou un refus d'encadrement ne
+      // jettent pas l'URL — ils se disent, parce que le site peut répondre
+      // autrement au téléphone de Jules qu'à une requête partie de Railway.
+      setWarning(spot.webcam_warning ?? null);
+      if (!spot.webcam_warning) setOpen(false);
       queryClient.invalidateQueries({ queryKey: ["spot-forecast", slug] });
     },
   });
@@ -282,14 +287,29 @@ function WebcamForm({
         placeholder="https://…"
         className="min-h-touch w-full rounded-button border border-line bg-soft px-3 text-[16px] text-ink placeholder:text-mute"
       />
+      {/* La phrase qui évite de perdre une demi-heure : ce qu'il faut coller
+          est l'adresse **de l'iframe**, pas celle de la page. Les pages des
+          offices de tourisme chargent leur cadre en JavaScript — encadrer la
+          page ne montre rien. L'adresse se lit dans l'inspecteur du
+          navigateur, onglet Réseau ou clic droit sur l'image (13/09). */}
       <p className="mt-2 text-[12px] leading-snug text-mute">
-        En https uniquement : une webcam en clair est bloquée comme contenu
-        mixte, et ne montrerait qu&apos;un cadre blanc.
+        Colle l&apos;adresse de <strong>l&apos;iframe</strong>, pas celle de la
+        page : les pages chargent leur cadre en JavaScript, et encadrer la page
+        ne montre rien. Elle se lit dans l&apos;inspecteur du navigateur. En
+        https uniquement — une webcam en clair est bloquée comme contenu mixte
+        et ne montrerait qu&apos;un cadre blanc.
       </p>
 
       {save.error instanceof ApiError ? (
         <p role="alert" className="mt-2 text-[13px] leading-snug text-accent">
           {save.error.message}
+        </p>
+      ) : null}
+
+      {warning ? (
+        <p role="status" className="mt-2 text-[13px] leading-snug text-ink-2">
+          Enregistrée, mais {warning}. Elle s&apos;affichera peut-être quand
+          même depuis ton téléphone — sinon elle apparaîtra en lien sortant.
         </p>
       ) : null}
 

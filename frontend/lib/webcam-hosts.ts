@@ -19,15 +19,28 @@
  */
 
 /**
- * Hôtes et sous-domaines admis. Un point en tête vaut « ce domaine et tous
- * ses sous-domaines » ; sans point, l'hôte doit correspondre exactement.
+ * Hôtes et sous-domaines admis **par défaut**. Un point en tête vaut « ce
+ * domaine et tous ses sous-domaines » ; sans point, l'hôte doit correspondre
+ * exactement.
+ *
+ * Cette liste est **pilotée par `WEBCAM_FRAME_HOSTS`** (décidé le 13/09,
+ * retours n° 4) : une variable d'environnement, séparée par des virgules, qui
+ * **s'ajoute** à ces défauts. Ajouter l'hôte d'un office de tourisme ne doit
+ * pas demander un déploiement — c'est le genre de chose qu'on découvre un
+ * dimanche matin, l'inspecteur du navigateur ouvert sur la page d'une webcam
+ * qu'on voudrait voir tout de suite.
+ *
+ * Elle ajoute et ne remplace pas : une variable mal écrite retirerait sinon
+ * toutes les webcams d'un coup, et le symptôme serait des cadres vides sans
+ * message.
  */
-export const WEBCAM_FRAME_HOSTS: readonly string[] = [
+const DEFAULT_WEBCAM_FRAME_HOSTS: readonly string[] = [
   // Windy — la seule source de catalogue prévue (PROJET.md §6).
   ".windy.com",
   // YouTube et Vimeo : la majorité des webcams de plage passent par là.
   ".youtube.com",
   ".youtube-nocookie.com",
+  "www.youtube-nocookie.com",
   ".vimeo.com",
   "player.vimeo.com",
   // Diffuseurs de webcams côtières couramment encadrables.
@@ -36,7 +49,31 @@ export const WEBCAM_FRAME_HOSTS: readonly string[] = [
   ".surfline.com",
   ".ipcamlive.com",
   ".livecam.com",
+  // Les hôtes relevés le 13/09 à l'inspecteur, sur les pages des offices de
+  // tourisme de la côte. Ce sont des **URL d'iframe**, pas des pages : les
+  // pages chargent leur cadre dynamiquement, et encadrer la page ne montre
+  // rien.
+  "loujo.fr",
+  ".loujo.fr",
+  ".skaping.com",
+  ".vision-environnement.com",
 ] as const;
+
+function fromEnvironment(): string[] {
+  // `NEXT_PUBLIC_` : la liste est lue côté client par le composant de webcam,
+  // et côté build par `next.config.ts` pour fabriquer la CSP. Une variable
+  // serveur ne serait visible que d'un des deux, et le cadre serait bloqué
+  // par une politique que le composant croirait permissive.
+  const raw = process.env.NEXT_PUBLIC_WEBCAM_FRAME_HOSTS ?? "";
+  return raw
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export const WEBCAM_FRAME_HOSTS: readonly string[] = [
+  ...new Set([...DEFAULT_WEBCAM_FRAME_HOSTS, ...fromEnvironment()]),
+];
 
 /** Les sources `frame-src` de la CSP : `https://*.windy.com`, etc. */
 export function frameSrcSources(): string[] {

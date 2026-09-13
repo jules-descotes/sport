@@ -45,6 +45,11 @@ export interface Spot {
   /** Direction d'où vient un vent onshore. */
   onshore_dir_deg: number | null;
   webcam_url: string | null;
+  /** Ce qu'on a vu en sondant l'URL au moment de la poser : « le site répond
+   *  404 », « le site renvoie X-Frame-Options: DENY ». Nul le reste du temps.
+   *  Un avertissement, jamais un refus — le site peut répondre autrement au
+   *  téléphone qu'à une requête partie du serveur. */
+  webcam_warning?: string | null;
   tier: SpotTier;
 }
 
@@ -1013,6 +1018,9 @@ export type HabitPeriod = "day" | "week";
  * objectif est une habitude qu'on observe, pas qu'on se fixe. Rien de jugeant
  * n'arrive du serveur — ni série, ni taux de réussite.
  */
+export const HABIT_DIRECTIONS = ["min", "max"] as const;
+export type HabitDirection = (typeof HABIT_DIRECTIONS)[number];
+
 export interface Habit {
   id: number;
   name: string;
@@ -1021,6 +1029,10 @@ export interface Habit {
   unit: string | null;
   target: number | null;
   target_period: HabitPeriod;
+  /** `min` — au moins tant. `max` — au plus tant (13/09, retours n° 4).
+   *  **L'affichage est identique dans les deux cas** : un compteur, un
+   *  objectif, une tendance. Le sens change le libellé et rien d'autre. */
+  target_direction: HabitDirection;
   position: number;
   is_active: boolean;
   /** Compteur du jour, et de la semaine pour les objectifs hebdomadaires. */
@@ -1042,8 +1054,16 @@ export interface HabitTrend {
   icon: string;
   unit: string | null;
   kind: HabitKind;
+  target: number | null;
+  target_period: HabitPeriod;
+  target_direction: HabitDirection;
   total_30d: number;
   days_with_activity: number;
+  /** Moyennes par jour. **La tendance suffit** dans les stats de profil : une
+   *  moyenne à 7 jours plus basse que celle à 30 se lit toute seule, dans les
+   *  deux sens, sans qu'on ait à dire si c'est bien. */
+  average_7d: number;
+  average_30d: number;
   /** Trente valeurs, du plus ancien au plus récent. La courbe, et rien
    *  d'autre : on observe, on n'évalue pas. */
   daily: number[];

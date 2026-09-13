@@ -47,7 +47,17 @@ function Pill({ habit }: { habit: Habit }) {
   });
 
   const value = habit.target_period === "week" ? habit.week : habit.today;
-  const reached = habit.target !== null && value >= habit.target;
+  // **Le même écran dans les deux sens** (13/09, retours n° 4). Un objectif
+  // `max` est tenu tant qu'on est en dessous ; un `min`, dès qu'on est
+  // au-dessus. Et dans les deux cas il n'y a que deux états : accent quand
+  // c'est tenu, neutre sinon. Pas de rouge, pas de troisième état — une
+  // habitude qu'on cherche à réduire est déjà assez difficile à tenir sans
+  // qu'une application s'en mêle.
+  const reached =
+    habit.target !== null &&
+    (habit.target_direction === "max"
+      ? value <= habit.target
+      : value >= habit.target);
 
   const start = () => {
     fired.current = false;
@@ -95,7 +105,8 @@ function Pill({ habit }: { habit: Habit }) {
         {num(value, value % 1 ? 1 : 0)}
         {habit.target !== null ? (
           <span className="text-[12px] font-semibold opacity-70">
-            /{num(habit.target, habit.target % 1 ? 1 : 0)}
+            {habit.target_direction === "max" ? " max " : "/"}
+            {num(habit.target, habit.target % 1 ? 1 : 0)}
           </span>
         ) : null}
       </span>

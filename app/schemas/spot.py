@@ -26,6 +26,11 @@ class SpotRead(BaseModel):
     coast_bearing_deg: Optional[float] = None
     onshore_dir_deg: Optional[float] = None
     webcam_url: Optional[str] = None
+    # Ce qu'on a vu en sondant l'URL, quand elle vient d'être posée : « le site
+    # répond 404 », « le site renvoie X-Frame-Options: DENY ». Nul le reste du
+    # temps. Un avertissement et pas un refus — la fiche le dit, elle ne
+    # jette pas l'adresse (décidé le 13/09, retours n° 4).
+    webcam_warning: Optional[str] = None
     tier: str = SpotTier.CATALOG.value
 
 

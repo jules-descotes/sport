@@ -351,8 +351,19 @@ class HabitTrend:
     icon: str
     unit: Optional[str]
     kind: str
+    target: Optional[float] = None
+    target_period: str = "day"
+    # `min` ou `max`. Rendu pour que l'écran écrive « sur 3 » ou « max 3 » —
+    # et pour rien d'autre. Pas de couleur, pas de verdict.
+    target_direction: str = "min"
     total_30d: float = 0.0
     days_with_activity: int = 0
+    # Moyennes par jour. **La tendance suffit** dans les stats de profil
+    # (règle F du 13/09, retours n° 4) : une moyenne à 7 jours plus basse que
+    # celle à 30 se lit toute seule, dans les deux sens, sans qu'on ait à dire
+    # si c'est bien.
+    average_7d: float = 0.0
+    average_30d: float = 0.0
     # Une valeur par jour sur trente jours, du plus ancien au plus récent.
     # C'est la courbe, et **rien d'autre** : pas de série, pas de pourcentage
     # de réussite. On observe, on n'évalue pas.
@@ -400,6 +411,7 @@ async def habit_trends(
             round(by_day.get(first + timedelta(days=index), 0.0), 2)
             for index in range(days)
         ]
+        recent = daily[-7:] if len(daily) >= 7 else daily
         trends.append(
             HabitTrend(
                 habit_id=habit.id,
@@ -407,8 +419,13 @@ async def habit_trends(
                 icon=habit.icon,
                 unit=habit.unit,
                 kind=habit.kind,
+                target=habit.target,
+                target_period=habit.target_period,
+                target_direction=habit.target_direction,
                 total_30d=round(sum(daily), 2),
                 days_with_activity=sum(1 for value in daily if value > 0),
+                average_7d=round(sum(recent) / len(recent), 2) if recent else 0.0,
+                average_30d=round(sum(daily) / len(daily), 2) if daily else 0.0,
                 daily=daily,
             )
         )

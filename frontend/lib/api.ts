@@ -18,6 +18,7 @@ import type {
   GearType,
   GearWithUsage,
   Habit,
+  HabitDirection,
   HabitEvent,
   HabitKind,
   HabitPeriod,
@@ -642,6 +643,7 @@ export const api = {
     unit?: string | null;
     target?: number | null;
     target_period?: HabitPeriod;
+    target_direction?: HabitDirection;
   }) => request<Habit>("/habits", { method: "POST", body: JSON.stringify(data) }),
 
   updateHabit: (
@@ -653,6 +655,7 @@ export const api = {
       unit?: string | null;
       target?: number | null;
       target_period?: HabitPeriod;
+      target_direction?: HabitDirection;
       is_active?: boolean;
       position?: number;
     },

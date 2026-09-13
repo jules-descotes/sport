@@ -95,6 +95,7 @@ def _read(habit: Habit, today: float, week: float) -> HabitRead:
                 "unit",
                 "target",
                 "target_period",
+                "target_direction",
                 "position",
                 "is_active",
             )

@@ -25,6 +25,12 @@ HABIT_ICONS = (
 HABIT_KINDS = ("count", "check")
 TARGET_PERIODS = ("day", "week")
 
+# `min` — on cherche à en faire au moins tant. `max` — au plus tant (décidé le
+# 13/09, retours n° 4). **L'écran ne distingue pas les deux** : compteur,
+# objectif, tendance à 7 et 30 jours, dans les deux cas. Le sens sert à écrire
+# « sur 3 » ou « max 3 », et rien d'autre — surtout pas une couleur.
+TARGET_DIRECTIONS = ("min", "max")
+
 
 class HabitWrite(BaseModel):
     """Une habitude, telle que Jules la définit.
@@ -39,6 +45,7 @@ class HabitWrite(BaseModel):
     unit: Optional[str] = Field(default=None, max_length=20)
     target: Optional[float] = Field(default=None, gt=0, le=1000)
     target_period: str = "day"
+    target_direction: str = "min"
     is_active: Optional[bool] = None
     position: Optional[int] = Field(default=None, ge=0, le=50)
 
@@ -63,6 +70,13 @@ class HabitWrite(BaseModel):
             raise ValueError(f"Période inconnue : {value}")
         return value
 
+    @field_validator("target_direction")
+    @classmethod
+    def _direction(cls, value: str) -> str:
+        if value not in TARGET_DIRECTIONS:
+            raise ValueError(f"Sens inconnu : {value}")
+        return value
+
 
 class HabitRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -74,6 +88,9 @@ class HabitRead(BaseModel):
     unit: Optional[str] = None
     target: Optional[float] = None
     target_period: str = "day"
+    # `min` ou `max`. Il change le libellé (« sur 3 » / « max 3 ») et **rien
+    # d'autre** : ni couleur, ni message, ni série.
+    target_direction: str = "min"
     position: int = 0
     is_active: bool = True
     # Le compteur du jour — ce que l'écran Jour affiche sous la pastille.
@@ -151,8 +168,16 @@ class HabitTrendRead(BaseModel):
     icon: str
     unit: Optional[str] = None
     kind: str
+    target: Optional[float] = None
+    target_period: str = "day"
+    target_direction: str = "min"
     total_30d: float = 0.0
     days_with_activity: int = 0
+    # Moyennes par jour sur 7 et 30 jours. **C'est la tendance qui suffit**
+    # dans les stats de profil (règle F du 13/09, retours n° 4) : une moyenne
+    # qui baisse se lit sans qu'on ait besoin de dire si c'est bien.
+    average_7d: float = 0.0
+    average_30d: float = 0.0
     # La courbe, et rien d'autre : pas de série, pas de taux de réussite. On
     # observe, on n'évalue pas.
     daily: list[float] = []

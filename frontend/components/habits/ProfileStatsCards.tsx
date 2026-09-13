@@ -261,6 +261,28 @@ export function ProfileStatsCards() {
                       height={32}
                       label={`${trend.name}, trente derniers jours`}
                     />
+                    {/* **La tendance suffit** (13/09, retours n° 4). Deux
+                        moyennes côte à côte, dans le même ton qu'une habitude
+                        se suive à la hausse ou à la baisse : « 1,4 puis 0,9 »
+                        se lit tout seul, et l'application n'a pas à dire si
+                        c'est bien. */}
+                    <p className="tabular pt-0.5 text-[11px] text-mute">
+                      7 j : {num(trend.average_7d, 1)}
+                      {trend.unit ? ` ${trend.unit}` : ""}/j · 30 j :{" "}
+                      {num(trend.average_30d, 1)}
+                      {trend.unit ? ` ${trend.unit}` : ""}/j
+                      {trend.target !== null
+                        ? ` · ${
+                            trend.target_direction === "max"
+                              ? "au plus"
+                              : "au moins"
+                          } ${num(trend.target, trend.target % 1 ? 1 : 0)} ${
+                            trend.target_period === "day"
+                              ? "par jour"
+                              : "par semaine"
+                          }`
+                        : ""}
+                    </p>
                   </li>
                 );
               })}

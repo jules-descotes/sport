@@ -69,6 +69,15 @@ class Habit(Base):
     target_period: Mapped[str] = mapped_column(
         String(10), nullable=False, default="day", server_default="day"
     )
+    # `min` — on cherche à en faire au moins tant. `max` — au plus tant
+    # (décidé le 13/09, retours n° 4). Certaines habitudes se suivent dans ce
+    # sens-là, et elles ont droit au même écran : **l'affichage est identique
+    # dans les deux cas**, un compteur et une tendance. Pas de rouge, pas de
+    # message. Une habitude qu'on cherche à réduire est déjà assez difficile à
+    # tenir sans qu'une application s'en mêle.
+    target_direction: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="min", server_default="min"
+    )
 
     position: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

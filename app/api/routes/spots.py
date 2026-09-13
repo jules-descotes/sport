@@ -81,7 +81,11 @@ from app.services.tide_coefficient import (
     coefficients as tide_coefficients,
     nearest_mark,
 )
-from app.services.webcams import WebcamUrlError, normalize_webcam_url
+from app.services.webcams import (
+    WebcamUrlError,
+    check_embeddable,
+    normalize_webcam_url,
+)
 from app.services.sun import is_daylight, sun_events
 from app.services.spot_tiers import (
     HOME_MAX,
@@ -487,8 +491,17 @@ async def update_spot(
     # Une URL en clair est refusée, ou réécrite en https si le site le sert :
     # encadrée dans une page en HTTPS, elle serait bloquée comme contenu mixte
     # et ne montrerait qu'un cadre blanc (cf. `services/webcams.py`).
+    warning: Optional[str] = None
     if "webcam_url" in values:
         spot.webcam_url = await _checked_webcam(values.pop("webcam_url"))
+        if spot.webcam_url:
+            # Un 404 ou un `X-Frame-Options: DENY` donnent tous les deux un
+            # cadre blanc, et un cadre blanc ment sur l'existence de l'image.
+            # C'est un **avertissement**, pas un refus : le site peut répondre
+            # autrement au navigateur de Jules qu'à une requête partie de
+            # Railway, et refuser une URL correcte coûterait plus cher que de
+            # l'accepter avec une réserve (décidé le 13/09, retours n° 4).
+            warning = await check_embeddable(spot.webcam_url)
 
     for field, value in values.items():
         if value is not None:
@@ -496,7 +509,9 @@ async def update_spot(
 
     await db.commit()
     await db.refresh(spot)
-    return SpotRead.model_validate(spot)
+    read = SpotRead.model_validate(spot)
+    read.webcam_warning = warning
+    return read
 
 
 # ── Assemblage d'un créneau ────────────────────────────────────────────────

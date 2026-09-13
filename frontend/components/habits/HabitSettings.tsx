@@ -7,7 +7,12 @@ import { IconCheck, IconPlus, IconTrash } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { num } from "@/lib/format";
 import { HABIT_ICON_KEYS, HabitIcon } from "@/lib/habit-icons";
-import type { Habit, HabitKind, HabitPeriod } from "@/lib/types";
+import type {
+  Habit,
+  HabitDirection,
+  HabitKind,
+  HabitPeriod,
+} from "@/lib/types";
 
 /**
  * **Jules définit ses propres habitudes.** Rien n'est semé.
@@ -32,6 +37,13 @@ const PERIODS: { value: HabitPeriod; label: string }[] = [
   { value: "week", label: "par semaine" },
 ];
 
+// Le sens de l'objectif. Les libellés disent ce que ça veut dire, pas ce que
+// ça vaut : « au plus » n'est pas plus grave que « au moins ».
+const DIRECTIONS: { value: HabitDirection; label: string }[] = [
+  { value: "min", label: "au moins" },
+  { value: "max", label: "au plus" },
+];
+
 const TARGETS = [null, 1, 2, 3, 4, 5, 6, 8, 10, 12];
 
 function HabitForm({ onDone }: { onDone: () => void }) {
@@ -42,6 +54,7 @@ function HabitForm({ onDone }: { onDone: () => void }) {
   const [unit, setUnit] = useState("");
   const [target, setTarget] = useState<number | null>(null);
   const [period, setPeriod] = useState<HabitPeriod>("day");
+  const [direction, setDirection] = useState<HabitDirection>("min");
 
   const create = useMutation({
     mutationFn: () =>
@@ -52,6 +65,7 @@ function HabitForm({ onDone }: { onDone: () => void }) {
         unit: unit.trim() || null,
         target,
         target_period: period,
+        target_direction: direction,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
@@ -180,6 +194,29 @@ function HabitForm({ onDone }: { onDone: () => void }) {
         </div>
       ) : null}
 
+      {/* Le sens de l'objectif (13/09, retours n° 4). Certaines habitudes se
+          suivent pour en faire moins, et elles ont droit au même écran — le
+          choix ne change que le libellé, jamais la couleur ni le ton. */}
+      {target !== null ? (
+        <div className="flex gap-1.5 pt-2">
+          {DIRECTIONS.map((entry) => (
+            <button
+              key={entry.value}
+              type="button"
+              onClick={() => setDirection(entry.value)}
+              aria-pressed={direction === entry.value}
+              className={`min-h-touch flex-1 rounded-button border px-2 text-[14px] font-semibold ${
+                direction === entry.value
+                  ? "border-accent bg-accent text-on-accent"
+                  : "border-line bg-card text-ink-2"
+              }`}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex gap-3 pt-4">
         <button
           type="button"
@@ -244,7 +281,7 @@ function HabitLine({ habit }: { habit: Habit }) {
           </span>
           <span className="block truncate text-[12px] text-mute">
             {habit.target !== null
-              ? `${num(habit.target, habit.target % 1 ? 1 : 0)}${
+              ? `${habit.target_direction === "max" ? "au plus " : "au moins "}${num(habit.target, habit.target % 1 ? 1 : 0)}${
                   habit.unit ? ` ${habit.unit}` : ""
                 } ${habit.target_period === "day" ? "par jour" : "par semaine"}`
               : "sans objectif"}
