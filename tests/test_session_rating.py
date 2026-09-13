@@ -14,10 +14,21 @@ tests protègent :
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.models.enums import SessionStatus
 
 NOW = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
+
+
+def _paris_day(moment: datetime) -> str:
+    """La journée **locale** d'un instant UTC — ce que `/sessions/today` borne.
+
+    `/sessions/today` raisonne en heure de Paris : à 1 h du matin là-bas, UTC
+    est encore la veille. Un test qui enverrait la date UTC se tromperait de
+    journée deux heures par nuit.
+    """
+    return moment.astimezone(ZoneInfo("Europe/Paris")).date().isoformat()
 
 
 async def _quick(auth_client, lat=43.6655, lon=-1.4415, ended_at=None):
@@ -198,12 +209,17 @@ async def test_today_returns_pending_and_the_day_in_one_call(
     auth_client, make_spot, fake_archive, archive_bundle
 ) -> None:
     """Deux requêtes coûteraient deux allers-retours sur l'écran qu'on ouvre
-    debout, sur un réseau de parking de plage."""
+    debout, sur un réseau de parking de plage.
+
+    La journée est demandée **explicitement** : `NOW` est une date fixe, et
+    sans le paramètre `day` ce test ne passerait que le 12 septembre 2026.
+    """
     fake_archive(bundle=archive_bundle(NOW))
     await make_spot()
     session = await _quick(auth_client)
 
-    pending = await auth_client.get("/api/v1/sessions/today")
+    day = _paris_day(NOW)
+    pending = await auth_client.get(f"/api/v1/sessions/today?day={day}")
     assert [item["id"] for item in pending.json()["to_rate"]] == [session["id"]]
     assert [item["id"] for item in pending.json()["today"]] == [session["id"]]
 
@@ -212,7 +228,7 @@ async def test_today_returns_pending_and_the_day_in_one_call(
         json={"rating_conditions": 4, "rating_personal": 5},
     )
 
-    after = await auth_client.get("/api/v1/sessions/today")
+    after = await auth_client.get(f"/api/v1/sessions/today?day={day}")
     # Notée : le bloc « à noter » disparaît, la session du jour reste en pied.
     assert after.json()["to_rate"] == []
     assert [item["rating_conditions"] for item in after.json()["today"]] == [4]
@@ -231,7 +247,7 @@ async def test_an_old_unrated_session_keeps_asking(
     await make_spot()
     old = await _quick(auth_client, ended_at=NOW - timedelta(days=3))
 
-    journal = await auth_client.get("/api/v1/sessions/today")
+    journal = await auth_client.get(f"/api/v1/sessions/today?day={_paris_day(NOW)}")
     assert [item["id"] for item in journal.json()["to_rate"]] == [old["id"]]
     # Elle n'est pas d'aujourd'hui pour autant.
     assert journal.json()["today"] == []
