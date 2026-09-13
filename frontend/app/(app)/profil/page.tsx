@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { HabitSettings } from "@/components/habits/HabitSettings";
+import { ProfileStatsCards } from "@/components/habits/ProfileStatsCards";
 import { NutritionSettings } from "@/components/nutrition/NutritionSettings";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
 import { FavoriteSpots } from "@/components/surf/FavoriteSpots";
@@ -117,6 +119,11 @@ export default function ProfilPage() {
         subtitle={me.data?.email ?? undefined}
       />
 
+      {/* Les chiffres qu'on a déjà et qu'on n'a jamais montrés. En haut :
+          c'est ce qu'on vient chercher en ouvrant le profil, avant les
+          réglages (décidé le 13/09). */}
+      <ProfileStatsCards />
+
       {/* Le matos et l'historique sont passés dans Surf le 13/09 : le profil
           redevient ce qu'il doit être, des réglages. Les deux lignes restent
           ici parce qu'on y arrive par le raisonnement « c'est à moi », pas
@@ -202,6 +209,11 @@ export default function ProfilPage() {
           ne touche qu'une fois, et sans lesquels la cible reste une estimation
           qui se signale (lot 5). */}
       <NutritionSettings />
+
+      {/* Jules définit ses propres habitudes : rien n'est semé. Une formule
+          proposée par l'app est un point de départ utile, une habitude
+          proposée par l'app est une leçon de morale. */}
+      <HabitSettings />
 
       {pickerOpen ? (
         <div className="-mt-2 pb-6">

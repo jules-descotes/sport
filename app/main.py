@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.api.routes.auth import router as auth_router
 from app.api.routes.daily_log import router as daily_log_router
 from app.api.routes.gear import router as gear_router
+from app.api.routes.habits import router as habits_router
 from app.api.routes.nutrition import router as nutrition_router
 from app.api.routes.recommend import router as recommend_router
 from app.api.routes.sessions import router as sessions_router
@@ -30,6 +31,7 @@ from app.models.exercise import Exercise  # noqa: F401
 from app.models.forecast import Forecast, Observation  # noqa: F401
 from app.models.formula import Formula, FormulaItem  # noqa: F401
 from app.models.gear import Gear  # noqa: F401
+from app.models.habit import Habit, HabitEvent  # noqa: F401
 from app.models.nutrition import (  # noqa: F401
     BodyMetric,
     Food,
@@ -151,6 +153,7 @@ app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(gear_router, prefix="/api/v1")
 app.include_router(training_router, prefix="/api/v1")
 app.include_router(nutrition_router, prefix="/api/v1")
+app.include_router(habits_router, prefix="/api/v1")
 
 
 if settings.storage_backend == "local":

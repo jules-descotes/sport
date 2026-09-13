@@ -397,3 +397,61 @@ export function IconBasket({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Verre d'eau — une habitude courante. */
+export function IconWater({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3.5c3.5 4 5.5 6.6 5.5 9.2a5.5 5.5 0 0 1-11 0c0-2.6 2-5.2 5.5-9.2z" />
+    </svg>
+  );
+}
+
+/** Sommeil. */
+export function IconSleep({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+      <path d="M14 4h4l-4 4h4" />
+    </svg>
+  );
+}
+
+/** Livre — lire, méditer, tenir un carnet. */
+export function IconBook({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 1 4 17.5z" />
+      <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 0 1.5-1.5z" />
+    </svg>
+  );
+}
+
+/** Feuille — le végétal, ou ce qu'on veut en faire. */
+export function IconLeaf({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 20c0-8 5-13 16-13 0 9-5 13-11 13-2.5 0-5-1-5-1z" />
+      <path d="M8.5 15.5 19 7" />
+    </svg>
+  );
+}
+
+/** Cœur. */
+export function IconHeart({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 20s-7-4.4-7-9a3.8 3.8 0 0 1 7-2.1A3.8 3.8 0 0 1 19 11c0 4.6-7 9-7 9z" />
+    </svg>
+  );
+}
+
+/** Soleil — le matin, la lumière, ce qu'on fait tôt. */
+export function IconSun({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+    </svg>
+  );
+}

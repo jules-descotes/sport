@@ -774,3 +774,96 @@ export interface NutritionProfile {
   calibration_kcal: number;
   calibrated_on: string | null;
 }
+
+// ── Habitudes ────────────────────────────────────────────────────────────
+
+export type HabitKind = "count" | "check";
+export type HabitPeriod = "day" | "week";
+
+/**
+ * Un compteur libre, défini par Jules.
+ *
+ * L'objectif est **facultatif**, et c'est tout l'esprit : une habitude sans
+ * objectif est une habitude qu'on observe, pas qu'on se fixe. Rien de jugeant
+ * n'arrive du serveur — ni série, ni taux de réussite.
+ */
+export interface Habit {
+  id: number;
+  name: string;
+  icon: string;
+  kind: HabitKind;
+  unit: string | null;
+  target: number | null;
+  target_period: HabitPeriod;
+  position: number;
+  is_active: boolean;
+  /** Compteur du jour, et de la semaine pour les objectifs hebdomadaires. */
+  today: number;
+  week: number;
+}
+
+export interface HabitEvent {
+  id: number;
+  habit_id: number;
+  occurred_at: string;
+  quantity: number;
+  note: string | null;
+}
+
+export interface HabitTrend {
+  habit_id: number;
+  name: string;
+  icon: string;
+  unit: string | null;
+  kind: HabitKind;
+  total_30d: number;
+  days_with_activity: number;
+  /** Trente valeurs, du plus ancien au plus récent. La courbe, et rien
+   *  d'autre : on observe, on n'évalue pas. */
+  daily: number[];
+}
+
+export interface SurfStats {
+  sessions_30d: number;
+  hours_30d: number;
+  sessions_season: number;
+  hours_season: number;
+  /** `null` et pas 0 : une moyenne sans session n'existe pas. */
+  average_rating: number | null;
+  top_spot: string | null;
+  top_spot_sessions: number;
+  streak_days: number;
+  best_rating: number | null;
+  best_spot: string | null;
+  best_day: string | null;
+}
+
+export interface NutritionStats {
+  logged_days_30d: number;
+  on_target_days_30d: number;
+  average_protein_g: number | null;
+  weight_kg: number | null;
+  weight_change_30d: number | null;
+}
+
+export interface WeekCount {
+  week_start: string;
+  done: number;
+  planned: number;
+}
+
+export interface TrainingStats {
+  weeks: WeekCount[];
+  done_8w: number;
+  planned_8w: number;
+  best_objective: string | null;
+  best_ratio: number | null;
+}
+
+export interface ProfileStats {
+  day: string;
+  surf: SurfStats;
+  nutrition: NutritionStats;
+  training: TrainingStats;
+  habits: HabitTrend[];
+}

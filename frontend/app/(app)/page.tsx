@@ -8,6 +8,7 @@ import {
   PendingSessionBlock,
 } from "@/components/session/PendingSessionBlock";
 import { Freshness, PullToRefresh } from "@/components/shell/Freshness";
+import { HabitRow } from "@/components/habits/HabitRow";
 import { DayMealBlock } from "@/components/nutrition/DayMealBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { MatchAnnouncements } from "@/components/surf/MatchAnnouncements";
@@ -184,6 +185,12 @@ export default function JourPage() {
         {/* ── Ce qu'on note ───────────────────────────────────────────── */}
         <div className="flex flex-col gap-4">
           <DailyLogSwipe />
+
+          {/* Les compteurs libres, en un tap. Ton strictement neutre : une
+              habitude atteinte passe en accent, une habitude non atteinte
+              reste neutre — il n'y a pas de troisième état (décidé le
+              13/09). */}
+          <HabitRow />
 
           {/* La journée telle qu'elle s'est passée : un rappel, pas une
               action. */}

@@ -13,6 +13,10 @@ import type {
   FoodLogEntry,
   GearType,
   GearWithUsage,
+  Habit,
+  HabitEvent,
+  HabitKind,
+  HabitPeriod,
   MatchWindow,
   Meal,
   MealPlan,
@@ -20,6 +24,7 @@ import type {
   NutritionGoal,
   NutritionProfile,
   Objective,
+  ProfileStats,
   Proposal,
   Recipe,
   Recommendation,
@@ -535,6 +540,57 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // ── Habitudes et statistiques ─────────────────────────────────────────
+
+  /** Les habitudes et leurs compteurs du jour. En pause exclues par défaut :
+   *  l'écran Jour ne montre que ce qui est en cours. */
+  habits: (includePaused = false) =>
+    request<Habit[]>(`/habits${query({ include_paused: includePaused })}`),
+
+  createHabit: (data: {
+    name: string;
+    icon?: string;
+    kind?: HabitKind;
+    unit?: string | null;
+    target?: number | null;
+    target_period?: HabitPeriod;
+  }) => request<Habit>("/habits", { method: "POST", body: JSON.stringify(data) }),
+
+  updateHabit: (
+    id: number,
+    data: {
+      name: string;
+      icon?: string;
+      kind?: HabitKind;
+      unit?: string | null;
+      target?: number | null;
+      target_period?: HabitPeriod;
+      is_active?: boolean;
+      position?: number;
+    },
+  ) =>
+    request<Habit>(`/habits/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteHabit: (id: number) =>
+    request<void>(`/habits/${id}`, { method: "DELETE" }),
+
+  /** Un tap. Rend l'habitude **avec son compteur à jour** : recharger toute la
+   *  liste ferait clignoter la rangée de pastilles à chaque geste. */
+  addHabitEvent: (id: number, quantity = 1, note?: string) =>
+    request<Habit>(`/habits/${id}/events`, {
+      method: "POST",
+      body: JSON.stringify({ quantity, note }),
+    }),
+
+  habitEvents: (id: number) =>
+    request<HabitEvent[]>(`/habits/${id}/events`),
+
+  /** Les quatre cartes du profil. Rien n'est stocké : tout se recalcule. */
+  profileStats: () => request<ProfileStats>("/habits/stats"),
 
   // ── Journal quotidien ─────────────────────────────────────────────────
 
