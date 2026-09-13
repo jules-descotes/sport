@@ -6,6 +6,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app.schemas.spot import SpotRead
+from app.schemas.spot_rule import MatchWindowRead
 
 
 class SlotRead(BaseModel):
@@ -72,3 +73,11 @@ class RecommendResponse(BaseModel):
     # Spots dont la prévision se complète en arrière-plan : le front peut
     # relancer la requête dans quelques secondes.
     refreshing: list[int] = []
+    # Les autres favoris qui devraient marcher dans les trois prochains jours,
+    # d'après **les critères de Jules** (décidé le 13/09). Le favori principal
+    # en est exclu : sa prévision est déjà en grand juste au-dessus.
+    matches: list[MatchWindowRead] = []
+    # Vrai quand le meilleur créneau du favori principal correspond, lui aussi,
+    # à ses critères. Le bloc de mer le dit en une ligne plutôt que de répéter
+    # l'annonce.
+    home_matches: bool = False

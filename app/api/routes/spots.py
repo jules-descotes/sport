@@ -19,6 +19,13 @@ from app.models.enums import SpotSource, SpotType
 from app.models.forecast import Forecast
 from app.models.spot import Spot
 from app.models.user import User
+from app.models.spot_rule import SpotRule
+from app.schemas.spot_rule import (
+    FavoriteOrder,
+    MatchWindowRead,
+    SpotRuleRead,
+    SpotRuleUpdate,
+)
 from app.schemas.spot import (
     FavoriteRequest,
     ForecastPoint,
@@ -54,6 +61,18 @@ from app.services.scoring import (
     score_conditions,
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
+from app.services.spot_matches import (
+    DEFAULT_DAYS,
+    MAX_WINDOWS,
+    rules_by_spot as load_spot_rules,
+    upcoming_matches,
+)
+from app.services.spot_rules import (
+    SpotRules,
+    local_hour,
+    window_details,
+    window_sentence,
+)
 from app.services.tide_coefficient import (
     coefficients as tide_coefficients,
     nearest_mark,
@@ -234,6 +253,104 @@ async def list_favorites(
         )
         for spot_id in ids
         if spot_id in by_id
+    ]
+
+
+@router.put("/favorites/order", response_model=list[SpotHit])
+async def reorder_favorites(
+    data: FavoriteOrder,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SpotHit]:
+    """Réordonne les favoris. Le premier est celui qu'on regarde le plus.
+
+    L'ordre n'est pas cosmétique : c'est celui du sélecteur de l'écran Surf et
+    celui des annonces de l'écran Jour à égalité d'heure. Le **favori
+    principal**, lui, reste `profiles.home_spot_id` — c'est une décision à
+    part, et la confondre avec « le premier de la liste » rendrait impossible
+    de réordonner sans changer l'écran Jour.
+
+    L'envoi est la liste **complète** : un déplacement relatif (« monte-le d'un
+    cran ») ferait dépendre le résultat de l'ordre d'arrivée de deux requêtes.
+    """
+    preferences = await get_or_create_preferences(db, current_user.id)
+    known = {int(spot_id) for spot_id in (preferences.favorite_spot_ids or [])}
+
+    unknown = [spot_id for spot_id in data.spot_ids if spot_id not in known]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Ces spots ne sont pas en favori : {unknown}",
+        )
+
+    # Les favoris absents de l'envoi restent, en queue : un ordre partiel ne
+    # doit pas valoir suppression. On ne retire un favori qu'en le disant.
+    ordered = list(dict.fromkeys(data.spot_ids))
+    ordered += [spot_id for spot_id in known if spot_id not in ordered]
+
+    preferences.favorite_spot_ids = ordered
+    await db.commit()
+    await recompute_tiers(db, preferences)
+
+    return await list_favorites(current_user=current_user, db=db)
+
+
+@router.get("/matches", response_model=list[MatchWindowRead])
+async def spot_matches(
+    days: int = Query(default=DEFAULT_DAYS, ge=1, le=7),
+    limit: int = Query(default=MAX_WINDOWS, ge=1, le=10),
+    include_home: bool = Query(
+        default=False,
+        description="Inclure le favori principal, déjà affiché en grand sur Jour.",
+    ),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[MatchWindowRead]:
+    """Les créneaux à venir qui correspondent aux critères des favoris.
+
+    **N'ingère rien** : on lit ce que la base a. Les favoris sont au niveau
+    `home` et donc ingérés toutes les trois heures de toute façon ; aller
+    chercher la prévision de vingt spots à l'ouverture de l'app serait
+    exactement ce que le lot 1 ter a retiré.
+
+    Un spot sans critères n'apparaît jamais : sans règles, « correspond » ne
+    veut rien dire, et trois annonces permanentes cesseraient d'être lues en
+    deux jours.
+    """
+    profile = current_user.profile
+    timezone = profile.timezone if profile else "Europe/Paris"
+    home_id = await home_spot_id(db, current_user.id)
+
+    now = datetime.now(UTC)
+    matches = await upcoming_matches(
+        db,
+        current_user.id,
+        days=days,
+        timezone=timezone,
+        now=now,
+        exclude_spot_ids=(
+            [] if include_home or home_id is None else [home_id]
+        ),
+        limit=limit,
+    )
+
+    return [
+        MatchWindowRead(
+            spot=SpotRead.model_validate(spot),
+            start=window.start,
+            end=window.end,
+            best_ts=window.best_ts,
+            best_score=window.best_score,
+            sentence=window_sentence(window, spot.name, now, timezone),
+            details=window_details(window),
+            wave_height_m=window.wave_height_m,
+            wave_period_s=window.wave_period_s,
+            wave_direction_deg=window.wave_direction_deg,
+            wind_speed_kt=window.wind_speed_kt,
+            wind_direction_deg=window.wind_direction_deg,
+            tide_phase=window.tide_phase,
+        )
+        for spot, window in matches
     ]
 
 
@@ -418,8 +535,22 @@ async def _forecast_window(
     return forecasts, tide
 
 
-def _build_point(spot: Spot, forecast: Forecast, tide: TideContext) -> ForecastPoint:
-    """Une ligne de `forecasts` devient un créneau noté et prêt à l'écran."""
+def _build_point(
+    spot: Spot,
+    forecast: Forecast,
+    tide: TideContext,
+    rules: Optional[SpotRules] = None,
+    timezone: str = "Europe/Paris",
+) -> ForecastPoint:
+    """Une ligne de `forecasts` devient un créneau noté et prêt à l'écran.
+
+    `rules` porte les critères saisis par Jules pour ce spot : ils bornent la
+    note et remplacent l'orientation calculée quand il a listé des secteurs de
+    houle (règle C.4 du 13/09). Les trois lecteurs de cette fonction — tableau
+    horaire, résumé de Jour, détail d'un créneau — les reçoivent donc tous les
+    trois, sans quoi la même heure porterait deux notes différentes selon
+    l'écran.
+    """
     ts = _utc(forecast.ts)
     values = {
         "wave_height_m": forecast.wave_height_m,
@@ -433,7 +564,9 @@ def _build_point(spot: Spot, forecast: Forecast, tide: TideContext) -> ForecastP
         "water_temperature_c": forecast.water_temperature_c,
     }
     conditions = build_conditions(ts, values, tide)
-    score = score_conditions(conditions, spot.onshore_dir_deg)
+    score = score_conditions(
+        conditions, spot.onshore_dir_deg, rules, local_hour(ts, timezone)
+    )
 
     # Énergie sur la **période moyenne**, la seule que MFWAM serve et la seule
     # sur laquelle la note est calculée (cf. `scoring.build_conditions`).
@@ -521,8 +654,12 @@ async def spot_forecast(
     now = datetime.now(UTC)
     forecasts, tide = await _forecast_window(db, spot, now, days)
 
+    profile = current_user.profile
+    timezone = profile.timezone if profile else "Europe/Paris"
+    rules = (await load_spot_rules(db, current_user.id, [spot.id])).get(spot.id)
+
     points = [
-        _build_point(spot, forecast, tide)
+        _build_point(spot, forecast, tide, rules, timezone)
         for forecast in forecasts
         if not (step_hours > 1 and _utc(forecast.ts).hour % step_hours)
     ]
@@ -576,10 +713,11 @@ async def spot_slot(
     tide = TideContext.from_levels(
         {_utc(row.ts): row.sea_level_m for row in forecasts}
     )
-    point = _build_point(spot, forecast, tide)
 
     profile = current_user.profile
     timezone = profile.timezone if profile else "Europe/Paris"
+    rules = (await load_spot_rules(db, current_user.id, [spot.id])).get(spot.id)
+    point = _build_point(spot, forecast, tide, rules, timezone)
     delta = await forecast_delta(db, spot, target, timezone=timezone)
 
     sunrise, sunset = sun_events(target.date(), spot.lat, spot.lon)
@@ -607,6 +745,89 @@ async def spot_slot(
         tide_coefficient=None if mark is None else mark.value,
         tide_coefficient_approximate=bool(mark and mark.approximate),
     )
+
+
+async def _rules_row(
+    db: AsyncSession, user_id: int, spot_id: int
+) -> Optional[SpotRule]:
+    result = await db.execute(
+        select(SpotRule)
+        .where(SpotRule.user_id == user_id)
+        .where(SpotRule.spot_id == spot_id)
+    )
+    return result.scalar_one_or_none()
+
+
+@router.get("/{spot_ref}/rules", response_model=SpotRuleRead)
+async def read_spot_rules(
+    spot_ref: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SpotRuleRead:
+    """Les critères de ce spot. Un jeu **vide** quand rien n'a été saisi.
+
+    Vide et pas 404 : le formulaire de la fiche spot s'ouvre de la même façon
+    qu'il y ait déjà des critères ou non, et un 404 obligerait l'écran à
+    distinguer deux cas qui donnent le même rendu.
+    """
+    spot = await _get_spot(db, spot_ref)
+    row = await _rules_row(db, current_user.id, spot.id)
+    if row is None:
+        return SpotRuleRead(spot_id=spot.id)
+    return SpotRuleRead.model_validate(row)
+
+
+@router.put("/{spot_ref}/rules", response_model=SpotRuleRead)
+async def set_spot_rules(
+    spot_ref: str,
+    data: SpotRuleUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SpotRuleRead:
+    """Enregistre les critères d'un spot — en entier, jamais par morceaux.
+
+    L'envoi complet est ce qui permet d'**effacer** un critère : dans une mise
+    à jour partielle, `null` voudrait dire à la fois « ne change pas » et
+    « retire », et on ne pourrait plus jamais revenir en arrière sur un seuil
+    posé un soir.
+    """
+    spot = await _get_spot(db, spot_ref)
+
+    if (
+        data.wave_height_min_m is not None
+        and data.wave_height_max_m is not None
+        and data.wave_height_min_m > data.wave_height_max_m
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="La houle minimale dépasse la maximale.",
+        )
+
+    row = await _rules_row(db, current_user.id, spot.id)
+    if row is None:
+        row = SpotRule(user_id=current_user.id, spot_id=spot.id)
+        db.add(row)
+
+    for field, value in data.model_dump().items():
+        setattr(row, field, value)
+
+    await db.commit()
+    await db.refresh(row)
+    return SpotRuleRead.model_validate(row)
+
+
+@router.delete("/{spot_ref}/rules", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_spot_rules(
+    spot_ref: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Retire tous les critères d'un spot. Il cesse d'être annoncé sur Jour."""
+    spot = await _get_spot(db, spot_ref)
+    row = await _rules_row(db, current_user.id, spot.id)
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
 
 
 @router.post("/{spot_ref}/favorite", response_model=SpotPreferenceRead)

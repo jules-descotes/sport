@@ -32,6 +32,12 @@ from app.services.geo import (
     swell_alignment_deg,
     wave_energy,
 )
+from app.services.spot_rules import (
+    RuleMatch,
+    SpotRules,
+    evaluate as evaluate_rules,
+    sector8,
+)
 
 # ── Barèmes ────────────────────────────────────────────────────────────────
 #
@@ -90,6 +96,26 @@ W_TIDE = 0.25
 # Seuils de verdict sur la note continue.
 VERDICT_YES = 3.5
 VERDICT_MAYBE = 2.5
+
+# ── Pondération par les critères de Jules (règle C.4 du 13/09) ─────────────
+#
+# Un créneau qui **correspond** à ses critères ne peut pas être noté sous 3 :
+# il a décrit ce spot à partir de ce qu'il y a vécu, et notre géométrie n'a
+# pas à le contredire. Un créneau qui rate un critère **dur** — houle ou vent
+# au-dessus du maximum qu'il a posé — ne peut pas dépasser 2 : inutile de lui
+# trouver des qualités de période, il a dit que c'était injouable.
+#
+# Ce sont des bornes, pas des termes. Elles n'ajoutent ni ne retranchent de
+# points : elles empêchent le calcul générique de dire le contraire de ce
+# qu'on sait déjà. Entre les deux, il garde la main.
+RULE_MATCH_FLOOR = 3.0
+RULE_HARD_MISS_CEILING = 2.0
+
+# Facteur d'alignement quand la houle vient d'un secteur que Jules n'a pas
+# retenu. Volontairement bas sans être nul : il a décrit les secteurs qui
+# marchent, pas tous ceux qui ne marchent pas, et un secteur non listé reste
+# un peu moins improbable qu'une houle venue de derrière la terre.
+OFF_SECTOR_ALIGNMENT = 0.20
 
 
 def _piecewise(curve: Sequence[tuple[float, float]], value: float) -> float:
@@ -262,9 +288,26 @@ def wind_factor(
 
 
 def score_conditions(
-    conditions: Conditions, onshore_dir_deg: Optional[float] = None
+    conditions: Conditions,
+    onshore_dir_deg: Optional[float] = None,
+    rules: Optional["SpotRules"] = None,
+    local_hour: Optional[int] = None,
 ) -> Score:
-    """Note de 1 à 5 d'un créneau, à partir des règles génériques."""
+    """Note de 1 à 5 d'un créneau.
+
+    `rules` porte les critères que Jules a saisis pour ce spot (décidé le
+    13/09). Ils entrent à deux endroits, et à deux endroits seulement :
+
+    1. **Les secteurs de houle remplacent l'orientation calculée.**
+       `onshore_dir_deg` vient du trait de côte OSM ; il ne sait rien du récif
+       de Parlementia, de la fosse de la Gravière ni de l'ombre d'une digue
+       (cf. PROJET.md §7.4). Quand Jules a listé les secteurs qui marchent, ce
+       sont eux qui décident — son *a priori* prime sur notre géométrie.
+    2. **Les bornes.** Correspondance complète : au moins 3. Critère dur
+       raté : au plus 2.
+
+    Sans règles, rien ne change : c'est exactement le calcul du lot 1.
+    """
     reasons: list[str] = []
 
     height = conditions.wave_height_m
@@ -289,6 +332,18 @@ def score_conditions(
             conditions.wave_direction_deg, onshore_dir_deg
         )
         alignment_score = _piecewise(ALIGNMENT_CURVE, alignment_deg)
+
+    # Les secteurs saisis l'emportent sur l'orientation calculée — et ils
+    # l'emportent **entièrement** : garder les deux ferait une moyenne entre
+    # ce que Jules sait et ce que la géométrie suppose, c'est-à-dire une
+    # troisième valeur que personne n'a jamais observée.
+    if (
+        rules is not None
+        and rules.swell_sectors
+        and conditions.wave_direction_deg is not None
+    ):
+        in_sector = sector8(conditions.wave_direction_deg) in rules.swell_sectors
+        alignment_score = 1.0 if in_sector else OFF_SECTOR_ALIGNMENT
 
     # La houle mal orientée n'arrive tout simplement pas : elle réduit la
     # taille utile, elle ne « retire pas des points ».
@@ -343,6 +398,33 @@ def score_conditions(
     if surfable and period is not None and period >= 12.0:
         reasons.append("longue période")
 
+    # ── Les critères de Jules, en dernier ──────────────────────────────────
+    #
+    # En dernier, parce qu'ils **bornent** un résultat plutôt qu'ils ne le
+    # composent : les appliquer plus tôt les ferait multiplier par un facteur
+    # de vent, et un « il a dit que c'était bien » divisé par deux ne veut plus
+    # rien dire.
+    match: Optional[RuleMatch] = None
+    if rules is not None and not rules.empty:
+        match = evaluate_rules(
+            rules,
+            wave_height_m=height,
+            wave_period_s=period,
+            wave_direction_deg=conditions.wave_direction_deg,
+            wind_speed_kt=conditions.wind_speed_kt,
+            wind_direction_deg=conditions.wind_direction_deg,
+            tide_position=conditions.tide_position,
+            tide_rising=conditions.rising,
+            local_hour=local_hour,
+        )
+        if match.matches:
+            value = max(value, RULE_MATCH_FLOOR)
+            reasons.insert(0, "correspond à tes critères")
+        elif match.hard_miss:
+            value = min(value, RULE_HARD_MISS_CEILING)
+            # La raison dure passe devant : c'est elle qui explique la note.
+            reasons.insert(0, match.misses[0])
+
     return Score(
         value=round(value, 2),
         components={
@@ -360,6 +442,7 @@ def score_conditions(
                 if alignment_deg is not None
                 else {}
             ),
+            **({"rule_match": 1.0 if match.matches else 0.0} if match else {}),
         },
         reasons=reasons,
     )

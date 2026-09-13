@@ -9,6 +9,7 @@ import {
 } from "@/components/session/PendingSessionBlock";
 import { Freshness, PullToRefresh } from "@/components/shell/Freshness";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
+import { MatchAnnouncements } from "@/components/surf/MatchAnnouncements";
 import { DayProposal } from "@/components/training/DayProposal";
 import { SeaBlock } from "@/components/surf/SeaBlock";
 import { IconCloudOff, IconPlus, IconSearch } from "@/components/ui/Icons";
@@ -161,6 +162,11 @@ export default function JourPage() {
               </article>
             </section>
           )}
+
+          {/* Les autres favoris qui devraient marcher, d'après ses critères.
+              Sous le bloc de mer : c'est une information secondaire, et Jour
+              n'a qu'une seule information en grand. */}
+          <MatchAnnouncements matches={data.matches} />
 
           <Freshness
             className="px-5"

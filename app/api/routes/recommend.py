@@ -12,10 +12,13 @@ from app.models.spot import Spot
 from app.models.user import User
 from app.schemas.recommend import RecommendResponse, SlotRead, SpotSlots
 from app.schemas.spot import SpotRead
+from app.schemas.spot_rule import MatchWindowRead
 from app.services.auth_service import get_current_active_user
 from app.services.forecast_reads import latest_run_ts
 from app.services.recommend import Slot, recommend
 from app.services.scoring import conditions_line
+from app.services.spot_matches import upcoming_matches
+from app.services.spot_rules import window_details, window_sentence
 from app.services.spot_tiers import get_or_create_preferences, record_position
 
 router = APIRouter(tags=["recommend"])
@@ -88,6 +91,27 @@ async def get_recommendation(
         db, preferences, lat, lon, timezone=timezone, home_spot=home_spot
     )
 
+    # Les autres favoris qui devraient marcher, d'après les critères saisis.
+    # Le favori principal est exclu : sa prévision est déjà en grand au-dessus,
+    # et l'annoncer une seconde fois ferait doublon — le bloc de mer le dit
+    # autrement, par `home_matches`.
+    now = result.generated_at
+    matches = await upcoming_matches(
+        db,
+        current_user.id,
+        timezone=timezone,
+        now=now,
+        exclude_spot_ids=[] if home_spot is None else [home_spot.id],
+    )
+
+    # Le favori principal correspond-il à ses propres critères, sur le créneau
+    # qu'on affiche en grand ?
+    home_matches = False
+    if home_spot is not None and result.headline is not None:
+        home_matches = bool(
+            result.headline.score.components.get("rule_match")
+        )
+
     return RecommendResponse(
         generated_at=result.generated_at,
         lat=result.lat,
@@ -119,4 +143,23 @@ async def get_recommendation(
             for item in result.spots
         ],
         refreshing=result.refreshing,
+        matches=[
+            MatchWindowRead(
+                spot=SpotRead.model_validate(spot),
+                start=window.start,
+                end=window.end,
+                best_ts=window.best_ts,
+                best_score=window.best_score,
+                sentence=window_sentence(window, spot.name, now, timezone),
+                details=window_details(window),
+                wave_height_m=window.wave_height_m,
+                wave_period_s=window.wave_period_s,
+                wave_direction_deg=window.wave_direction_deg,
+                wind_speed_kt=window.wind_speed_kt,
+                wind_direction_deg=window.wind_direction_deg,
+                tide_phase=window.tide_phase,
+            )
+            for spot, window in matches
+        ],
+        home_matches=home_matches,
     )

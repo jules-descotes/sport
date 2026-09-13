@@ -9,6 +9,7 @@ import type {
   ExerciseCategory,
   GearType,
   GearWithUsage,
+  MatchWindow,
   Objective,
   Proposal,
   Recommendation,
@@ -20,6 +21,7 @@ import type {
   SpotHit,
   SpotNearby,
   SpotPreferences,
+  SpotRules,
   SurfSession,
   TideCoefficientDay,
   TrainingOverview,
@@ -192,6 +194,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ hidden }),
     }),
+
+  /** Réordonne les favoris. La liste est **complète** : un déplacement relatif
+   *  ferait dépendre le résultat de l'ordre d'arrivée de deux requêtes. */
+  reorderFavorites: (spotIds: number[]) =>
+    request<SpotHit[]>("/spots/favorites/order", {
+      method: "PUT",
+      body: JSON.stringify({ spot_ids: spotIds }),
+    }),
+
+  /** Les critères d'un spot. Un jeu vide quand rien n'a été saisi — jamais
+   *  un 404 : le formulaire s'ouvre pareil dans les deux cas. */
+  spotRules: (ref: string | number) =>
+    request<SpotRules>(`/spots/${ref}/rules`),
+
+  /** Enregistre les critères **en entier**. C'est ce qui permet d'effacer un
+   *  critère : dans un envoi partiel, `null` voudrait dire à la fois « ne
+   *  change pas » et « retire ». */
+  setSpotRules: (ref: string | number, rules: Omit<SpotRules, "spot_id">) =>
+    request<SpotRules>(`/spots/${ref}/rules`, {
+      method: "PUT",
+      body: JSON.stringify(rules),
+    }),
+
+  clearSpotRules: (ref: string | number) =>
+    request<void>(`/spots/${ref}/rules`, { method: "DELETE" }),
+
+  /** Les créneaux à venir qui correspondent aux critères des favoris.
+   *  N'ingère rien : les favoris sont déjà ingérés toutes les trois heures. */
+  spotMatches: (days = 3) =>
+    request<MatchWindow[]>(`/spots/matches${query({ days })}`),
 
   preferences: () => request<SpotPreferences>("/spots/preferences"),
 

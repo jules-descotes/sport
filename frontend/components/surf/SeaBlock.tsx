@@ -173,6 +173,14 @@ export function SeaBlock({ data }: { data: Recommendation }) {
                 {best.reasons.slice(0, 2).join(" · ")}
               </p>
             ) : null}
+            {/* Le favori principal n'est jamais annoncé dans la liste des
+                correspondances — sa prévision est déjà là, en grand. Il le dit
+                donc ici, en une ligne (décidé le 13/09). */}
+            {data.home_matches ? (
+              <p className="mt-1.5 text-[13px] font-semibold text-accent">
+                Correspond à tes critères
+              </p>
+            ) : null}
           </div>
         </div>
 

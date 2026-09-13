@@ -39,6 +39,8 @@ from app.services.scoring import (
     conditions_line,
     score_conditions,
 )
+from app.services.spot_matches import rules_by_spot as load_spot_rules
+from app.services.spot_rules import SpotRules, local_hour
 from app.services.sun import is_daylight, next_daylight_window
 
 # Au-delà, on ne prend plus la voiture pour aller voir.
@@ -181,6 +183,8 @@ def score_spot(
     spot: Spot,
     rows: Sequence[tuple[datetime, dict[str, Optional[float]]]],
     daylight_only: bool = False,
+    rules: Optional[SpotRules] = None,
+    timezone: str = "Europe/Paris",
 ) -> list[Slot]:
     """Note tous les créneaux d'un spot, nuit comprise, et dit lesquels sont de jour.
 
@@ -204,7 +208,15 @@ def score_spot(
             Slot(
                 ts=ts,
                 conditions=conditions,
-                score=score_conditions(conditions, spot.onshore_dir_deg),
+                # Les critères saisis par Jules bornent la note et remplacent
+                # l'orientation calculée quand il a listé des secteurs
+                # (règle C.4 du 13/09).
+                score=score_conditions(
+                    conditions,
+                    spot.onshore_dir_deg,
+                    rules,
+                    local_hour(ts, timezone),
+                ),
                 daylight=daylight,
             )
         )
@@ -320,9 +332,21 @@ async def recommend(
         now + timedelta(days=FORECAST_DAYS),
     )
 
+    # Les critères de Jules pour ces spots, s'il en a posé. Chargés en une
+    # requête : une par spot ferait douze allers-retours pour une table de
+    # vingt lignes.
+    rules_by_spot = await load_spot_rules(
+        db, preferences.user_id, [spot.id for spot in spots]
+    )
+
     recommendations: list[SpotRecommendation] = []
     for spot, distance_km in pairs:
-        slots = score_spot(spot, rows_by_spot.get(spot.id, []))
+        slots = score_spot(
+            spot,
+            rows_by_spot.get(spot.id, []),
+            rules=rules_by_spot.get(spot.id),
+            timezone=timezone,
+        )
         future = [
             slot
             for slot in slots

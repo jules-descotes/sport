@@ -35,6 +35,7 @@ from app.models.objective import (  # noqa: F401
 )
 from app.models.profile import Profile  # noqa: F401
 from app.models.spot import Spot, SpotPreference  # noqa: F401
+from app.models.spot_rule import SpotRule  # noqa: F401
 from app.models.surf_session import SurfSession  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.workout import WorkoutSession, WorkoutSet  # noqa: F401

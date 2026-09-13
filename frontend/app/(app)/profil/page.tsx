@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
+import { FavoriteSpots } from "@/components/surf/FavoriteSpots";
 import { SpotPicker } from "@/components/surf/SpotPicker";
 import { TileMap } from "@/components/surf/TileMap";
 import {
@@ -186,10 +187,15 @@ export default function ProfilPage() {
           </button>
         </div>
         <p className="mt-2 text-[12px] text-mute">
-          Sa prévision est celle de l&apos;écran Jour, et c&apos;est le seul
-          spot interrogé toutes les trois heures, app fermée.
+          Sa prévision est celle de l&apos;écran Jour. Lui et les autres favoris
+          sont interrogés toutes les trois heures, app fermée.
         </p>
       </section>
+
+      {/* Les autres favoris, leur ordre, et lequel est le principal. Deux
+          notions distinctes : réordonner ne change pas l'écran Jour, sans quoi
+          on n'oserait plus réordonner (décidé le 13/09). */}
+      <FavoriteSpots homeSpotId={homeSpotId} />
 
       {pickerOpen ? (
         <div className="-mt-2 pb-6">

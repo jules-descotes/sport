@@ -170,6 +170,67 @@ export interface SpotForecast {
   points: ForecastPoint[];
 }
 
+/** Les huit points de la rose, tels qu'on les saisit. */
+export const SECTORS_8 = [
+  "N",
+  "NE",
+  "E",
+  "SE",
+  "S",
+  "SO",
+  "O",
+  "NO",
+] as const;
+export type Sector8 = (typeof SECTORS_8)[number];
+
+export const TIDE_PHASES = ["low", "rising", "high", "falling"] as const;
+export type TidePhase = (typeof TIDE_PHASES)[number];
+
+/**
+ * Les critères de Jules pour un spot — larges, et tous optionnels.
+ *
+ * **Un champ vide n'est pas une valeur par défaut, c'est une absence de
+ * contrainte.** C'est la décision qui structure tout le reste : on ne remplit
+ * pas les trous avec des seuils inventés, et un spot dont on ne sait dire que
+ * « pas plus de 2 m » est décrit par cette seule ligne.
+ */
+export interface SpotRules {
+  spot_id: number;
+  wave_height_min_m: number | null;
+  wave_height_max_m: number | null;
+  wave_period_min_s: number | null;
+  swell_sectors: Sector8[];
+  wind_sectors: Sector8[];
+  wind_max_kt: number | null;
+  tide_phases: TidePhase[];
+  hour_min: number | null;
+  hour_max: number | null;
+  updated_at?: string | null;
+}
+
+/**
+ * Une fenêtre à venir où un favori correspond à ses critères.
+ *
+ * « Parlementia devrait marcher — dim. 10 h à 13 h · 1,6 m / 13 s / NO · vent
+ * E 6 kt · montante ». Le conditionnel vient du serveur : ce sont des critères
+ * larges confrontés à une prévision, pas une promesse.
+ */
+export interface MatchWindow {
+  spot: Spot;
+  start: string;
+  end: string;
+  best_ts: string;
+  best_score: number;
+  sentence: string;
+  details: string;
+  wave_height_m: number | null;
+  wave_period_s: number | null;
+  wave_direction_deg: number | null;
+  wind_speed_kt: number | null;
+  wind_direction_deg: number | null;
+  tide_phase: TidePhase | null;
+}
+
 export type Verdict = "OUI" | "NON" | "PEUT-ÊTRE";
 
 export interface Slot {
@@ -220,6 +281,10 @@ export interface Recommendation {
   run_ts: string | null;
   spots: SpotSlots[];
   refreshing: number[];
+  /** Les autres favoris qui devraient marcher sous trois jours. */
+  matches: MatchWindow[];
+  /** Vrai quand le favori principal correspond aussi à ses critères. */
+  home_matches: boolean;
 }
 
 // ── Journal quotidien ────────────────────────────────────────────────────

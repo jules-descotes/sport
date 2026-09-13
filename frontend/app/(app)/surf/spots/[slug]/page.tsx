@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { use, useState } from "react";
 
+import { SpotRulesForm } from "@/components/surf/SpotRulesForm";
 import { SwellChart } from "@/components/surf/SwellChart";
 import { Webcam } from "@/components/surf/Webcam";
 import { IconBack, IconCamera, IconEyeOff, IconStar } from "@/components/ui/Icons";
@@ -112,6 +113,11 @@ export default function SpotPage({
           </span>
         ) : null}
       </header>
+
+      {/* Les critères de Jules pour ce spot (décidé le 13/09). Juste sous le
+          nom : c'est ce qui décide de la note et des annonces de Jour, donc
+          ça vaut mieux que la webcam. */}
+      <SpotRulesForm slug={slug} />
 
       {/* Webcam : iframe ou lien sortant, jamais de ré-hébergement du flux
           (droits et bande passante, cf. PROJET.md §10). Le choix entre les
