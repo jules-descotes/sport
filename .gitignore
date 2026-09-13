@@ -39,3 +39,9 @@ Thumbs.db
 # Photos de session en stockage local (développement). En production elles
 # vivent sur R2 : le disque du conteneur Railway est éphémère.
 media/
+
+# Playwright — navigateurs, rapports et traces d'exécution.
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
+/frontend/.playwright/

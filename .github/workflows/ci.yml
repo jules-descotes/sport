@@ -65,3 +65,24 @@ jobs:
           NEXT_PUBLIC_API_URL: "https://api-sport.atelier-okomi.fr/api/v1"
           NEXT_PUBLIC_SITE_URL: "https://sport.atelier-okomi.fr"
           NEXT_PUBLIC_APP_NAME: Sport
+
+      # Le mode séance ne se teste pas ailleurs : un minuteur est un objet du
+      # navigateur — un intervalle, une horloge, une hydratation, un geste
+      # utilisateur. Chromium sans interface suffit ici ; le projet `iphone`
+      # (WebKit) se lance à la main, il est trop capricieux pour une CI qu'on
+      # veut croire.
+      - name: Installer Chromium pour Playwright
+        run: cd frontend && npx playwright install --with-deps chromium
+
+      - name: Tests navigateur
+        run: cd frontend && npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: Traces des tests navigateur
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

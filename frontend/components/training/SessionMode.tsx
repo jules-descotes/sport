@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconCheck, IconPlus } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
+import { ScreenLock, SessionAudio, vibrate } from "@/lib/session-timer";
 import type { Formula, FormulaItem } from "@/lib/types";
 
 /**
@@ -67,47 +68,6 @@ function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/**
- * Bip de fin de repos, synthétisé.
- *
- * Pas de fichier audio : un `<audio>` demande un octet de réseau au pire
- * moment, et le bundle n'a pas à grossir pour deux dixièmes de seconde de
- * sinusoïde. L'appel est enveloppé : un navigateur qui refuse l'audio ne doit
- * pas interrompre la séance.
- */
-function beep(): void {
-  try {
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!Ctor) return;
-    const context = new Ctor();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.25, context.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.36);
-    oscillator.onended = () => context.close();
-  } catch {
-    // Audio refusé : la séance continue, silencieuse.
-  }
-}
-
-function vibrate(pattern: number | number[]): void {
-  try {
-    navigator.vibrate?.(pattern);
-  } catch {
-    // Pas de vibreur : tant pis.
-  }
-}
-
 export function SessionMode({
   formula,
   workoutId,
@@ -132,33 +92,48 @@ export function SessionMode({
   const step = steps[index] ?? null;
   const progress = steps.length ? index / steps.length : 0;
 
-  // ── Écran allumé ────────────────────────────────────────────────────────
+  // ── Le geste : son et écran allumé ──────────────────────────────────────
   //
-  // Un écran qui s'éteint au milieu d'une planche oblige à le rallumer les
-  // mains au sol. Le verrou se reprend au retour d'onglet : iOS le relâche dès
-  // qu'on masque la page.
-  useEffect(() => {
-    let lock: WakeLockSentinel | null = null;
-    let cancelled = false;
+  // **Sur iOS, le son exige un geste de l'utilisateur**, et le verrou d'écran
+  // aussi. Les demander au montage — c'est-à-dire hors du gestionnaire de
+  // clic — les fait refuser en silence : l'`AudioContext` reste `suspended`,
+  // ne se referme jamais, et Safari n'en tolère que quatre par page. Au
+  // cinquième repos, la fin de séance est muette.
+  //
+  // On les réclame donc au **premier tap posé dans le mode séance**, en phase
+  // de capture pour être sûr de le voir quel que soit le bouton touché. Et
+  // l'ordre compte : rien ici n'est attendu, rien ici ne peut lever, rien ici
+  // n'est sur le chemin du minuteur. **S'ils échouent, le minuteur tourne
+  // quand même, sans son — jamais l'inverse.**
+  const audio = useRef<SessionAudio | null>(null);
+  const screenLock = useRef<ScreenLock | null>(null);
 
-    const acquire = async () => {
-      try {
-        lock = (await navigator.wakeLock?.request("screen")) ?? null;
-      } catch {
-        // Refusé ou indisponible : la séance marche quand même.
-      }
-    };
+  if (audio.current === null) audio.current = new SessionAudio();
+  if (screenLock.current === null) screenLock.current = new ScreenLock();
+
+  const primeOnGesture = useCallback(() => {
+    audio.current?.prime();
+    screenLock.current?.acquire();
+  }, []);
+
+  useEffect(() => {
+    const lock = screenLock.current;
+    const sound = audio.current;
+
+    // Tentative au montage : sur les navigateurs qui l'acceptent (Chrome de
+    // bureau), l'écran reste allumé sans attendre le premier bouton.
+    lock?.acquire();
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && !cancelled) void acquire();
+      // iOS relâche le verrou dès que la page passe derrière.
+      if (document.visibilityState === "visible") lock?.acquire();
     };
 
-    void acquire();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
-      void lock?.release().catch(() => undefined);
+      lock?.release();
+      sound?.release();
     };
   }, []);
 
@@ -200,52 +175,71 @@ export function SessionMode({
     setHoldLeft(null);
   }, []);
 
+  /**
+   * Un battement : relit l'horloge, met l'affichage à jour, sonne à l'échéance.
+   *
+   * Extrait de l'intervalle pour être **rejouable** : c'est lui qu'on rappelle
+   * au retour d'onglet. Sur iOS un `setInterval` d'une page en arrière-plan est
+   * suspendu, pas ralenti ; sans ce rappel immédiat, le compte à rebours reste
+   * figé sur sa dernière valeur connue le temps que le battement suivant
+   * arrive — et un chiffre figé se lit exactement comme un minuteur arrêté.
+   */
+  const sweep = useCallback(() => {
+    const now = Date.now();
+    let alive = false;
+
+    if (restDeadline.current !== null) {
+      const left = Math.max(0, Math.round((restDeadline.current - now) / 1000));
+      if (left <= 0) {
+        restDeadline.current = null;
+        setRestLeft(null);
+        // Fin de repos : on ne regarde pas l'écran pendant quarante-cinq
+        // secondes, il faut que ça s'entende et que ça se sente.
+        audio.current?.beep();
+        vibrate([120, 60, 120]);
+      } else {
+        alive = true;
+        setRestLeft(left);
+      }
+    }
+
+    if (holdDeadline.current !== null) {
+      const left = Math.max(0, Math.round((holdDeadline.current - now) / 1000));
+      if (left <= 0) {
+        holdDeadline.current = null;
+        setHoldLeft(null);
+        audio.current?.beep();
+        vibrate(200);
+      } else {
+        alive = true;
+        setHoldLeft(left);
+      }
+    }
+
+    if (!alive) setTicking(false);
+  }, []);
+
   useEffect(() => {
     if (!ticking) return;
 
-    const timer = window.setInterval(() => {
-      const now = Date.now();
-      let alive = false;
+    const timer = window.setInterval(sweep, 250);
+    // Le retour d'arrière-plan ne rattrape pas les battements perdus : il
+    // recalcule depuis l'échéance, une fois, tout de suite.
+    // Le retour d'arrière-plan ne rattrape pas les battements perdus : il
+    // recalcule depuis l'échéance, une fois, tout de suite. Sur iOS un
+    // `setInterval` de page masquée est suspendu, pas ralenti, et le premier
+    // battement d'après peut se faire attendre — un chiffre figé se lit
+    // exactement comme un minuteur arrêté.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") sweep();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
-      if (restDeadline.current !== null) {
-        const left = Math.max(
-          0,
-          Math.round((restDeadline.current - now) / 1000),
-        );
-        if (left <= 0) {
-          restDeadline.current = null;
-          setRestLeft(null);
-          // Fin de repos : on ne regarde pas l'écran pendant quarante-cinq
-          // secondes, il faut que ça s'entende et que ça se sente.
-          beep();
-          vibrate([120, 60, 120]);
-        } else {
-          alive = true;
-          setRestLeft(left);
-        }
-      }
-
-      if (holdDeadline.current !== null) {
-        const left = Math.max(
-          0,
-          Math.round((holdDeadline.current - now) / 1000),
-        );
-        if (left <= 0) {
-          holdDeadline.current = null;
-          setHoldLeft(null);
-          beep();
-          vibrate(200);
-        } else {
-          alive = true;
-          setHoldLeft(left);
-        }
-      }
-
-      if (!alive) setTicking(false);
-    }, 250);
-
-    return () => window.clearInterval(timer);
-  }, [ticking]);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [ticking, sweep]);
 
   const advance = useCallback(
     (entry: Done) => {
@@ -369,7 +363,13 @@ export function SessionMode({
     : `${item.reps} répétitions`;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-bg"
+      // Capture : le premier tap **de la séance**, quel que soit le bouton
+      // touché, réveille le son et demande l'écran allumé. C'est le seul
+      // instant où iOS l'accepte, et il ne se répète pas.
+      onPointerDownCapture={primeOnGesture}
+    >
       {/* Progression en tête : un trait, pas un pourcentage. */}
       <div className="h-1.5 w-full shrink-0 bg-line">
         <div
@@ -405,6 +405,7 @@ export function SessionMode({
           </p>
           <p
             aria-live="off"
+            data-testid="rest-countdown"
             className="tabular font-display text-[128px] font-bold leading-none text-accent"
           >
             {clock(restLeft)}
@@ -469,6 +470,7 @@ export function SessionMode({
               holdLeft !== null ? (
                 <p
                   aria-live="off"
+                  data-testid="hold-countdown"
                   className="tabular font-display text-[88px] font-bold leading-none text-ink"
                 >
                   {clock(holdLeft)}
