@@ -203,6 +203,9 @@ export default function SessionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["session-journal"] });
+      // La dépense du jour dépend de la durée **et** de la taille
+      // des vagues déclarée : les deux viennent de changer.
+      queryClient.invalidateQueries({ queryKey: ["expenditure"] });
     },
   });
 

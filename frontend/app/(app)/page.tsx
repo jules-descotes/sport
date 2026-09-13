@@ -12,6 +12,7 @@ import { HabitRow } from "@/components/habits/HabitRow";
 import { DayMealBlock } from "@/components/nutrition/DayMealBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
 import { MatchAnnouncements } from "@/components/surf/MatchAnnouncements";
+import { DayExpenditure } from "@/components/nutrition/DayExpenditure";
 import { DayProposal } from "@/components/training/DayProposal";
 import { SeaBlock } from "@/components/surf/SeaBlock";
 import { IconCloudOff, IconPlus, IconSearch } from "@/components/ui/Icons";
@@ -169,6 +170,13 @@ export default function JourPage() {
               place. Un repas se note au moment où on le mange, pas au moment
               où on ouvre le bon onglet. */}
           <DayMealBlock />
+          {/* Ce que la journée a coûté, en un chiffre et un mot :
+              « estimation ». Elle est sous ce qu'on fait et pas au-dessus —
+              c'est un constat de fin de journée, pas une consigne du matin
+              (décidé le 13/09). Absente tant qu'il n'y a rien à compter : une
+              ligne « 0 kcal » serait un reproche. */}
+          <DayExpenditure />
+
           {/* Le raccourci iPhone reste le chemin normal ; celui-ci rattrape
               les sessions qu'il a manquées — téléphone resté dans la voiture,
               session d'il y a trois semaines. Discret : ce n'est pas le geste

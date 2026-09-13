@@ -256,6 +256,7 @@ export default function TrainingPage() {
       setMeasuring(null);
       queryClient.invalidateQueries({ queryKey: ["training-overview"] });
       queryClient.invalidateQueries({ queryKey: ["training-today"] });
+          queryClient.invalidateQueries({ queryKey: ["expenditure"] });
     },
   });
 

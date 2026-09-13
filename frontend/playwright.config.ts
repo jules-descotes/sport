@@ -54,7 +54,14 @@ export default defineConfig({
   webServer: {
     command: "npm run start -- --port 3100",
     url: "http://localhost:3100/login",
-    reuseExistingServer: !process.env.CI,
+    // **Jamais réutilisé, même en local.** `next start` sert la construction
+    // qu'il avait au démarrage : un `npm run build` joué pendant qu'il tourne
+    // lui laisse un manifeste qui pointe vers des fragments disparus, et les
+    // tests échouent alors sur des écrans à moitié rendus — un symptôme qui
+    // ressemble à s'y méprendre au bug de minuteur qu'ils sont là pour
+    // surveiller. Deux secondes de démarrage valent mieux que cette
+    // demi-heure-là.
+    reuseExistingServer: false,
     timeout: 180_000,
     env: {
       NEXT_PUBLIC_API_URL: "http://127.0.0.1:8999/api/v1",

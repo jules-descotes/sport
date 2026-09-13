@@ -676,6 +676,36 @@ export interface TrainingOverview {
   recent: Workout[];
 }
 
+// ── Dépense estimée du jour (décidé le 13/09, retours n° 4) ──────────────
+//
+// **Estimée**, et le mot est affiché. Rien de ce qui compose ce chiffre n'est
+// mesuré : le MET vient du compendium d'activités physiques, la durée est
+// arrondie au quart d'heure, et la taille des vagues est un souvenir. La même
+// estimation alimente la cible calorique — un second calcul « pour
+// l'affichage » finirait par donner deux chiffres pour la même journée.
+
+export interface ExpenditureItem {
+  kind: "surf" | "workout";
+  label: string;
+  minutes: number;
+  met: number;
+  kcal: number;
+  /** Ce qui a modulé le MET, en clair : « grandes vagues », « renfo ». */
+  detail: string | null;
+}
+
+export interface DayExpenditureData {
+  surf_min: number;
+  surf_kcal: number;
+  workout_min: number;
+  workout_kcal: number;
+  total_kcal: number;
+  items: ExpenditureItem[];
+  weight_kg: number;
+  /** Vrai quand le poids vient d'un défaut faute de pesée. */
+  weight_estimated: boolean;
+}
+
 // ── Nutrition ────────────────────────────────────────────────────────────
 
 /** Les quatre repas d'une journée, dans l'ordre où ils se vivent. */

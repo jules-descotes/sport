@@ -54,16 +54,51 @@ KCAL_PER_KG = 7700.0
 # un déficit de 700 kcal ferait perdre la rame avant le gras.
 GOAL_KCAL = {"maintain": 0.0, "cut": -350.0, "bulk": 250.0}
 
-# MET du surf, par tranche de durée. Le compendium donne 3,0 pour « surf,
-# général » et 5,0 pour « compétition » ; la vérité d'une session libre est
-# entre les deux, et elle **décroît** : la première heure est une heure de
-# rame, la troisième une heure d'attente. Trois paliers valent mieux qu'une
-# moyenne, et de toute façon la calibration rattrape ce qui reste.
-SURF_MET_BY_HOUR = ((1.0, 5.0), (2.0, 4.0), (99.0, 3.0))
+# **Le socle : 3 MET.** C'est « surf, général » au compendium d'activités
+# physiques, et c'est la seule valeur de tout ce fichier qui vienne d'une
+# source publiée. Tout le reste est une modulation, et chaque modulation est
+# une hypothèse qu'on assume (décidé le 13/09, retours n° 4).
+SURF_MET_BASE = 3.0
 
-# MET des séances de training, par famille de formule.
+# Modulation par la **durée**. Elle décroît : la première heure est une heure
+# de rame, la troisième une heure d'attente. Trois paliers valent mieux qu'une
+# moyenne, et la calibration par la balance rattrape ce qui reste.
+SURF_MET_BY_HOUR = ((1.0, 2.0), (2.0, 1.0), (99.0, 0.0))
+
+# Modulation par la **taille des vagues déclarée** sur la session (retours
+# n° 4). Ramer dans du gros n'est pas la même activité que glisser dans du
+# petit, et c'est justement ce que le type de vagues permet enfin de savoir.
+#
+# Une taille **non renseignée vaut zéro**, comme « petites » : c'est le choix
+# prudent. Deviner « moyennes » par défaut gonflerait la cible calorique de
+# toutes les sessions décrites par personne — et une cible trop haute ne se
+# voit pas, elle se mange.
+SURF_MET_BY_WAVE_SIZE = {"small": 0.0, "medium": 1.0, "large": 2.0}
+
+# MET des séances de training, par **pattern dominant** de la formule.
+#
+# Le pattern est déduit des catégories des exercices qui la composent : une
+# formule majoritairement de mobilité coûte ce que coûtent des étirements, une
+# formule de renfo coûte ce que coûte du renfo. La famille sert de repli quand
+# la formule n'est plus là — une séance garde le nom de sa formule même si
+# celle-ci est supprimée (`formula_family` est figé à la création).
 WORKOUT_MET = {"mobility": 2.5, "core": 3.5, "strength": 5.0}
 WORKOUT_MET_DEFAULT = 3.0
+
+# Ce qui apparaît dans le détail, en français et en clair. Une ligne « MET 6,0 »
+# ne renseigne personne ; « grandes vagues » dit exactement pourquoi le chiffre
+# est ce qu'il est.
+WAVE_SIZE_LABELS = {
+    "small": "petites vagues",
+    "medium": "vagues moyennes",
+    "large": "grandes vagues",
+}
+
+PATTERN_LABELS = {
+    "mobility": "mobilité",
+    "core": "gainage",
+    "strength": "renfo",
+}
 
 # Le métabolisme de base tourne pendant la session aussi : une heure de surf ne
 # coûte pas MET × poids, elle coûte (MET − 1) × poids de plus que rien faire.
@@ -107,13 +142,19 @@ def basal_metabolic_rate(
     return base + (MSJ_MALE_OFFSET + MSJ_FEMALE_OFFSET) / 2.0
 
 
-def surf_met(duration_min: float) -> float:
-    """MET **moyen** d'une session de surf de cette durée.
+def surf_met(
+    duration_min: float, wave_size: Optional[str] = None
+) -> float:
+    """MET **moyen** d'une session de surf : socle, durée, taille des vagues.
 
-    Décroissant par paliers : la première heure est une heure de rame, la
-    troisième une heure d'attente. On pondère les paliers par le temps passé
-    dans chacun, ce qui donne une moyenne continue plutôt qu'une marche
-    d'escalier à 60 minutes pile.
+    `3 + bonus de durée + bonus de taille`. Le bonus de durée est décroissant
+    et pondéré par le temps passé dans chaque palier, ce qui donne une moyenne
+    continue plutôt qu'une marche d'escalier à soixante minutes pile.
+
+    Sans taille déclarée, le bonus de vagues est **nul** — comme pour des
+    petites. C'est volontairement prudent : deviner « moyennes » gonflerait la
+    cible de toutes les sessions que personne n'a décrites, et une cible trop
+    haute ne se voit pas, elle se mange.
     """
     hours = max(0.0, duration_min) / 60.0
     if hours == 0:
@@ -121,13 +162,16 @@ def surf_met(duration_min: float) -> float:
 
     total = 0.0
     previous = 0.0
-    for edge, met in SURF_MET_BY_HOUR:
+    for edge, bonus in SURF_MET_BY_HOUR:
         span = min(hours, edge) - previous
         if span <= 0:
             break
-        total += span * met
+        total += span * bonus
         previous = min(hours, edge)
-    return total / hours
+
+    duration_bonus = total / hours
+    wave_bonus = SURF_MET_BY_WAVE_SIZE.get(wave_size or "", 0.0)
+    return SURF_MET_BASE + duration_bonus + wave_bonus
 
 
 def activity_kcal(met: float, weight_kg: float, duration_min: float) -> float:
@@ -142,6 +186,66 @@ def activity_kcal(met: float, weight_kg: float, duration_min: float) -> float:
     return max(0.0, met - RESTING_MET) * weight_kg * (duration_min / 60.0)
 
 
+
+async def dominant_patterns(
+    db: AsyncSession, formula_ids: Sequence[int]
+) -> dict[int, str]:
+    """Le pattern dominant de chaque formule, en une requête.
+
+    « Dominant » = la catégorie d'exercice la plus représentée parmi ses
+    lignes. C'est grossier, et c'est assez : une formule de mobilité ne coûte
+    pas ce que coûte du renfo, et c'est tout ce que la dépense a besoin de
+    savoir. Le jour où les exercices porteront un vrai pattern de mouvement,
+    c'est **ici** que ça se branche, et nulle part ailleurs.
+
+    En une requête et pas une par séance : une journée à deux séances en ferait
+    déjà trois allers-retours pour une information de trois mots.
+    """
+    ids = [identifier for identifier in set(formula_ids) if identifier]
+    if not ids:
+        return {}
+
+    from app.models.exercise import Exercise
+    from app.models.formula import FormulaItem
+
+    rows = await db.execute(
+        select(FormulaItem.formula_id, Exercise.category)
+        .join(Exercise, Exercise.id == FormulaItem.exercise_id)
+        .where(FormulaItem.formula_id.in_(ids))
+    )
+
+    counts: dict[int, dict[str, int]] = {}
+    for formula_id, category in rows.all():
+        bucket = counts.setdefault(formula_id, {})
+        bucket[category] = bucket.get(category, 0) + 1
+
+    return {
+        formula_id: max(bucket.items(), key=lambda pair: pair[1])[0]
+        for formula_id, bucket in counts.items()
+        if bucket
+    }
+
+@dataclass
+class ExpenditureItem:
+    """Une ligne du détail : ce qu'on a fait, combien de temps, ce que ça coûte.
+
+    Le détail existe parce qu'une estimation sans décomposition ne se corrige
+    pas. « 620 kcal » ne dit pas si c'est la session de trois heures ou la
+    séance de renfo qui pèse, donc ne dit pas quoi rectifier quand le chiffre
+    paraît faux — et un chiffre qu'on ne peut pas rectifier, on cesse de le
+    lire (décidé le 13/09, retours n° 4).
+    """
+
+    kind: str  # "surf" ou "workout"
+    label: str
+    minutes: int
+    met: float
+    kcal: float
+    # Ce qui a modulé le MET, en clair : « grandes vagues », « renfo ». Rendu
+    # tel quel à l'écran.
+    detail: Optional[str] = None
+
+
 @dataclass
 class DayExpenditure:
     """Ce que la journée a coûté en plus du train-train."""
@@ -150,6 +254,7 @@ class DayExpenditure:
     surf_kcal: float = 0.0
     workout_min: int = 0
     workout_kcal: float = 0.0
+    items: list[ExpenditureItem] = field(default_factory=list)
 
     @property
     def total_kcal(self) -> float:
@@ -284,9 +389,19 @@ async def day_expenditure(
         minutes = session.duration_min or 0
         if minutes <= 0:
             continue
+        met = surf_met(minutes, session.wave_size)
+        kcal = activity_kcal(met, weight_kg, minutes)
         expenditure.surf_min += minutes
-        expenditure.surf_kcal += activity_kcal(
-            surf_met(minutes), weight_kg, minutes
+        expenditure.surf_kcal += kcal
+        expenditure.items.append(
+            ExpenditureItem(
+                kind="surf",
+                label=session.spot.name if session.spot else "Surf",
+                minutes=minutes,
+                met=round(met, 1),
+                kcal=kcal,
+                detail=WAVE_SIZE_LABELS.get(session.wave_size or ""),
+            )
         )
 
     workouts = await db.execute(
@@ -295,14 +410,37 @@ async def day_expenditure(
         .where(WorkoutSession.started_at >= start)
         .where(WorkoutSession.started_at < end)
     )
-    for workout in workouts.scalars().all():
+    workout_rows = workouts.scalars().all()
+    patterns = await dominant_patterns(
+        db, [w.formula_id for w in workout_rows if w.formula_id]
+    )
+    for workout in workout_rows:
         minutes = workout.duration_min or 0
         if minutes <= 0:
             continue
-        met = WORKOUT_MET.get(workout.formula_family or "", WORKOUT_MET_DEFAULT)
+        # Le pattern dominant de la formule d'abord ; sa famille en repli. Une
+        # séance garde le nom de sa formule même si celle-ci disparaît, et il
+        # ne faut pas que la dépense d'une journée passée change ce jour-là.
+        pattern = patterns.get(workout.formula_id or -1) or (
+            workout.formula_family or ""
+        )
+        met = WORKOUT_MET.get(pattern, WORKOUT_MET_DEFAULT)
+        kcal = activity_kcal(met, weight_kg, minutes)
         expenditure.workout_min += minutes
-        expenditure.workout_kcal += activity_kcal(met, weight_kg, minutes)
+        expenditure.workout_kcal += kcal
+        expenditure.items.append(
+            ExpenditureItem(
+                kind="workout",
+                label=workout.formula_name or "Séance",
+                minutes=minutes,
+                met=round(met, 1),
+                kcal=kcal,
+                detail=PATTERN_LABELS.get(pattern),
+            )
+        )
 
+    # Dans l'ordre où la journée s'est vécue, comme l'écran Jour.
+    expenditure.items.sort(key=lambda item: (item.kind != "surf", -item.minutes))
     return expenditure
 
 

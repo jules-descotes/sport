@@ -47,6 +47,7 @@ export function DayProposal() {
           setSession(null);
           setSwapped(null);
           queryClient.invalidateQueries({ queryKey: ["training-today"] });
+          queryClient.invalidateQueries({ queryKey: ["expenditure"] });
           queryClient.invalidateQueries({ queryKey: ["training-overview"] });
         }}
         onAbandon={() => {

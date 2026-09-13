@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.daily_log import router as daily_log_router
+from app.api.routes.expenditure import router as expenditure_router
 from app.api.routes.gear import router as gear_router
 from app.api.routes.habits import router as habits_router
 from app.api.routes.nutrition import router as nutrition_router
@@ -158,6 +159,7 @@ app.include_router(spots_router, prefix="/api/v1")
 app.include_router(tides_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
 app.include_router(daily_log_router, prefix="/api/v1")
+app.include_router(expenditure_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(gear_router, prefix="/api/v1")
 app.include_router(training_router, prefix="/api/v1")

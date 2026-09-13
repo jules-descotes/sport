@@ -5,6 +5,7 @@ import type {
   DailyLogEntry,
   DailyLogStatus,
   DailyLogToday,
+  DayExpenditureData,
   Discipline,
   Exercise,
   ExerciseCategory,
@@ -199,6 +200,12 @@ export const api = {
 
   /** Les spots maison, le favori du profil en tête. N'ingère rien non plus. */
   favoriteSpots: () => request<SpotHit[]>("/spots/favorites"),
+
+  /** La dépense estimée du jour — surf et séances. Sous `/expenditure` et
+   *  pas sous `/nutrition` : c'est l'écran Jour qui la regarde le matin, et
+   *  c'est le même calcul qui alimente la cible calorique. */
+  expenditure: (day?: string) =>
+    request<DayExpenditureData>(`/expenditure${query({ day })}`),
 
   /** Les seuils de qualité — huit nombres qui teintent le tableau horaire
    *  **et** calculent les notes. La ligne est créée aux défauts à la première
