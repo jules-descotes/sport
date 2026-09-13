@@ -146,7 +146,15 @@ CLAUDE.md  PROJET.md
 
 **Training** — `objectives` (nom, mesure, unité, valeur de départ, cible, fréquence de mesure) → `objective_measurements` (date, valeur) · `formulas` (nom, durée, fréquence hebdo, objectifs servis) → `formula_items` (exercice, séries, reps, tempo, durée) · `exercises` (nom, groupe, catégorie mobilité/renfo/gainage, consignes, vidéo) · `workout_sessions` → `workout_sets`. La proposition du jour = la formule qui sert l'objectif le plus en retard ; rappel de mesure toutes les 2-3 semaines.
 
-**Nutrition** — `foods` (import de la table **Ciqual 2025** de l'ANSES) · `recipes` → `recipe_items` · `meal_plans` → `meal_plan_items` · `food_log` · `daily_targets` (calculé, jamais saisi)
+**Nutrition** — `foods` (import de la table **Ciqual 2025** de l'ANSES, plus les produits Open Food Facts mis en cache au scan) · `recipes` → `recipe_items` · `meal_plans` → `meal_plan_items` · `food_log` · `body_metrics` (pesée hebdo) · `nutrition_profiles` (objectif, activité, et le terme de calibration appris)
+
+> **IMPORTANT** — **La cible calorique n'est pas une table.** Elle se recalcule à chaque lecture depuis le profil, les sessions du jour et la calibration. La figer voudrait dire la recalculer à la main à chaque pesée, c'est-à-dire l'oublier. Seuls les **réglages** sont stockés, et parmi eux un seul est appris : `calibration_kcal`, corrigé toutes les deux à trois semaines sur l'écart entre la variation de poids réelle et celle qu'on avait prédite. C'est lui qui rattrape tout ce que la formule ne sait pas — le métabolisme propre, la dépense d'une session de surf, et le fait qu'on ne pèse pas tout ce qu'on mange.
+
+> **IMPORTANT** — **Une ligne de `food_log` fige ses valeurs nutritionnelles.** Même règle que le `conditions_snapshot` d'une session : le jour où Ciqual change de version ou qu'une fiche Open Food Facts est corrigée, un bilan de la semaine dernière ne doit pas se réécrire tout seul.
+
+**Habitudes** — `habits` (nom, icône, compteur ou oui/non, unité, objectif optionnel, pause) → `habit_events` (horodatage **à la seconde**, quantité, note courte)
+
+> **IMPORTANT** — Les événements d'habitude sont **horodatés à la seconde, jamais agrégés par jour**. Leur intérêt au lot 6 est de se croiser avec le **ressenti des sessions du lendemain** — « les jours où j'ai bu trois verres, je note ma forme un point en dessous » — et un tel croisement se fait sur des instants. Une colonne par jour posée aujourd'hui détruirait cette possibilité pour toujours. Et rien de jugeant n'est stocké : pas de série, pas de taux de réussite. Un compteur et des événements ; la tendance se calcule à l'affichage.
 
 ---
 
@@ -286,12 +294,14 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 | ✅ | **2** | Log de session : `POST /sessions/quick` (Bearer, raccourci iPhone), formulaire 15 s, matos, double notation, `conditions_snapshot` en fenêtre T−2h, file hors-ligne | 2,5 j | fait |
 | ✅ | **2 ter** | **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil · **HTTPS** (HSTS, CSP, redirection 308, webcams en https) · **tableau horaire** 5 j heure par heure avec énergie et flèches · **sessions créées et modifiées depuis le navigateur**, historique des snapshots, corbeille 30 j | 2 j | fait |
 | ✅ | **4** | Training : objectifs mesurés, bibliothèque d'exercices depuis des bases ouvertes, 15 formules, proposition du jour, mode séance plein écran avec timer | 2,5 j | fait |
-| 1 | **5** | Nutrition : import Ciqual, journal, cible calorique liée aux sessions, menu de la semaine | 2 j | à faire |
-| 2 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
-| 3 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
+| ✅ | **A → D** | Desktop 1600 px et cache client · coefficient de marée via Brest et énergie dans les sessions · favoris multiples avec critères saisis (`spot_rules`) et annonces sur Jour · demi-points et segments horaires | 2,5 j | fait |
+| ✅ | **5** | Nutrition : import Ciqual, Open Food Facts au code-barres, cible calorique recalibrée par la balance, journal, menu de la semaine, pesée | 2 j | fait |
+| ✅ | **F** | Habitudes quotidiennes (`habits`, `habit_events`) et statistiques de profil | 1 j | fait |
+| 1 | **3** | Reco : règles → ridge, double horizon, phrase d'explication par plus proche voisin | 1,5 j | à faire |
+| 2 | **6** | Stats et corrélations conditions ↔ note | 1 j | à faire |
 | — | **1 bis** | Bouée CANDHIS + station de vent → `observations` | 0,5 j | dès réception du jeton |
 
-≈ **17 jours de dev effectif**, dont 12,5 déjà faits.
+≈ **20 jours de dev effectif**, dont 18 déjà faits.
 
 > **IMPORTANT** — **Le `run_ts` se fait en premier**, avant tout le reste du lot 1 ter : chaque passe d'ingestion sans lui détruit la prévision précédente. *(Fait le 12/09 : migration `0003`, clé `(spot_id, ts, source, run_ts)`, `ON CONFLICT DO NOTHING`. `run_ts` est arrondi à l'heure — sans quoi chaque redémarrage à froid de Railway écrirait un run de plus pour la même prévision.)*
 
@@ -350,7 +360,8 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 - [x] **Navigation à cinq entrées** Jour / Surf / Training / Nutrition / Profil, et **prévision heure par heure façon Windguru** sur l'écran Surf (flèches de direction, énergie de houle), résumé 3 h sur Jour (décidé le 13/09 après première utilisation en ligne)
 - [x] **Sessions créables et modifiables depuis le navigateur**, pas seulement via le raccourci iPhone (13/09)
 - [x] **Programmes d'entraînement** : constitués à partir de bases d'exercices **ouvertes** (wger, free-exercise-db), jamais copiés depuis des sites commerciaux (13/09)
-- [x] **Retours d'usage du 13/09** : demi-points et segments horaires de notation, plusieurs favoris avec critères saisis, coefficient de marée via Brest, énergie dans les sessions, desktop élargi, cache client 2 h, stats de profil, suivi d'habitudes quotidiennes — détail dans `CLAUDE.md` « Décidé le 13/09 (suite) ». *Fait : consignes rédigées en français dans `services/training_catalog.py`, images et groupes musculaires importés par `scripts/import_exercises.py`, source et licence sur chaque ligne.*
+- [x] **Retours d'usage du 13/09** : demi-points et segments horaires de notation, plusieurs favoris avec critères saisis, coefficient de marée via Brest, énergie dans les sessions, desktop élargi, cache client 2 h, stats de profil, suivi d'habitudes quotidiennes — détail dans `CLAUDE.md` « Décidé le 13/09 (suite) ». **Tout est livré et en ligne le 13/09**, étapes A à G.
+- [x] **Coefficient de marée** — mesuré contre l'annuaire SHOM : biais −1,7 point, écart maximal 6 sur dix pleines mers. Au-dessus de la tolérance de 5, donc affiché avec « ≈ ». Le détail, la forme de l'erreur et la marche à suivre pour rejouer la mesure sont dans `docs/COEFFICIENT-MAREE.md` (décidé le 13/09)
 - [ ] **Nom du projet** et confirmation du sous-domaine `sport.atelier-okomi.fr`
 - [ ] **Ouverture aux potes** plus tard, oui ou non ? (si oui, `user_id` partout dès la première migration — c'est prévu, mais ça change les écrans)
 

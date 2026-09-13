@@ -46,10 +46,17 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
-      # La file hors ligne est la seule pièce du front qui peut perdre une
-      # session : une notation mise en attente et jamais renvoyée ne laisse
-      # aucune trace. Elle est testée contre un vrai IndexedDB.
-      - name: Tests de la file hors ligne
+      # Le lint porte les règles de React 19 — un `setState` dans un effet,
+      # une ref lue pendant le rendu. Ce sont des bugs de rendu, pas du style,
+      # et ils ne se voient pas au build.
+      - name: Lint
+        run: cd frontend && npm run lint
+
+      # Ce qui ne se vérifie pas à l'œil : la file hors ligne (une notation
+      # jamais renvoyée ne laisse aucune trace), le cache de prévision (qui
+      # décide si une requête part), et les règles de calcul. IndexedDB est
+      # réel, pas bouchonné.
+      - name: Tests du front
         run: cd frontend && npm run test
 
       - name: Build

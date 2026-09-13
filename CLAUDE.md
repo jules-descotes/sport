@@ -151,13 +151,17 @@ FORECAST_CACHE_HOURS=3                 # cache des spots « potentiels »
 FORECAST_CALL_CAP=600                  # plafond dur par passe d'ingestion
 FORECAST_ON_DEMAND_TIMEOUT_S=5         # au-delà : on sert la base, on complète derrière
 OVERPASS_URL=https://overpass-api.de/api/interpreter
+OPENFOODFACTS_URL=https://world.openfoodfacts.org
+OPENFOODFACTS_USER_AGENT=Sport/0.1 (perso, non commercial)
 OPENMETEO_MARINE_URL=https://marine-api.open-meteo.com/v1/marine
 OPENMETEO_FORECAST_URL=https://api.open-meteo.com/v1/forecast
 OPENMETEO_ARCHIVE_URL=https://historical-forecast-api.open-meteo.com/v1/forecast
 ```
 
-Aucune clé d'API n'est nécessaire : Open-Meteo et Overpass sont gratuits et sans
-authentification en usage non commercial. `WINDY_WEBCAMS_API_KEY` reste vide —
+Aucune clé d'API n'est nécessaire : Open-Meteo, Overpass et Open Food Facts sont
+gratuits et sans authentification en usage non commercial. Le `User-Agent`
+d'Open Food Facts est en revanche **exigé** par leurs conditions : une base
+bénévole a le droit de savoir qui l'interroge. `WINDY_WEBCAMS_API_KEY` reste vide —
 les webcams sont saisies à la main par URL sur la fiche spot au lot 1.
 
 ## Variables d'environnement — Vercel (front)
@@ -174,9 +178,122 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Lot 2 — log de session, matos, notation, hors-ligne — **code terminé le 2026-09-12**, raccourci iPhone à monter sur le téléphone
 - [x] Lot 2 ter — navigation à cinq entrées, HTTPS, tableau horaire, sessions au navigateur — **code terminé et en ligne le 2026-09-13**
 - [x] Lot 4 — training : objectifs mesurés, formules, mode séance — **code terminé et en ligne le 2026-09-13**, import d'exercices à lancer en production
-- [ ] Lot 5 — nutrition
+- [x] Étape A — desktop 1600 px, cache client des prévisions — **en ligne le 2026-09-13**
+- [x] Étape B — coefficient de marée (Brest), énergie dans les sessions — **en ligne le 2026-09-13**
+- [x] Étape C — favoris multiples, `spot_rules`, annonces sur Jour — **en ligne le 2026-09-13**
+- [x] Étape D — demi-points, segments horaires — **en ligne le 2026-09-13**
+- [x] Lot 5 — nutrition : Ciqual, cible recalibrée, journal, menu, pesée — **en ligne le 2026-09-13**, import Ciqual à lancer en production
+- [x] Étape F — habitudes quotidiennes, stats de profil — **en ligne le 2026-09-13**
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
-- [ ] Lot 6 — stats
+- [ ] Lot 6 — stats et corrélations conditions ↔ note
+
+### Étapes A → G (13/09) — ce qui est livré
+
+**A. Desktop et cache.** Coquille à 1 600 px, colonnes au-dessus de 1 024 px
+sur Jour (mer · ce qu'on fait · ce qu'on note), Training (jauges · formules ·
+séance du jour) et Surf (tableau pleine largeur, détail en panneau latéral
+collant). La colonne d'heure du tableau horaire passe de 46 à **30 px** sur
+desktop : les 46 px sont la cible tactile, au-dessus de 1 024 px le pointeur
+est une souris — et ce sont ces 30 px qui font tenir **deux jours entiers**
+dans 1 440 px.
+
+Cache client IndexedDB, clé `(spot, run_ts)` comme en base. L'entrée est
+injectée dans le cache de TanStack Query avec son `updatedAt` d'origine et
+`staleTime` vaut deux heures : c'est la bibliothèque qui tranche, pas un second
+état parallèle. Âge affiché en clair, « tirer pour rafraîchir » pour forcer.
+
+**B. Coefficient de marée.** Spot technique `is_reference` sur le marégraphe de
+**Brest** — le coefficient est national par définition. Un appel de niveau
+marin par passe, pas trois. Deux détails portent toute la précision : le niveau
+moyen est **mesuré** (−0,39 m ; le poser à zéro ajouterait 13 points en
+permanence) et le sommet de marée est **interpolé** par une parabole (l'échantillon
+horaire coûte 3 points, systématiquement en moins).
+
+Validé contre l'annuaire SHOM sur dix pleines mers : biais −1,7, écart maximal
+**6 points**, donc affichage avec « ≈ ». Tout est consigné dans
+`docs/COEFFICIENT-MAREE.md`, rejouable par `scripts/check_tide_coefficient.py`.
+
+Énergie de houle dans la fenêtre observée du détail de session et en colonne
+dans l'historique, calculée **côté serveur** avec la fonction de l'écran Surf.
+
+**C. Favoris multiples et critères.** `spot_rules` par spot : houle min/max,
+période min, secteurs de houle et de vent (rose à huit points), vent max,
+phases de marée, heures préférées. **Tout champ vide est une absence de
+contrainte**, jamais une valeur par défaut.
+
+Deux critères sont *durs* — houle et vent au-dessus du maximum. Un créneau qui
+correspond ne peut pas être noté sous 3 ; un créneau qui rate un critère dur ne
+peut pas dépasser 2. Ses secteurs **remplacent** l'orientation calculée depuis
+le trait de côte, entièrement.
+
+Jour annonce les fenêtres à venir des autres favoris (« Parlementia devrait
+marcher — dim. 10 h à 13 h »), trois au maximum. Un spot sans critères n'est
+jamais annoncé.
+
+**D. Demi-points et segments.** Échelle de 1 à 5 par pas de 0,5, stockée en
+entiers ×2 dans des colonnes **renommées** `_half` — une colonne qui change
+d'unité sans changer de nom est une bombe à retardement. Aucun bouton de plus à
+l'écran : second tap ou appui long. La couleur interpole en oklab.
+
+Segments horaires optionnels, chacun apparié à **sa** ligne du
+`conditions_snapshot` — d'où l'extension de la fenêtre à toute la durée de la
+session. La marée du snapshot reste rapportée à l'heure du départ.
+
+**E (lot 5). Nutrition.** Import Ciqual (`--sample` d'abord, colonnes trouvées
+par fragments, `traces` = 0 et `-` = inconnu), Open Food Facts au code-barres
+avec cache. Cible Mifflin-St Jeor + activité + dépense du jour par MET +
+objectif + **terme appris** corrigé par la balance toutes les deux à trois
+semaines. Journal figeant ses valeurs à la saisie, menu de la semaine par
+glouton reproductible, liste de courses agrégée, pesée à la molette.
+
+**F. Habitudes et stats.** Compteurs libres définis par Jules, un tap pour
+ajouter, un appui long pour retirer. Événements **horodatés à la seconde** —
+c'est ce qui permettra au lot 6 de les croiser avec le ressenti du lendemain.
+Ton strictement neutre : jamais de rouge, jamais de série perdue. Quatre cartes
+de statistiques sur le profil, avec de vraies courbes sur desktop.
+
+**G. Tests.** 518 pytest + 65 vitest. Ajoutés au passage : le *stale-while-
+revalidate* du cache client testé avec un vrai DOM (stale / revalidate /
+force), et la migration 0010 jouée **sur de vraies lignes** dans un
+sous-processus Alembic — un 4 doit devenir 8, et une session non notée doit le
+rester.
+
+### Étapes A → G — ce qui reste (hors code, à faire à la main)
+
+Dans l'ordre où ça débloque le plus de choses.
+
+- [ ] **Importer la table Ciqual.** Télécharger le CSV de l'ANSES sur
+      data.gouv.fr (« Table de composition nutritionnelle Ciqual »), le poser
+      en `data/ciqual.csv`, puis depuis le conteneur Railway :
+      `python -m scripts.import_ciqual --sample` — **regarder les colonnes** —
+      puis `python -m scripts.import_ciqual`. Sans lui, la recherche d'aliment
+      est vide et les recettes n'ont pas de macros. Elles se complètent toutes
+      seules au premier accès à l'écran Nutrition après l'import.
+- [ ] **Compléter le profil nutrition** : année de naissance, taille, sexe,
+      objectif (Profil → Nutrition). Sans eux, la cible calorique est une
+      estimation — elle le dit, mais elle reste une estimation.
+- [ ] **Se peser une première fois** (Nutrition → Me peser). La calibration
+      demande **deux** pesées à quatorze jours d'écart : la première ne
+      corrige rien, elle amorce.
+- [ ] **Poser les critères des spots favoris** (fiche spot → Tes critères).
+      Sans eux, aucune annonce ne s'affiche sur Jour — c'est voulu : un spot
+      sans critères n'a rien à annoncer.
+- [ ] **Définir les premières habitudes** (Profil → Habitudes). Rien n'est
+      semé, et c'est délibéré : une habitude proposée par l'app serait une
+      leçon de morale.
+- [ ] **Vérifier le coefficient de marée à l'usage**, et rejouer
+      `python -m scripts.check_tide_coefficient --days 5 --shom …` à
+      l'équinoxe. Le « ≈ » disparaîtra le jour où l'écart mesuré passera sous
+      cinq points (`MEASURED_MAX_GAP` dans `services/tide_coefficient.py`).
+- [ ] **Vérifier le tableau horaire à 1 440 px** : deux jours doivent tenir
+      d'un coup, colonne des libellés figée.
+- [ ] **Tester le scan de code-barres** sur le téléphone. `BarcodeDetector`
+      n'existe pas sur Safari : sur iPhone, c'est la saisie du code à la main —
+      c'est prévu, mais ça se vérifie.
+
+Restent des lots précédents : import OSM de la côte française à rejouer
+(`OVERPASS_URL` sur une autre instance), import d'exercices, raccourci iOS,
+matos réel, URL de webcams, `STORAGE_BACKEND=r2` pour les photos.
 
 ### Lot 0 — ce qui est livré (2026-09-12)
 - Dépôt git sur `main`, remote `jules-descotes/sport`, `.gitignore` + `.gitattributes` (LF)
@@ -198,7 +315,7 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Créer le dépôt GitHub `jules-descotes/sport` et pousser
 - [x] Railway : service `sport` (Dockerfile, `PORT=8080`) + Postgres dédié, variables posées dont `FORECAST_WAVE_MODEL` / `FORECAST_MODEL_VERSION`, domaine custom `api-sport` déclaré (cible `voy0nwe9.up.railway.app`) — **en attente du DNS**. `railway ssh --service sport --environment production` fonctionne (le `--environment` est indispensable)
 - [x] Vercel : projet front sur `/frontend`, variables `NEXT_PUBLIC_*`, domaine `sport` déclaré — **en attente du DNS**
-- [ ] OVH : 2 CNAME (`sport` → cible Vercel, `api-sport` → cible Railway) + 1 TXT `_railway-verify.api-sport` — **pas encore fait**
+- [x] OVH : 2 CNAME (`sport` → cible Vercel, `api-sport` → cible Railway) — **faits**. Les deux hôtes répondent en HTTPS et servent l'app ; vérifié le 13/09
 - [ ] Installer la PWA sur le téléphone et vérifier le plein écran iOS
 - [~] Import OSM en production : **4 568 spots créés** (Portugal → Bretagne) le 12/09 depuis le conteneur Railway ; la **côte française est à rejouer** (`--bbox 43.3,-5.0,49.0,-1.0`) car overpass-api.de a banni l'IP de sortie Railway en cours de route — orientations manquantes et plages de lac à purger. Utiliser une autre instance via `OVERPASS_URL` (private.coffee ou maps.mail.ru)
 - [ ] Choisir le **spot favori** dans le profil à la première connexion — sans lui, le job planifié n'ingère rien
