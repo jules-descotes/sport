@@ -352,13 +352,60 @@ export type SessionStatus = "to_rate" | "rated";
  * Les notes vont de 1 à 5 par pas de 0,5, comme celles de la session. La base
  * les stocke en entiers ×2 ; le front ne voit jamais ce ×2.
  */
-export interface SessionSegmentValue {
+// ── Le type de vagues (décidé le 13/09, retours n° 3) ────────────────────
+//
+// Trois axes optionnels saisis à la notation, repliés derrière un lien : le
+// chemin des quinze secondes ne s'allonge pas, il gagne un endroit où aller
+// quand on a le temps.
+//
+// **Ce sont des descripteurs des conditions observées, pas des étiquettes de
+// confort.** Aucune API ne les mesure — un modèle de vagues donne une hauteur
+// au large, il ne dit pas si ça a déferlé creux ou mou. C'est ce qui les rend
+// exploitables au lot 3 comme cibles auxiliaires (prédire « creuse » depuis la
+// période et le vent), et ce qui interdit de les donner en entrée au modèle
+// moyen terme : ils n'existent pas au moment de la prédiction.
+
+export const WAVE_SIZES = ["small", "medium", "large"] as const;
+export type WaveSize = (typeof WAVE_SIZES)[number];
+
+export const WAVE_LENGTHS = ["short", "medium", "long"] as const;
+export type WaveLength = (typeof WAVE_LENGTHS)[number];
+
+export const WAVE_SHAPES = ["hollow", "mushy", "crumbling"] as const;
+export type WaveShape = (typeof WAVE_SHAPES)[number];
+
+export const WAVE_SIZE_LABELS: Record<WaveSize, string> = {
+  small: "Petites",
+  medium: "Moyennes",
+  large: "Grandes",
+};
+
+export const WAVE_LENGTH_LABELS: Record<WaveLength, string> = {
+  short: "Courtes",
+  medium: "Moyennes",
+  long: "Longues",
+};
+
+export const WAVE_SHAPE_LABELS: Record<WaveShape, string> = {
+  hollow: "Creuses",
+  mushy: "Molles",
+  crumbling: "Déferlantes",
+};
+
+/** Les trois axes, portés aussi bien par la session que par un segment. */
+export interface WaveType {
+  wave_size: WaveSize | null;
+  wave_length: WaveLength | null;
+  wave_shape: WaveShape | null;
+}
+
+export interface SessionSegmentValue extends WaveType {
   started_at: string;
   rating_conditions: number | null;
   rating_personal: number | null;
 }
 
-export interface SurfSession {
+export interface SurfSession extends WaveType {
   id: number;
   spot_id: number;
   spot: Spot | null;

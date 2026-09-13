@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { waveTypeLabels } from "@/components/session/WaveTypeChips";
 import { IconChevronRight } from "@/components/ui/Icons";
 import {
   clockLabel,
@@ -73,6 +74,13 @@ export function SessionRow({ session }: { session: SurfSession }) {
             {durationLabel(session.duration_min)}
             {session.gear ? ` · ${session.gear.name}` : ""}
             {session.wave_count !== null ? ` · ${session.wave_count} vagues` : ""}
+            {/* Le type de vagues, quand il a été décrit. Il est sur cette
+                ligne parce que l'historique se filtre dessus : une liste
+                filtrée sur « creuses » doit montrer pourquoi chaque ligne y
+                est. */}
+            {waveTypeLabels(session).length > 0
+              ? ` · ${waveTypeLabels(session).join(", ").toLowerCase()}`
+              : ""}
           </span>
         </span>
 

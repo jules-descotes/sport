@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    String,
     UniqueConstraint,
     func,
 )
@@ -69,6 +70,15 @@ class SessionSegment(Base):
     rating_personal_half: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True
     )
+
+    # Le type de vagues, heure par heure. **S'il est renseigné ici, il prime
+    # sur celui de la session pour cette heure-là** : c'est tout l'intérêt des
+    # segments — la houle monte, la marée tourne, et des vagues molles à 8 h
+    # peuvent être creuses à 10 h. Une valeur absente sur le segment retombe
+    # sur celle de la session, qui décrit la séance dans son ensemble.
+    wave_size: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    wave_length: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    wave_shape: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

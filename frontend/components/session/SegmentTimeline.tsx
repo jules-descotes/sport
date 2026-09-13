@@ -1,6 +1,7 @@
 "use client";
 
 import { DirectionArrow } from "@/components/surf/DirectionArrow";
+import { waveTypeLabels } from "@/components/session/WaveTypeChips";
 import { num, ratingLabel, scoreClass } from "@/lib/format";
 import type { ConditionsSnapshot, SessionSegmentValue } from "@/lib/types";
 
@@ -88,6 +89,16 @@ export function SegmentTimeline({ segments, snapshot }: SegmentTimelineProps) {
                     className="whitespace-nowrap px-3 py-2 text-left text-[14px] font-semibold text-ink"
                   >
                     {hour.getHours()} h
+                    {/* Le type de vagues **de cette heure-là**, quand il a été
+                        décrit : il prime alors sur celui de la session. C'est
+                        exactement ce que les segments existent pour dire — la
+                        houle monte, la marée tourne, et des vagues molles à
+                        8 h peuvent être creuses à 10 h. */}
+                    {waveTypeLabels(segment).length > 0 ? (
+                      <span className="block pt-0.5 text-[11px] font-normal leading-tight text-mute">
+                        {waveTypeLabels(segment).join(" · ")}
+                      </span>
+                    ) : null}
                   </th>
                   <td className="px-1 py-1.5">
                     <span

@@ -22,13 +22,14 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.database import get_db
-from app.models.enums import SessionStatus
+from app.models.enums import SessionStatus, WaveLength, WaveShape, WaveSize
 from app.models.gear import Gear
+from app.models.session_segment import SessionSegment
 from app.models.spot import Spot
 from app.models.surf_session import SurfSession
 from app.models.user import User
@@ -78,6 +79,18 @@ def _local_day_bounds(day: date, zone: ZoneInfo) -> tuple[datetime, datetime]:
     """Les bornes UTC d'une journée locale."""
     start = datetime.combine(day, time.min, tzinfo=zone)
     return start.astimezone(UTC), (start + timedelta(days=1)).astimezone(UTC)
+
+
+def _enum_value(value: object) -> Optional[str]:
+    """La valeur d'un membre d'énumération, ou la chaîne telle quelle.
+
+    Un `StrEnum` *est* une chaîne, donc il se stockerait sans broncher — mais
+    selon le pilote, la colonne peut se relire « WaveSize.SMALL » au lieu de
+    « small ». On range la valeur, jamais le membre.
+    """
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else str(value)
 
 
 async def _get_session(
@@ -349,7 +362,14 @@ async def create_session(
         lat=data.lat,
         lon=data.lon,
         client_uuid=data.client_uuid,
+        # Descripteurs des conditions observées : ce que les instruments ne
+        # mesurent pas et que seul quelqu'un dans l'eau peut dire.
+        wave_size=_enum_value(data.wave_size),
+        wave_length=_enum_value(data.wave_length),
+        wave_shape=_enum_value(data.wave_shape),
     )
+    if data.segments:
+        apply_segments(session, data.segments)
     _apply_status(session)
     session.conditions_snapshot = await build_conditions_snapshot(
         db, spot, data.started_at, duration_min=data.duration_min
@@ -368,6 +388,9 @@ async def list_sessions(
     until: Optional[date] = Query(default=None),
     spot_id: Optional[int] = Query(default=None),
     min_rating: Optional[float] = Query(default=None, ge=1, le=5),
+    wave_size: Optional[WaveSize] = Query(default=None),
+    wave_length: Optional[WaveLength] = Query(default=None),
+    wave_shape: Optional[WaveShape] = Query(default=None),
     limit: int = Query(default=50, gt=0, le=200),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_active_user),
@@ -378,6 +401,12 @@ async def list_sessions(
     `spot_id` et `min_rating` servent les filtres de l'écran Surf ; `since` et
     `until` le filtre par mois. Tout est optionnel : sans filtre, c'est la
     liste complète, et c'est le cas courant.
+
+    Les trois axes de type de vagues filtrent aussi, et ils regardent
+    **la session et ses segments** : une session décrite « molle » dans
+    l'ensemble mais dont l'heure de 10 h était creuse ressort sur « creuse ».
+    C'est la sémantique de la §A du 13/09 — un segment renseigné prime pour
+    son heure — appliquée au crible.
     """
     zone = _user_timezone(current_user)
     query = (
@@ -394,6 +423,24 @@ async def list_sessions(
         # lit sur la ligne, il ne sert pas de crible.
         query = query.where(
             SurfSession.rating_conditions_half >= to_half(min_rating)
+        )
+    for column, wanted in (
+        (SurfSession.wave_size, wave_size),
+        (SurfSession.wave_length, wave_length),
+        (SurfSession.wave_shape, wave_shape),
+    ):
+        if wanted is None:
+            continue
+        segment_column = getattr(SessionSegment, column.key)
+        query = query.where(
+            or_(
+                column == wanted.value,
+                SurfSession.id.in_(
+                    select(SessionSegment.session_id).where(
+                        segment_column == wanted.value
+                    )
+                ),
+            )
         )
     if session_status is not None:
         query = query.where(SurfSession.status == session_status.value)
@@ -474,6 +521,12 @@ async def update_session(
     for field, value in values.items():
         if field == "discipline" and value is not None:
             session.discipline = value.value if hasattr(value, "value") else value
+            continue
+        if field in ("wave_size", "wave_length", "wave_shape"):
+            # Un `StrEnum` se stockerait tel quel — il *est* une chaîne — mais
+            # la colonne relirait alors « WaveSize.SMALL » sur certains
+            # pilotes. On range la valeur, jamais le membre.
+            setattr(session, field, _enum_value(value))
             continue
         if field in ("rating_conditions", "rating_personal"):
             setattr(session, f"{field}_half", to_half(value))

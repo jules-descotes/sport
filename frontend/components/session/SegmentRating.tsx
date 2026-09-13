@@ -86,6 +86,13 @@ export function SegmentRating({
       started_at: key,
       rating_conditions: conditions,
       rating_personal: personal,
+      // Une heure créée ici ne décrit rien : le type de vagues se saisit au
+      // niveau de la session (« décrire les vagues »). Les axes d'une heure
+      // déjà décrite, eux, sont conservés par l'étalement ci-dessous — noter
+      // une heure ne doit pas effacer ce qu'on en avait dit.
+      wave_size: null,
+      wave_length: null,
+      wave_shape: null,
     };
     const next: SessionSegmentValue = {
       ...existing,

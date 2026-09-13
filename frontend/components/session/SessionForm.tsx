@@ -8,6 +8,7 @@ import { RatingScale } from "@/components/session/RatingScale";
 import { SegmentRating } from "@/components/session/SegmentRating";
 import { TimeWheel } from "@/components/session/TimeWheel";
 import { WaveStepper } from "@/components/session/WaveStepper";
+import { WaveTypeFields } from "@/components/session/WaveTypeFields";
 import { SpotPicker } from "@/components/surf/SpotPicker";
 import {
   IconBoard,
@@ -17,7 +18,12 @@ import {
 } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { boardLength, durationLabel, minutesBetween } from "@/lib/format";
-import type { Gear, SessionSegmentValue, SpotHit } from "@/lib/types";
+import type {
+  Gear,
+  SessionSegmentValue,
+  SpotHit,
+  WaveType,
+} from "@/lib/types";
 
 /**
  * Le formulaire de session — **un seul**, pour la notation et la création.
@@ -60,6 +66,10 @@ export interface SessionFormValues {
   notes: string;
   /** Les notes heure par heure, optionnelles. Vide = pas de détail. */
   segments: SessionSegmentValue[];
+  /** Taille, longueur, forme. Tout optionnel : « non renseigné » n'est pas
+   *  « moyen », et le confondre fabriquerait une observation que personne n'a
+   *  faite. */
+  waveType: WaveType;
 }
 
 interface SessionFormProps {
@@ -118,6 +128,7 @@ export function SessionForm({
   const [spotOpen, setSpotOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [waveTypeOpen, setWaveTypeOpen] = useState(false);
   const [pickedName, setPickedName] = useState<string | null>(null);
 
   const gear = useQuery({
@@ -347,6 +358,18 @@ export function SessionForm({
 
       <Section>
         <WaveStepper value={values.waves} onChange={(waves) => set({ waves })} />
+      </Section>
+
+      {/* Trois axes optionnels, repliés : ils décrivent ce que les
+          instruments ne mesurent pas, et ils ne rallongent pas le chemin des
+          quinze secondes tant qu'on ne les ouvre pas. */}
+      <Section>
+        <WaveTypeFields
+          value={values.waveType}
+          onChange={(waveType) => set({ waveType })}
+          open={waveTypeOpen}
+          onToggle={() => setWaveTypeOpen((open) => !open)}
+        />
       </Section>
 
       {/* Le seul endroit de l'écran où un clavier peut apparaître, et il faut

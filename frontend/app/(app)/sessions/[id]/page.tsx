@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { SegmentTimeline } from "@/components/session/SegmentTimeline";
+import { WaveTypeChips } from "@/components/session/WaveTypeChips";
 import { IconBack, IconPencil, IconTrash } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import {
@@ -271,6 +272,10 @@ export default function SessionDetailPage() {
             : ""}
           {data.wave_count !== null ? ` · ${data.wave_count} vagues` : ""}
         </p>
+        {/* Ce que les instruments ne mesurent pas — et que seul quelqu'un qui
+            était à l'eau pouvait dire. Absent quand rien n'a été décrit :
+            « non renseigné » n'est pas « moyen ». */}
+        <WaveTypeChips value={data} className="mt-3" />
       </section>
 
       {data.status === "to_rate" ? (

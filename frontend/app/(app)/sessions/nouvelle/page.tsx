@@ -66,6 +66,7 @@ function NewSessionScreen() {
       waves: 0,
       notes: "",
       segments: [],
+      waveType: { wave_size: null, wave_length: null, wave_shape: null },
     };
   });
 
@@ -104,6 +105,18 @@ function NewSessionScreen() {
         wave_count: form.waves,
         ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
         ...(form.segments.length ? { segments: form.segments } : {}),
+        // Les trois axes ne partent que renseignés : envoyer `null` et ne rien
+        // envoyer disent la même chose à la création, mais le premier ferait
+        // croire à une réponse.
+        ...(form.waveType.wave_size
+          ? { wave_size: form.waveType.wave_size }
+          : {}),
+        ...(form.waveType.wave_length
+          ? { wave_length: form.waveType.wave_length }
+          : {}),
+        ...(form.waveType.wave_shape
+          ? { wave_shape: form.waveType.wave_shape }
+          : {}),
       }),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });

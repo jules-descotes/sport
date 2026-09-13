@@ -12,7 +12,13 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.enums import Discipline, SessionStatus
+from app.models.enums import (
+    Discipline,
+    SessionStatus,
+    WaveLength,
+    WaveShape,
+    WaveSize,
+)
 from app.schemas.gear import GearRead
 from app.schemas.spot import SpotRead
 from app.services.geo import wave_energy_kj
@@ -56,7 +62,34 @@ def from_half(value: Optional[int]) -> Optional[float]:
     return None if value is None else value / 2
 
 
-class SurfSessionCreate(BaseModel):
+# ── Le type de vagues ──────────────────────────────────────────────────────
+#
+# Trois axes optionnels saisis à la notation, repliés derrière un lien à
+# l'écran : le chemin des quinze secondes ne s'allonge pas, il gagne un endroit
+# où aller quand on a le temps.
+#
+# **Ce sont des descripteurs des conditions observées, pas des étiquettes de
+# confort.** Aucune API ne les mesure : un modèle de vagues donne un Hm0 au
+# large, il ne dit pas si ça a déferlé creux ou mou — et c'est souvent là que
+# se joue la différence entre une bonne et une mauvaise session.
+#
+# Conséquence pour le lot 3 : ils sont exploitables comme **cibles
+# auxiliaires** — prédire « creuse » depuis la période, la cambrure et le vent
+# est apprenable sur bien moins d'exemples qu'une note de goût, et un modèle
+# qui sait d'abord décrire la mer arrive mieux armé pour la noter. Ils ne
+# doivent **jamais** entrer comme *entrées* du modèle moyen terme : ils
+# n'existent pas au moment de la prédiction (cf. CLAUDE.md, règle 11).
+
+
+class WaveTypeFields(BaseModel):
+    """Les trois axes, tels qu'on les envoie et tels qu'on les relit."""
+
+    wave_size: Optional[WaveSize] = None
+    wave_length: Optional[WaveLength] = None
+    wave_shape: Optional[WaveShape] = None
+
+
+class SurfSessionCreate(WaveTypeFields):
     """Enregistrement complet — le formulaire, ou la file hors ligne.
 
     `started_at` peut être dans le passé : une session rétroactive déclenche le
@@ -77,6 +110,11 @@ class SurfSessionCreate(BaseModel):
     wave_count: Optional[int] = Field(default=None, ge=0, le=500)
     crowd: Optional[int] = Field(default=None, ge=1, le=5)
     notes: Optional[str] = Field(default=None, max_length=2000)
+    # Les notes heure par heure, posées dès la création. L'écran « Ajouter une
+    # session » les propose au même titre que l'écran de notation — il partage
+    # le même `SessionForm` — et sans ce champ elles étaient silencieusement
+    # jetées par Pydantic à l'arrivée.
+    segments: list["SessionSegmentWrite"] = []
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lon: Optional[float] = Field(default=None, ge=-180, le=180)
     # Fabriqué par le téléphone avant l'envoi : c'est lui qui rend la file
@@ -84,7 +122,7 @@ class SurfSessionCreate(BaseModel):
     client_uuid: Optional[str] = Field(default=None, max_length=64)
 
 
-class SurfSessionUpdate(BaseModel):
+class SurfSessionUpdate(WaveTypeFields):
     """La notation, et les corrections qui vont avec.
 
     Tout est optionnel parce que l'écran de notation enregistre en un seul
@@ -167,7 +205,7 @@ def _with_energy(entries: Any) -> list[dict[str, Any]]:
     return enriched
 
 
-class SessionSegmentWrite(BaseModel):
+class SessionSegmentWrite(WaveTypeFields):
     """Une heure notée, telle qu'on l'envoie.
 
     `started_at` est **calé à l'heure pleine** par le serveur : c'est la clé
@@ -180,7 +218,7 @@ class SessionSegmentWrite(BaseModel):
     rating_personal: Rating = None
 
 
-class SessionSegmentRead(BaseModel):
+class SessionSegmentRead(WaveTypeFields):
     model_config = ConfigDict(from_attributes=True)
 
     started_at: UtcDatetime
@@ -196,11 +234,14 @@ class SessionSegmentRead(BaseModel):
                 "started_at": value.started_at,
                 "rating_conditions": from_half(value.rating_conditions_half),
                 "rating_personal": from_half(value.rating_personal_half),
+                "wave_size": value.wave_size,
+                "wave_length": value.wave_length,
+                "wave_shape": value.wave_shape,
             }
         return value
 
 
-class SurfSessionRead(BaseModel):
+class SurfSessionRead(WaveTypeFields):
     model_config = ConfigDict(from_attributes=True)
 
     @model_validator(mode="before")

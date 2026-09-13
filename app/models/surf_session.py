@@ -117,6 +117,28 @@ class SurfSession(Base):
 
     wave_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     crowd: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # ── Le type de vagues (décidé le 13/09, retours n° 3) ───────────────────
+    #
+    # Trois axes optionnels, tous nullables, tous facultatifs. Ils vivent
+    # derrière un lien replié à l'écran de notation : le chemin des quinze
+    # secondes ne s'allonge pas d'un champ, il gagne un endroit où aller
+    # quand on a le temps (cf. PROJET.md §7.2).
+    #
+    # **Ce sont des descripteurs des conditions observées**, au même titre
+    # que le `conditions_snapshot` — à ceci près qu'aucune API ne les mesure.
+    # Ils sont donc exploitables au lot 3 comme **cibles auxiliaires**
+    # (prédire « creuse » depuis la période, la cambrure et le vent), et
+    # jamais comme entrées du modèle moyen terme : ils ne sont pas
+    # disponibles au moment de la prédiction (cf. CLAUDE.md, règle 11).
+    #
+    # Stockés en texte libre contraint côté schéma plutôt qu'en type ENUM
+    # PostgreSQL : une valeur de plus se pose dans le code, pas dans une
+    # migration — et ces trois axes sont exactement le genre de chose qu'on
+    # affine après une saison.
+    wave_size: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    wave_length: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    wave_shape: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Photo de session, stockée sur R2 en production. L'URL, jamais le fichier.
     photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -16,6 +16,15 @@ import {
 } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { clockLabel, scoreClass, shortDate } from "@/lib/format";
+import {
+  WAVE_LENGTHS,
+  WAVE_LENGTH_LABELS,
+  WAVE_SHAPES,
+  WAVE_SHAPE_LABELS,
+  WAVE_SIZES,
+  WAVE_SIZE_LABELS,
+} from "@/lib/types";
+import type { WaveLength, WaveShape, WaveSize } from "@/lib/types";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
 
 /**
@@ -89,6 +98,48 @@ function Chip({
   );
 }
 
+/**
+ * Un axe de type de vagues, en pastilles.
+ *
+ * « Tous » n'est pas une valeur mais l'absence de crible : le second tap sur
+ * une pastille active la retire, comme partout ailleurs dans l'app.
+ */
+function WaveAxisFilter<T extends string>({
+  title,
+  values,
+  labels,
+  current,
+  onPick,
+}: {
+  title: string;
+  values: readonly T[];
+  labels: Record<T, string>;
+  current: T | null;
+  onPick: (value: T | null) => void;
+}) {
+  return (
+    <div>
+      <p className="pb-1.5 text-[12px] font-semibold uppercase tracking-wide text-mute">
+        {title}
+      </p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <Chip active={current === null} onClick={() => onPick(null)}>
+          Toutes
+        </Chip>
+        {values.map((value) => (
+          <Chip
+            key={value}
+            active={current === value}
+            onClick={() => onPick(current === value ? null : value)}
+          >
+            {labels[value]}
+          </Chip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SessionsPage() {
   const offline = useOfflineQueue();
   const queryClient = useQueryClient();
@@ -97,18 +148,35 @@ export default function SessionsPage() {
   const [spotId, setSpotId] = useState<number | null>(null);
   const [month, setMonth] = useState<string | null>(null);
   const [minRating, setMinRating] = useState<number | null>(null);
+  // Le type de vagues. Un seul axe à la fois suffit : « les creuses »,
+  // « les grandes ». Croiser les trois ne laisserait presque rien.
+  const [waveSize, setWaveSize] = useState<WaveSize | null>(null);
+  const [waveLength, setWaveLength] = useState<WaveLength | null>(null);
+  const [waveShape, setWaveShape] = useState<WaveShape | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
 
   const months = useMemo(() => lastMonths(), []);
   const chosenMonth = months.find((entry) => entry.key === month) ?? null;
 
   const { data, isPending, error } = useQuery({
-    queryKey: ["sessions", "history", spotId, month, minRating],
+    queryKey: [
+      "sessions",
+      "history",
+      spotId,
+      month,
+      minRating,
+      waveSize,
+      waveLength,
+      waveShape,
+    ],
     queryFn: () =>
       api.sessions({
         limit: PAGE_SIZE,
         ...(spotId !== null ? { spot_id: spotId } : {}),
         ...(minRating !== null ? { min_rating: minRating } : {}),
+        ...(waveSize ? { wave_size: waveSize } : {}),
+        ...(waveLength ? { wave_length: waveLength } : {}),
+        ...(waveShape ? { wave_shape: waveShape } : {}),
         ...(chosenMonth
           ? {
               since: isoDay(chosenMonth.date),
@@ -272,6 +340,33 @@ export default function SessionsPage() {
               ))}
             </div>
           </div>
+
+          {/* Le type de vagues. Le serveur regarde la session **et** ses
+              segments : une session molle dans l'ensemble mais creuse à 11 h
+              ressort ici sur « creuses ». Un crible qui ne lirait que la
+              session raterait exactement les sessions que les segments
+              servent à décrire. */}
+          <WaveAxisFilter
+            title="Taille"
+            values={WAVE_SIZES}
+            labels={WAVE_SIZE_LABELS}
+            current={waveSize}
+            onPick={setWaveSize}
+          />
+          <WaveAxisFilter
+            title="Longueur"
+            values={WAVE_LENGTHS}
+            labels={WAVE_LENGTH_LABELS}
+            current={waveLength}
+            onPick={setWaveLength}
+          />
+          <WaveAxisFilter
+            title="Forme"
+            values={WAVE_SHAPES}
+            labels={WAVE_SHAPE_LABELS}
+            current={waveShape}
+            onPick={setWaveShape}
+          />
         </section>
       ) : null}
 

@@ -75,6 +75,11 @@ export default function NoterPage() {
       waves: data.wave_count ?? 0,
       notes: data.notes ?? "",
       segments: data.segments,
+      waveType: {
+        wave_size: data.wave_size,
+        wave_length: data.wave_length,
+        wave_shape: data.wave_shape,
+      },
     });
   }, [data]);
 
@@ -281,6 +286,12 @@ export default function NoterPage() {
               // une liste vide est la façon d'effacer un détail horaire posé
               // par erreur.
               segments: form.segments,
+              // Même logique pour les trois axes : `null` est la façon de
+              // retirer une description posée par erreur, et il faut donc
+              // pouvoir l'envoyer.
+              wave_size: form.waveType.wave_size,
+              wave_length: form.waveType.wave_length,
+              wave_shape: form.waveType.wave_shape,
             })
           }
           className="flex min-h-[56px] w-full items-center justify-center rounded-button bg-accent px-5 text-[17px] font-semibold text-on-accent disabled:opacity-40"

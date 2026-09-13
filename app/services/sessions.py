@@ -307,6 +307,14 @@ async def purge_trashed_sessions(
 
 # ── Les notes heure par heure ──────────────────────────────────────────────
 
+def _enum_value(value: object) -> Optional[str]:
+    """La valeur d'un membre d'énumération, ou `None`."""
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else str(value)
+
+
+
 
 def apply_segments(
     session: SurfSession, segments: Sequence["SessionSegmentWrite"]
@@ -340,11 +348,17 @@ def apply_segments(
     """
     from app.schemas.session import to_half
 
-    by_hour: dict[datetime, tuple[Optional[int], Optional[int]]] = {}
+    by_hour: dict[datetime, "SessionSegmentWrite"] = {}
     for segment in segments:
         conditions = to_half(segment.rating_conditions)
         personal = to_half(segment.rating_personal)
-        if conditions is None and personal is None:
+        described = any(
+            (segment.wave_size, segment.wave_length, segment.wave_shape)
+        )
+        # Une ligne ouverte puis laissée vide n'est pas un renseignement — mais
+        # une heure décrite sans être notée en est un : « ça a molli à 10 h »
+        # se dit sans mettre de note.
+        if conditions is None and personal is None and not described:
             continue
         started_at = segment.started_at
         if started_at.tzinfo is None:
@@ -352,7 +366,7 @@ def apply_segments(
         hour = started_at.astimezone(UTC).replace(
             minute=0, second=0, microsecond=0
         )
-        by_hour[hour] = (conditions, personal)
+        by_hour[hour] = segment
 
     # SQLite rend des datetimes naïfs : sans ce recollage, une heure relue de la
     # base ne s'apparierait jamais à la même heure envoyée par l'écran, et le
@@ -365,12 +379,18 @@ def apply_segments(
         existing[stamp.astimezone(UTC)] = segment
 
     kept: list[SessionSegment] = []
-    for hour, (conditions, personal) in sorted(by_hour.items()):
+    for hour, segment in sorted(by_hour.items(), key=lambda pair: pair[0]):
         row = existing.get(hour)
         if row is None:
             row = SessionSegment(started_at=hour)
-        row.rating_conditions_half = conditions
-        row.rating_personal_half = personal
+        row.rating_conditions_half = to_half(segment.rating_conditions)
+        row.rating_personal_half = to_half(segment.rating_personal)
+        # Le type de vagues de **cette heure-là**. Renseigné, il prime sur
+        # celui de la session pour cette heure : la houle monte, la marée
+        # tourne, et des vagues molles à 8 h peuvent être creuses à 10 h.
+        row.wave_size = _enum_value(segment.wave_size)
+        row.wave_length = _enum_value(segment.wave_length)
+        row.wave_shape = _enum_value(segment.wave_shape)
         kept.append(row)
 
     # `delete-orphan` se charge des heures qui ne sont plus dans la liste : ce

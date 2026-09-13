@@ -96,3 +96,58 @@ class SessionStatus(StrEnum):
 
     TO_RATE = "to_rate"
     RATED = "rated"
+
+
+# ── Le type de vagues (décidé le 13/09, retours n° 3) ──────────────────────
+#
+# Trois axes optionnels, saisis à la notation. **Ce sont des descripteurs des
+# conditions observées, pas des étiquettes de confort** : ils décrivent ce
+# qu'ont fait les vagues, comme le fait `conditions_snapshot`, à ceci près
+# qu'aucune API ne les mesure et que seul quelqu'un dans l'eau peut les dire.
+#
+# D'où leur intérêt au lot 3 : ils sont exploitables comme **cibles
+# auxiliaires**. Prédire « creuse » depuis la période, la cambrure et le vent
+# est une tâche apprenable sur beaucoup moins d'exemples qu'une note de goût,
+# et un modèle qui apprend d'abord à décrire la mer arrive mieux armé pour la
+# noter. Ils ne doivent donc **jamais** entrer comme *entrées* du modèle
+# moyen terme : ils ne sont pas disponibles au moment de la prédiction
+# (cf. CLAUDE.md, règle 11).
+#
+# Trois valeurs par axe, pas cinq : on les saisit une main sur la planche,
+# et personne ne sait départager « assez creuse » de « plutôt creuse ».
+
+
+class WaveSize(StrEnum):
+    """Taille ressentie. Distincte du Hm0 du modèle, et c'est le but.
+
+    Le modèle donne une hauteur de houle au large ; ce champ dit ce qui a
+    déferlé. L'écart entre les deux est une information sur le spot.
+    """
+
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+
+
+class WaveLength(StrEnum):
+    """Longueur des vagues — la distance qu'on peut faire dessus.
+
+    `SHORT` / `MEDIUM` / `LONG`, et pas une longueur d'onde : c'est un
+    ressenti de glisse, pas une grandeur physique.
+    """
+
+    SHORT = "short"
+    MEDIUM = "medium"
+    LONG = "long"
+
+
+class WaveShape(StrEnum):
+    """Forme du déferlement.
+
+    `HOLLOW` creuse · `MUSHY` molle · `CRUMBLING` déferlante (qui casse par
+    l'épaule sans tube ni mollesse).
+    """
+
+    HOLLOW = "hollow"
+    MUSHY = "mushy"
+    CRUMBLING = "crumbling"

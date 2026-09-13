@@ -43,6 +43,9 @@ import type {
   TrainingOverview,
   WeighInResponse,
   User,
+  WaveLength,
+  WaveShape,
+  WaveSize,
   Workout,
 } from "./types";
 
@@ -113,6 +116,11 @@ export interface SessionUpdate {
   gear_id?: number;
   wave_count?: number;
   notes?: string | null;
+  /** Type de vagues — descripteurs des conditions observées, tous optionnels.
+   *  `null` efface l'axe : « non renseigné » n'est pas « moyen ». */
+  wave_size?: WaveSize | null;
+  wave_length?: WaveLength | null;
+  wave_shape?: WaveShape | null;
 }
 
 function query(params: Record<string, string | number | boolean | undefined>) {
@@ -284,6 +292,12 @@ export const api = {
       spot_id?: number;
       /** Filtre de l'historique : note **de conditions** minimale. */
       min_rating?: number;
+      /** Filtres de type de vagues. Le serveur regarde la session **et** ses
+       *  segments : une session molle dans l'ensemble mais creuse à 11 h
+       *  ressort sur « creuses ». */
+      wave_size?: WaveSize;
+      wave_length?: WaveLength;
+      wave_shape?: WaveShape;
       limit?: number;
       offset?: number;
     } = {},
@@ -318,6 +332,9 @@ export const api = {
     wave_count?: number;
     notes?: string;
     client_uuid?: string;
+    wave_size?: WaveSize | null;
+    wave_length?: WaveLength | null;
+    wave_shape?: WaveShape | null;
   }) =>
     request<SurfSession>("/sessions", {
       method: "POST",
@@ -370,12 +387,17 @@ export const api = {
     purchased_on?: string | null;
   }) => request<GearWithUsage>("/gear", { method: "POST", body: JSON.stringify(data) }),
 
+  /** Ce qui est envoyé est ce qui change — le reste ne bouge pas en base.
+   *  Un champ absent n'est pas un champ vidé : `null` efface pour de bon. */
   updateGear: (
     id: number,
     data: {
       name?: string;
+      gear_type?: GearType;
       length_m?: number | null;
       volume_l?: number | null;
+      discipline?: Discipline;
+      purchased_on?: string | null;
       is_active?: boolean;
     },
   ) =>
