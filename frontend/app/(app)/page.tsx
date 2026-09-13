@@ -11,6 +11,7 @@ import { Freshness, PullToRefresh } from "@/components/shell/Freshness";
 import { HabitRow } from "@/components/habits/HabitRow";
 import { DayMealBlock } from "@/components/nutrition/DayMealBlock";
 import { DailyLogSwipe } from "@/components/surf/DailyLogSwipe";
+import { FavoriteRanking } from "@/components/surf/FavoriteRanking";
 import { MatchAnnouncements } from "@/components/surf/MatchAnnouncements";
 import { DayExpenditure } from "@/components/nutrition/DayExpenditure";
 import { DayProposal } from "@/components/training/DayProposal";
@@ -146,6 +147,13 @@ export default function JourPage() {
           {/* Les autres favoris qui devraient marcher, d'après ses critères.
               Sous le bloc de mer : c'est une information secondaire, et Jour
               n'a qu'une seule information en grand. */}
+          {/* Le classement des favoris (13/09, retours n° 4). Il **remplace**
+              les annonces : une annonce disait qu'un spot correspondait, elle
+              ne disait pas lequel des quatre est le meilleur ce matin — et
+              c'est la question qu'on se pose en ouvrant l'app. Les annonces
+              restent en dessous, pour les fenêtres au-delà de demain que le
+              classement ne couvre pas. */}
+          <FavoriteRanking />
           <MatchAnnouncements matches={data.matches} />
 
           <Freshness

@@ -9,6 +9,7 @@ import { num } from "@/lib/format";
 import {
   SECTORS_8,
   TIDE_PHASES,
+  type RulesPreview,
   type Sector8,
   type SpotRules,
   type TidePhase,
@@ -191,13 +192,23 @@ export function SpotRulesForm({ slug }: { slug: string }) {
   // pas un état.
   const loaded = rules.data;
 
+  // L'aperçu immédiat rendu par le serveur à l'enregistrement (13/09,
+  // retours n° 4). Sans lui, on règle des seuils à l'aveugle et on découvre
+  // trois jours plus tard qu'on a écrit des critères que la côte ne remplit
+  // jamais. Il ne se demande pas à part : il arrive avec la réponse.
+  const [preview, setPreview] = useState<RulesPreview | null>(null);
+
   const save = useMutation({
     mutationFn: (next: Draft) => api.setSpotRules(slug, next),
     onSuccess: (saved) => {
       queryClient.setQueryData(["spot-rules", slug], saved);
       queryClient.invalidateQueries({ queryKey: ["recommend"] });
       queryClient.invalidateQueries({ queryKey: ["spot-hourly", slug] });
-      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["favorites-ranking"] });
+      setPreview(saved.preview ?? null);
+      // L'écran reste ouvert tant qu'il y a un aperçu à lire : c'est le seul
+      // moment où l'on peut corriger un seuil en sachant ce qu'il donne.
+      if (!saved.preview) setOpen(false);
     },
   });
 
@@ -208,6 +219,8 @@ export function SpotRulesForm({ slug }: { slug: string }) {
       queryClient.invalidateQueries({ queryKey: ["spot-rules", slug] });
       queryClient.invalidateQueries({ queryKey: ["recommend"] });
       queryClient.invalidateQueries({ queryKey: ["spot-hourly", slug] });
+      queryClient.invalidateQueries({ queryKey: ["favorites-ranking"] });
+      setPreview(null);
     },
   });
 
@@ -353,6 +366,33 @@ export function SpotRulesForm({ slug }: { slug: string }) {
             </p>
           ) : null}
 
+          {/* L'aperçu immédiat. Il dit ce que ces seuils donneraient vraiment,
+              tout de suite, au lieu de se découvrir trois jours plus tard.
+              Zéro heure n'est pas une erreur — c'est une information, et
+              souvent celle qu'on cherchait. */}
+          {preview ? (
+            <p className="tabular pt-3 text-[13px] leading-snug text-ink-2">
+              {preview.daylight_hours === 0 ? (
+                <>
+                  Pas encore de prévision pour ce spot — ouvre-le une fois et
+                  l&apos;aperçu arrivera.
+                </>
+              ) : preview.matching_hours === 0 ? (
+                <>
+                  Sur les {preview.days} prochains jours, <strong>aucune</strong>{" "}
+                  des {preview.daylight_hours} heures de jour ne correspond.
+                  C&apos;est peut-être exactement ce que tu veux.
+                </>
+              ) : (
+                <>
+                  Sur les {preview.days} prochains jours, ça correspondrait{" "}
+                  <strong>{preview.matching_hours} heures</strong> sur{" "}
+                  {preview.daylight_hours} de jour.
+                </>
+              )}
+            </p>
+          ) : null}
+
           <div className="flex gap-3 pt-4">
             <button
               type="button"
@@ -360,8 +400,24 @@ export function SpotRulesForm({ slug }: { slug: string }) {
               disabled={save.isPending}
               className="min-h-touch flex-1 rounded-button bg-accent px-4 text-[16px] font-semibold text-on-accent disabled:opacity-50"
             >
-              {save.isPending ? "Enregistrement…" : "Enregistrer"}
+              {save.isPending
+                ? "Enregistrement…"
+                : preview
+                  ? "Enregistrer à nouveau"
+                  : "Enregistrer"}
             </button>
+            {preview ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreview(null);
+                  setOpen(false);
+                }}
+                className="min-h-touch rounded-button border border-line bg-card px-4 text-[15px] font-semibold text-ink-2"
+              >
+                Fermer
+              </button>
+            ) : null}
             {configured ? (
               <button
                 type="button"

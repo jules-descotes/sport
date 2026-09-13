@@ -206,6 +206,46 @@ export interface SpotForecast {
   points: ForecastPoint[];
 }
 
+// ── Classement des favoris (13/09, retours n° 4) ─────────────────────────
+//
+// La note de journée est un **produit** : part des heures de jour qui
+// correspondent aux critères du spot × qualité moyenne sur ces heures. Un spot
+// excellent une heure par jour et un spot correct toute la journée ne se
+// départagent pas par addition.
+
+export interface FavoriteDayRanking {
+  day: string;
+  daylight_hours: number;
+  matching_hours: number;
+  /** Vaut 1 pour un spot sans critères : on ne peut pas la calculer, et la
+   *  mettre à zéro le ferait disparaître du classement. */
+  match_ratio: number;
+  average_score: number;
+  day_score: number;
+  best_ts: string | null;
+  best_score: number | null;
+  window_start: string | null;
+  window_end: string | null;
+}
+
+export interface FavoriteRankingEntry {
+  spot: Spot;
+  /** Faux = classé sur le seul score, et l'écran le signale. */
+  has_rules: boolean;
+  is_home: boolean;
+  /** Faux = jamais ingéré. Rangé en bas et **pas noté** : lui inventer une
+   *  note serait pire que de n'en donner aucune. */
+  has_forecast: boolean;
+  best_day_score: number;
+  days: FavoriteDayRanking[];
+}
+
+export interface RulesPreview {
+  days: number;
+  matching_hours: number;
+  daylight_hours: number;
+}
+
 /** Les huit points de la rose, tels qu'on les saisit. */
 export const SECTORS_8 = [
   "N",
@@ -242,6 +282,9 @@ export interface SpotRules {
   hour_min: number | null;
   hour_max: number | null;
   updated_at?: string | null;
+  /** L'aperçu immédiat rendu à l'enregistrement : « sur les 3 prochains
+   *  jours, ça matcherait N heures ». Nul sur une simple lecture. */
+  preview?: RulesPreview | null;
 }
 
 /**

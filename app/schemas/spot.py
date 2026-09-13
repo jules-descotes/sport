@@ -188,6 +188,56 @@ class SpotForecastResponse(BaseModel):
     points: list[ForecastPoint] = []
 
 
+class FavoriteDayRanking(BaseModel):
+    """Ce qu'un favori vaut pour une journée."""
+
+    day: date
+    daylight_hours: int = 0
+    matching_hours: int = 0
+    # `matching_hours / daylight_hours`. Vaut 1 pour un spot sans critères :
+    # on ne peut pas la calculer, et la mettre à zéro le ferait disparaître du
+    # classement alors qu'on vient de le mettre en favori.
+    match_ratio: float = 0.0
+    average_score: float = 0.0
+    # `part × qualité`. C'est lui qui classe.
+    day_score: float = 0.0
+    best_ts: Optional[datetime] = None
+    best_score: Optional[float] = None
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+
+
+class FavoriteRanking(BaseModel):
+    """Un favori dans le classement du jour.
+
+    `has_rules` à faux veut dire **classé sur le seul score**, et l'écran le
+    signale : sans règles, « correspond » ne veut rien dire, et un spot sans
+    critères finirait toujours premier si on le classait comme les autres.
+    """
+
+    spot: SpotRead
+    has_rules: bool = False
+    is_home: bool = False
+    # Faux quand la base n'a aucune prévision pour ce spot. Il est rendu quand
+    # même, rangé en bas, **et pas noté** : c'est un spot jamais ingéré, pas
+    # un mauvais spot.
+    has_forecast: bool = False
+    best_day_score: float = 0.0
+    days: list[FavoriteDayRanking] = []
+
+
+class RulesPreview(BaseModel):
+    """L'aperçu immédiat de la fiche de critères.
+
+    Sans lui, on règle des seuils à l'aveugle et on découvre trois jours plus
+    tard qu'on a écrit des critères que la côte ne remplit jamais.
+    """
+
+    days: int = 3
+    matching_hours: int = 0
+    daylight_hours: int = 0
+
+
 class SlotDetail(BaseModel):
     """Le détail d'un créneau — **le seul endroit où les directions sont des
     nombres**.

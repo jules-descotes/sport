@@ -29,6 +29,9 @@ from app.schemas.spot_rule import (
     SpotRuleUpdate,
 )
 from app.schemas.spot import (
+    FavoriteDayRanking,
+    FavoriteRanking,
+    RulesPreview,
     FavoriteRequest,
     ForecastPoint,
     HideRequest,
@@ -62,6 +65,11 @@ from app.services.scoring import (
     TideContext,
     build_conditions,
     score_conditions,
+)
+from app.services.favorite_ranking import (
+    DEFAULT_DAYS as RANKING_DAYS,
+    matching_hours_preview,
+    rank_favorites,
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
 from app.services.spot_matches import (
@@ -261,6 +269,80 @@ async def list_favorites(
         )
         for spot_id in ids
         if spot_id in by_id
+    ]
+
+
+@router.get("/favorites/ranking", response_model=list[FavoriteRanking])
+async def favorites_ranking(
+    days: int = Query(default=RANKING_DAYS, ge=1, le=5),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[FavoriteRanking]:
+    """Les favoris classés, du meilleur au moins bon.
+
+    Route **fixe déclarée avant** `/spots/{spot_ref}` (cf. CLAUDE.md) : sans cet
+    ordre, FastAPI lirait « favorites » comme un identifiant et renverrait 422.
+
+    La note de journée est le **produit** de la part d'heures qui correspondent
+    et de la qualité moyenne sur ces heures. Un spot excellent une heure par
+    jour et un spot correct toute la journée ne se départagent pas par
+    addition : le premier demande d'être là à 8 h, le second se décide au
+    réveil (cf. `services/favorite_ranking.py`).
+
+    **Aucune ingestion.** On lit ce que la base a — les favoris sont au niveau
+    `home` et ingérés toutes les trois heures de toute façon.
+    """
+    preferences = await get_or_create_preferences(db, current_user.id)
+    home_id = await home_spot_id(db, current_user.id)
+
+    ids = [int(spot_id) for spot_id in (preferences.favorite_spot_ids or [])]
+    if home_id is not None and home_id not in ids:
+        ids.insert(0, home_id)
+    if not ids:
+        return []
+
+    result = await db.execute(
+        select(Spot).where(Spot.id.in_(ids)).where(Spot.is_reference.is_(False))
+    )
+    by_id = {spot.id: spot for spot in result.scalars().all()}
+    favorites = [by_id[spot_id] for spot_id in ids if spot_id in by_id]
+
+    profile = current_user.profile
+    rankings = await rank_favorites(
+        db,
+        current_user.id,
+        favorites,
+        home_spot_id=home_id,
+        days=days,
+        timezone=profile.timezone if profile else "Europe/Paris",
+    )
+
+    return [
+        FavoriteRanking(
+            spot=SpotRead.model_validate(entry.spot),
+            has_rules=entry.has_rules,
+            is_home=entry.is_home,
+            has_forecast=entry.has_forecast,
+            best_day_score=entry.best_day_score,
+            days=[
+                FavoriteDayRanking(
+                    day=day.day,
+                    daylight_hours=day.daylight_hours,
+                    matching_hours=day.matching_hours,
+                    match_ratio=round(
+                        day.match_ratio if entry.has_rules else 1.0, 3
+                    ),
+                    average_score=day.average_score,
+                    day_score=day.day_score,
+                    best_ts=day.best_ts,
+                    best_score=day.best_score,
+                    window_start=day.window_start,
+                    window_end=day.window_end,
+                )
+                for day in entry.days
+            ],
+        )
+        for entry in rankings
     ]
 
 
@@ -816,6 +898,24 @@ async def _rules_row(
     return result.scalar_one_or_none()
 
 
+async def _rules_preview(
+    db: AsyncSession, user: User, spot: Spot, row: Optional[SpotRule]
+) -> RulesPreview:
+    """Combien d'heures ces critères retiendraient sur les trois prochains jours."""
+    from app.services.spot_rules import SpotRules
+
+    rules = SpotRules.from_model(row) if row is not None else SpotRules()
+    profile = user.profile
+    matching, daylight = await matching_hours_preview(
+        db,
+        user.id,
+        spot,
+        rules,
+        timezone=profile.timezone if profile else "Europe/Paris",
+    )
+    return RulesPreview(matching_hours=matching, daylight_hours=daylight)
+
+
 @router.get("/{spot_ref}/rules", response_model=SpotRuleRead)
 async def read_spot_rules(
     spot_ref: str,
@@ -871,7 +971,13 @@ async def set_spot_rules(
 
     await db.commit()
     await db.refresh(row)
-    return SpotRuleRead.model_validate(row)
+
+    read = SpotRuleRead.model_validate(row)
+    # L'aperçu immédiat : « sur les 3 prochains jours, ça matcherait 7 heures ».
+    # Sans lui, on règle des seuils à l'aveugle et on découvre trois jours plus
+    # tard qu'on a écrit des critères que la côte ne remplit jamais.
+    read.preview = await _rules_preview(db, current_user, spot, row)
+    return read
 
 
 @router.delete("/{spot_ref}/rules", status_code=status.HTTP_204_NO_CONTENT)

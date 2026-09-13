@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.schemas.spot import SpotRead
+from app.schemas.spot import RulesPreview, SpotRead
 from app.schemas.types import UtcDatetime
 from app.services.spot_rules import SECTORS_8, TIDE_PHASES
 
@@ -68,6 +68,11 @@ class SpotRuleRead(SpotRuleUpdate):
 
     spot_id: int
     updated_at: Optional[UtcDatetime] = None
+    # L'aperçu immédiat : « sur les 3 prochains jours, ça matcherait N
+    # heures ». Nul sur une simple lecture qui ne le demande pas — le calcul
+    # relit toute la fenêtre de prévision, et l'écran des critères est le seul
+    # qui en a besoin (décidé le 13/09, retours n° 4).
+    preview: Optional[RulesPreview] = None
 
 
 class FavoriteOrder(BaseModel):

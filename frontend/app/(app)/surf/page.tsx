@@ -11,6 +11,7 @@ import {
   DESKTOP_COL_WIDTH,
   HourlyTable,
 } from "@/components/surf/HourlyTable";
+import { FavoriteRanking } from "@/components/surf/FavoriteRanking";
 import { QualityLegend } from "@/components/surf/QualityLegend";
 import { SlotDetailScreen } from "@/components/surf/SlotDetailScreen";
 import { SpotPicker } from "@/components/surf/SpotPicker";
@@ -398,6 +399,14 @@ function SurfScreen() {
                 </Link>
               ) : null}
             </section>
+
+            {/* Le classement des favoris, ici aussi (13/09, retours n° 4) :
+                Surf est l'écran où l'on compare, et comparer sans savoir
+                lequel est le meilleur aujourd'hui n'est qu'un défilement. */}
+            <FavoriteRanking
+              className={`pt-5 ${selectedTs ? "lg:px-0" : ""}`}
+              title="Tes favoris aujourd'hui"
+            />
 
             {spot ? (
               <section className={`pt-3 ${selectedTs ? "px-5 lg:px-0" : "px-5"}`}>

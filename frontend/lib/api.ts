@@ -13,6 +13,7 @@ import type {
   FoodHit,
   GenerateResponse,
   GroupLevel,
+  FavoriteRankingEntry,
   FoodLogEntry,
   Formula,
   GearType,
@@ -204,6 +205,14 @@ export const api = {
 
   /** Les spots maison, le favori du profil en tête. N'ingère rien non plus. */
   favoriteSpots: () => request<SpotHit[]>("/spots/favorites"),
+
+  /** Les favoris classés du meilleur au moins bon, aujourd'hui et demain.
+   *  N'ingère rien : les favoris sont au niveau `home` et déjà rafraîchis
+   *  toutes les trois heures. */
+  favoritesRanking: (days = 2) =>
+    request<FavoriteRankingEntry[]>(
+      `/spots/favorites/ranking${query({ days })}`,
+    ),
 
   /** La dépense estimée du jour — surf et séances. Sous `/expenditure` et
    *  pas sous `/nutrition` : c'est l'écran Jour qui la regarde le matin, et
