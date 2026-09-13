@@ -23,7 +23,10 @@ import argparse
 import asyncio
 import logging
 
+from sqlalchemy import select
+
 from app.db.database import async_session
+from app.models.user import User
 from app.services.exercise_images import borrow_missing_images
 from app.services.formula_repair import repair_formulas
 from app.services.training import ensure_training_seeded
@@ -36,7 +39,15 @@ logger = logging.getLogger("repair_training")
 
 async def run(dry_run: bool) -> None:
     async with async_session() as db:
-        await ensure_training_seeded(db)
+        # Le semis des objectifs est par utilisateur ; celui du catalogue et
+        # des formules ne l'est pas. On prend le premier utilisateur — il n'y
+        # en a qu'un (cf. PROJET.md §10.7) — et on ne sème rien s'il n'existe
+        # pas encore : la réparation n'a pas à créer de compte.
+        user_id = (await db.execute(select(User.id).limit(1))).scalar_one_or_none()
+        if user_id is None:
+            print("Aucun utilisateur : rien à semer.")
+            return
+        await ensure_training_seeded(db, user_id)
 
         print("\n── Images empruntées ───────────────────────────────────────")
         borrowed = await borrow_missing_images(db, dry_run=dry_run)
