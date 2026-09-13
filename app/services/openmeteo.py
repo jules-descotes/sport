@@ -264,6 +264,38 @@ class OpenMeteoClient:
 
         return bundle
 
+    async def fetch_sea_level(
+        self,
+        lat: float,
+        lon: float,
+        past_days: int = 30,
+        forecast_days: int = 6,
+    ) -> HourlyBundle:
+        """Niveau marin seul, passé compris — la source du coefficient de marée.
+
+        **Un seul appel** au lieu des trois de `fetch_forecast` : le marégraphe
+        de Brest n'a que faire des vagues et du vent, et ce serait deux appels
+        par passe pour des colonnes que personne ne lira jamais.
+
+        `past_days` est ce qui rend le calcul possible dès le premier jour : le
+        niveau moyen du modèle se mesure sur trente jours glissants, et sans ce
+        paramètre il faudrait attendre un mois de passes pour en accumuler
+        autant. Open-Meteo va jusqu'à 92 jours en arrière sur le même appel.
+        """
+        payload = await self._get(
+            settings.openmeteo_marine_url,
+            {
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "sea_level_height_msl",
+                "past_days": past_days,
+                "forecast_days": forecast_days,
+                "timezone": "UTC",
+                "cell_selection": "sea",
+            },
+        )
+        return parse_hourly(payload)
+
     # -- Archive -----------------------------------------------------------
 
     async def fetch_archive(

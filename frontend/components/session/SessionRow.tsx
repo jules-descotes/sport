@@ -3,7 +3,13 @@
 import Link from "next/link";
 
 import { IconChevronRight } from "@/components/ui/Icons";
-import { clockLabel, durationLabel, scoreClass, shortDate } from "@/lib/format";
+import {
+  clockLabel,
+  durationLabel,
+  energyLabel,
+  scoreClass,
+  shortDate,
+} from "@/lib/format";
 import type { SurfSession } from "@/lib/types";
 
 /**
@@ -67,6 +73,18 @@ export function SessionRow({ session }: { session: SurfSession }) {
             {session.gear ? ` · ${session.gear.name}` : ""}
             {session.wave_count !== null ? ` · ${session.wave_count} vagues` : ""}
           </span>
+        </span>
+
+        {/* L'énergie de la houle, en colonne (décidé le 13/09). Même grandeur
+            et même constante que l'écran Surf. Elle est ici et pas la hauteur
+            seule parce que c'est elle qui sépare deux sessions d'un mètre :
+            à 7 s et à 15 s, ce n'est pas la même mer. Masquée sous 360 px,
+            où la ligne est déjà pleine. */}
+        <span className="tabular hidden w-[52px] shrink-0 text-right min-[360px]:block">
+          <span className="block text-[14px] font-semibold text-ink-2">
+            {energyLabel(session.wave_energy_kj)}
+          </span>
+          <span className="block text-[11px] text-mute">kJ</span>
         </span>
 
         {pending ? (

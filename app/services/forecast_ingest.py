@@ -41,6 +41,10 @@ from app.services.openmeteo import (
     HourlyBundle,
     OpenMeteoClient,
 )
+from app.services.tide_coefficient import (
+    REFERENCE_MODEL,
+    ensure_reference_spot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,7 @@ async def upsert_forecast_rows(
     fetched_at: Optional[datetime] = None,
     run_ts: Optional[datetime] = None,
     source: str = "open-meteo",
+    model: Optional[str] = None,
 ) -> int:
     """Écrit les lignes horaires d'un run. Renvoie le nombre de lignes soumises.
 
@@ -96,7 +101,7 @@ async def upsert_forecast_rows(
             "ts": ts,
             "source": source,
             "run_ts": run_ts,
-            "model": settings.forecast_wave_model,
+            "model": model or settings.forecast_wave_model,
             "model_version": settings.forecast_model_version,
             "fetched_at": fetched_at,
             **values,
@@ -185,7 +190,15 @@ async def refresh_spots(
     async with OpenMeteoClient(budget=budget) as client:
         for spot in spots:
             try:
-                bundle = await client.fetch_forecast(spot.lat, spot.lon)
+                # Le marégraphe de Brest ne sert que le coefficient de marée :
+                # un appel de niveau marin, passé compris, et rien d'autre.
+                # Lui demander la houle et le vent coûterait deux appels par
+                # passe pour des colonnes que personne ne lira jamais.
+                bundle = (
+                    await client.fetch_sea_level(spot.lat, spot.lon)
+                    if spot.is_reference
+                    else await client.fetch_forecast(spot.lat, spot.lon)
+                )
             except CallBudgetExhausted as exc:
                 logger.warning("Ingestion interrompue : %s", exc)
                 break
@@ -197,7 +210,17 @@ async def refresh_spots(
                 )
                 continue
 
-            written = await upsert_forecast_rows(db, spot.id, bundle, run_ts=run_ts)
+            written = await upsert_forecast_rows(
+                db,
+                spot.id,
+                bundle,
+                run_ts=run_ts,
+                # Le modèle écrit sur la ligne doit être celui qui a produit la
+                # donnée : ces lignes-là ne portent que le niveau marin, et
+                # les étiqueter MFWAM ferait mentir l'historique
+                # d'apprentissage (cf. PROJET.md §7.3).
+                model=REFERENCE_MODEL if spot.is_reference else None,
+            )
             done += 1
             logger.info("%s : %d heures écrites", spot.slug, written)
 
@@ -264,8 +287,15 @@ async def ensure_fresh(
 
 
 async def ingest_forecasts() -> None:
-    """Passe planifiée : les spots `home`, et eux seuls."""
+    """Passe planifiée : les spots `home`, et eux seuls.
+
+    Le marégraphe de Brest en fait partie de droit (`is_reference`) : il est
+    semé ici s'il manque, parce que c'est la passe d'ingestion qui en a besoin
+    et qu'un spot semé par une migration serait figé pour toujours.
+    """
     async with async_session() as db:
+        await ensure_reference_spot(db)
+
         result = await db.execute(
             select(Spot)
             .where(Spot.tier == SpotTier.HOME.value)

@@ -130,9 +130,32 @@ export interface SlotDetail {
   sunset: string | null;
   run_ts: string | null;
   previous_run_ts: string | null;
+  /** Coefficient de la pleine mer la plus proche de ce créneau. */
+  tide_coefficient: number | null;
+  tide_coefficient_approximate: boolean;
   /** Écarts signés depuis le run de la veille au soir. Directions repliées
    *  par le court chemin : 350° → 10° vaut +20°. */
   delta: Record<string, number>;
+}
+
+/**
+ * Une pleine mer et son coefficient — calculé à Brest, national par définition.
+ *
+ * `approximate` se rend par un « ≈ » devant le chiffre. Il est vrai tant que
+ * l'écart mesuré contre l'annuaire SHOM dépasse cinq points
+ * (`docs/COEFFICIENT-MAREE.md`), ou que la fenêtre de référence de trente jours
+ * n'est pas encore remplie.
+ */
+export interface TideCoefficientMark {
+  ts: string;
+  value: number;
+  approximate: boolean;
+  reason: string | null;
+}
+
+export interface TideCoefficientDay {
+  day: string;
+  marks: TideCoefficientMark[];
 }
 
 export interface SpotForecast {
@@ -278,6 +301,9 @@ export interface SurfSession {
   /** Non nul = en corbeille. Trente jours, puis purge. */
   deleted_at: string | null;
   created_at: string;
+  /** Énergie de la houle à l'heure de la session — la colonne de l'historique.
+   *  Dérivée du snapshot côté serveur : une seule constante, un seul chiffre. */
+  wave_energy_kj: number | null;
 }
 
 /** Un snapshot mis de côté, avec la raison qui l'a fait refaire. */
@@ -307,6 +333,9 @@ export interface SnapshotEntry {
   wind_direction_deg: number | null;
   sea_level_m: number | null;
   water_temperature_c: number | null;
+  /** Calculée à la lecture depuis H et T, jamais stockée — même constante
+   *  que l'écran Surf (0,49 × H² × T, en kJ/s par mètre de crête). */
+  wave_energy_kj: number | null;
 }
 
 /**

@@ -3,11 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.models.enums import Discipline, SessionStatus
 from app.schemas.gear import GearRead
 from app.schemas.spot import SpotRead
+from app.services.geo import wave_energy_kj
 from app.schemas.types import UtcDatetime
 
 
@@ -79,8 +86,79 @@ class SurfSessionQuick(BaseModel):
     client_uuid: Optional[str] = Field(default=None, max_length=64)
 
 
+def _with_energy(entries: Any) -> list[dict[str, Any]]:
+    """Recopie les points d'une fenêtre en leur ajoutant l'énergie de houle.
+
+    **Calculée à la lecture, jamais stockée.** L'énergie est une fonction pure
+    de la hauteur et de la période, toutes deux déjà figées dans le snapshot :
+    la stocker ferait une troisième copie de la même information, qui finirait
+    par diverger le jour où la constante bougerait.
+
+    Et elle est calculée **ici**, côté serveur, avec la même fonction que
+    l'écran Surf. Deux implémentations de `0,49 × H² × T` — une par écran —
+    afficheraient un jour deux chiffres différents pour la même houle, et la
+    seule chose à en conclure serait qu'on ne peut se fier à aucun des deux.
+
+    La forme brute `H²T` du vecteur de features ne bouge pas : elle vit dans
+    `geo.wave_energy`, sans constante, et c'est elle qui entre dans le modèle
+    (cf. CLAUDE.md, registre §7.4, feature 9).
+    """
+    if not isinstance(entries, list):
+        return []
+    enriched: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        # Copie : le dictionnaire vient de la colonne JSON de l'ORM, et le
+        # modifier sur place retoucherait l'objet en session.
+        point = dict(entry)
+        height = point.get("wave_height_m")
+        period = point.get("wave_period_s")
+        point["wave_energy_kj"] = (
+            None
+            if height is None or period is None
+            else round(wave_energy_kj(height, period), 1)
+        )
+        enriched.append(point)
+    return enriched
+
+
 class SurfSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("conditions_snapshot", mode="after")
+    @classmethod
+    def _add_energy(cls, value: Any) -> Optional[dict[str, Any]]:
+        """L'énergie s'ajoute aux deux volets, et à eux seuls."""
+        if not isinstance(value, dict):
+            return value
+        snapshot = dict(value)
+        for side in ("forecast", "observed"):
+            if side in snapshot:
+                snapshot[side] = _with_energy(snapshot[side])
+        return snapshot
+
+    @model_validator(mode="after")
+    def _headline_energy(self) -> "SurfSessionRead":
+        """L'énergie de la session : celle de T0, mesurée de préférence.
+
+        Une colonne dans l'historique a besoin d'un seul chiffre, pas d'une
+        fenêtre. On prend l'heure de la session elle-même (`offset_h == 0`), et
+        on préfère le volet `observed` : c'est ce qui s'est passé, pas ce qui
+        était annoncé — et c'est la grandeur sur laquelle le modèle de goût
+        s'entraîne (cf. PROJET.md §7.3).
+        """
+        snapshot = self.conditions_snapshot
+        if not isinstance(snapshot, dict):
+            return self
+        for side in ("observed", "forecast"):
+            for entry in snapshot.get(side) or []:
+                if isinstance(entry, dict) and entry.get("offset_h") == 0:
+                    energy = entry.get("wave_energy_kj")
+                    if energy is not None:
+                        self.wave_energy_kj = energy
+                        return self
+        return self
 
     @field_validator("snapshot_history", mode="before")
     @classmethod
@@ -126,6 +204,10 @@ class SurfSessionRead(BaseModel):
     # Non nul = en corbeille. Trente jours, puis purge par le job planifié.
     deleted_at: Optional[UtcDatetime] = None
     created_at: UtcDatetime
+    # Énergie de la houle à l'heure de la session, en kJ/s par mètre de crête.
+    # Dérivée du snapshot à la lecture (cf. `_headline_energy`), jamais stockée :
+    # c'est la colonne « énergie » de l'historique, et le chiffre du détail.
+    wave_energy_kj: Optional[float] = None
 
 
 class QuickSessionResponse(BaseModel):

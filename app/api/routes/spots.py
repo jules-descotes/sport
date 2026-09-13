@@ -54,6 +54,10 @@ from app.services.scoring import (
     score_conditions,
 )
 from app.services.spot_catalog import resolve_spot, unique_slug
+from app.services.tide_coefficient import (
+    coefficients as tide_coefficients,
+    nearest_mark,
+)
 from app.services.webcams import WebcamUrlError, normalize_webcam_url
 from app.services.sun import is_daylight, sun_events
 from app.services.spot_tiers import (
@@ -111,6 +115,9 @@ async def spots_nearby(
         select(Spot)
         .where(Spot.lat.between(min_lat, max_lat))
         .where(Spot.lon.between(min_lon, max_lon))
+        # Le marégraphe de Brest est un spot en base, pas un lieu de surf : il
+        # ne doit apparaître dans aucune liste d'écran.
+        .where(Spot.is_reference.is_(False))
     )
 
     radius_m = radius_km * 1000.0
@@ -166,6 +173,7 @@ async def search_spots(
     result = await db.execute(
         select(Spot)
         .where(func.lower(Spot.name).like(f"%{needle}%"))
+        .where(Spot.is_reference.is_(False))
         .limit(limit * 4)
     )
 
@@ -213,7 +221,9 @@ async def list_favorites(
     if not ids:
         return []
 
-    result = await db.execute(select(Spot).where(Spot.id.in_(ids)))
+    result = await db.execute(
+        select(Spot).where(Spot.id.in_(ids)).where(Spot.is_reference.is_(False))
+    )
     by_id = {spot.id: spot for spot in result.scalars().all()}
 
     return [
@@ -574,6 +584,12 @@ async def spot_slot(
 
     sunrise, sunset = sun_events(target.date(), spot.lat, spot.lon)
 
+    # Le coefficient de la pleine mer la plus proche. Il est calculé à Brest et
+    # vaut pour toute la côte : c'est sa définition, pas un raccourci.
+    mark = nearest_mark(
+        await tide_coefficients(db, target.date(), 1), target
+    )
+
     return SlotDetail(
         point=point,
         spot=SpotRead.model_validate(spot),
@@ -588,6 +604,8 @@ async def spot_slot(
         run_ts=delta.run_ts or _utc(forecast.run_ts),
         previous_run_ts=delta.previous_run_ts,
         delta=delta.changes,
+        tide_coefficient=None if mark is None else mark.value,
+        tide_coefficient_approximate=bool(mark and mark.approximate),
     )
 
 

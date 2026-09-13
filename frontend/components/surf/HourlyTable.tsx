@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { DirectionArrow } from "@/components/surf/DirectionArrow";
 import {
+  coefficientLabel,
   dayLabel,
   localDayKey,
   num,
@@ -12,7 +13,11 @@ import {
   windSideShort,
   windSpeedClass,
 } from "@/lib/format";
-import type { ForecastPoint, SunDay } from "@/lib/types";
+import type {
+  ForecastPoint,
+  SunDay,
+  TideCoefficientDay,
+} from "@/lib/types";
 
 /**
  * **Le tableau horaire** — Windguru, en plus moderne (décidé le 13/09).
@@ -56,8 +61,10 @@ const COL_WIDTH = 46;
 const DESKTOP_COL_WIDTH = 30;
 /** Largeur de la colonne figée des libellés. */
 const LABEL_WIDTH = 62;
-/** Hauteur de la mini-courbe de marée. */
-const TIDE_HEIGHT = 34;
+/** Hauteur de la mini-courbe de marée, coefficient compris au-dessus du sommet. */
+const TIDE_HEIGHT = 52;
+/** Marge haute réservée au coefficient : la courbe ne monte jamais dedans. */
+const TIDE_TOP_PAD = 18;
 
 interface Day {
   key: string;
@@ -79,6 +86,8 @@ interface HourlyTableProps {
   onToggleSecondary: () => void;
   /** Largeur d'une colonne d'heure — `COL_WIDTH` au doigt, moins à la souris. */
   colWidth?: number;
+  /** Les coefficients des pleines mers, révélés sur la ligne marée. */
+  coefficients?: TideCoefficientDay[];
 }
 
 function groupByDay(points: ForecastPoint[]): Day[] {
@@ -136,12 +145,51 @@ function RowLabel({
  * affichée, pas sur la journée : une courbe qui se remettrait à l'échelle à
  * chaque jour ferait croire à des marnages égaux.
  */
+/**
+ * Le coefficient d'une pleine mer donnée, cherché par proximité d'heure.
+ *
+ * Nos sommets sont ceux du **spot** ; les coefficients viennent du marégraphe
+ * de **Brest**. Les deux tombent à des heures différentes — jusqu'à deux
+ * heures d'écart le long de la côte, et une demi-heure de biais propre au
+ * modèle (`docs/COEFFICIENT-MAREE.md`). On apparie donc par proximité, avec
+ * une fenêtre de six heures : au-delà, c'est l'autre marée du jour.
+ */
+function coefficientNear(
+  marks: TideCoefficientMarkLite[],
+  iso: string,
+): TideCoefficientMarkLite | null {
+  if (marks.length === 0) return null;
+  const target = new Date(iso).getTime();
+  let best = marks[0];
+  for (const mark of marks) {
+    if (
+      Math.abs(new Date(mark.ts).getTime() - target) <
+      Math.abs(new Date(best.ts).getTime() - target)
+    ) {
+      best = mark;
+    }
+  }
+  return Math.abs(new Date(best.ts).getTime() - target) <= 6 * 3_600_000
+    ? best
+    : null;
+}
+
+interface TideCoefficientMarkLite {
+  ts: string;
+  value: number;
+  approximate: boolean;
+}
+
 function TideCurve({
   points,
   colWidth,
+  marks,
+  showCoefficients,
 }: {
   points: ForecastPoint[];
   colWidth: number;
+  marks: TideCoefficientMarkLite[];
+  showCoefficients: boolean;
 }) {
   const levels = points.map((point) => point.sea_level_m);
   const known = levels.filter((value): value is number => value !== null);
@@ -166,7 +214,9 @@ function TideCurve({
     const y =
       level === null
         ? null
-        : TIDE_HEIGHT - 3 - ((level - low) / span) * (TIDE_HEIGHT - 8);
+        : TIDE_HEIGHT
+          - 3
+          - ((level - low) / span) * (TIDE_HEIGHT - 8 - TIDE_TOP_PAD);
     return { x, y };
   });
 
@@ -207,6 +257,13 @@ function TideCurve({
         const isLow = level <= previous && level <= next && level < previous;
         if (!isHigh && !isLow) return null;
 
+        // Le coefficient ne qualifie que la **pleine** mer : c'est sa
+        // définition (H_PM − N0). L'accrocher à une basse mer n'aurait aucun
+        // sens, même si le chiffre est le même pour la journée.
+        const mark = isHigh && showCoefficients
+          ? coefficientNear(marks, point.ts)
+          : null;
+
         return (
           <g key={point.ts}>
             <circle cx={coord.x} cy={coord.y} r={2.5} fill="currentColor" />
@@ -218,6 +275,16 @@ function TideCurve({
             >
               {num(level)}
             </text>
+            {mark ? (
+              <text
+                x={coord.x}
+                y={coord.y - 16}
+                textAnchor="middle"
+                className="fill-current text-[11px] font-bold"
+              >
+                {coefficientLabel(mark.value, mark.approximate)}
+              </text>
+            ) : null}
           </g>
         );
       })}
@@ -234,7 +301,22 @@ export function HourlyTable({
   secondaryOpen,
   onToggleSecondary,
   colWidth = COL_WIDTH,
+  coefficients = [],
 }: HourlyTableProps) {
+  /**
+   * La ligne marée révèle les coefficients — au survol sur desktop, au tap sur
+   * téléphone (décidé le 13/09).
+   *
+   * Ils ne sont pas affichés en permanence : deux chiffres de plus par jour sur
+   * une matrice déjà dense, pour une information qu'on ne cherche qu'une fois
+   * par semaine, c'est du bruit sur la seule vue qu'on lit en balayant.
+   */
+  const [tideRevealed, setTideRevealed] = useState(false);
+
+  const marks = useMemo(
+    () => coefficients.flatMap((day) => day.marks),
+    [coefficients],
+  );
   const days = useMemo(() => groupByDay(points), [points]);
 
   const hasSecondary = useMemo(
@@ -552,12 +634,41 @@ export function HourlyTable({
           </tr>
 
           {/* ── Marée : un trait continu sur toute la largeur ─────────── */}
-          <tr>
-            <RowLabel unit="m" title="Niveau de la mer, et sens de la marée">
-              Marée
-            </RowLabel>
+          <tr
+            onMouseEnter={() => setTideRevealed(true)}
+            onMouseLeave={() => setTideRevealed(false)}
+          >
+            <th
+              scope="row"
+              className="sticky left-0 z-20 border-r border-line bg-card p-0 text-left"
+              style={{ width: LABEL_WIDTH, minWidth: LABEL_WIDTH }}
+            >
+              <button
+                type="button"
+                onClick={() => setTideRevealed((open) => !open)}
+                aria-expanded={tideRevealed}
+                title={
+                  "Niveau de la mer, et sens de la marée. Touche la ligne pour "
+                  + "le coefficient de chaque pleine mer — calculé à Brest, "
+                  + "national par définition."
+                }
+                className="flex min-h-[34px] w-full flex-col justify-center px-2 text-left"
+              >
+                <span className="block text-[12px] font-semibold leading-tight text-ink">
+                  Marée
+                </span>
+                <span className="block text-[11px] leading-tight text-mute">
+                  {marks.length > 0 ? "m · coef." : "m"}
+                </span>
+              </button>
+            </th>
             <td colSpan={points.length} className="border-b border-line p-0">
-              <TideCurve points={points} colWidth={colWidth} />
+              <TideCurve
+                points={points}
+                colWidth={colWidth}
+                marks={marks}
+                showCoefficients={tideRevealed}
+              />
             </td>
           </tr>
 

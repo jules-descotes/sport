@@ -23,6 +23,7 @@ from app.services.forecast_ingest import (
     stale_spot_ids,
     upsert_forecast_rows,
 )
+from app.services.tide_coefficient import BREST_LAT
 from app.services.openmeteo import (
     CallBudget,
     CallBudgetExhausted,
@@ -214,6 +215,7 @@ class FakeClient:
     def __init__(self, budget: Optional[CallBudget] = None, fail_for: tuple = ()) -> None:
         self.budget = budget or CallBudget()
         self.calls: list[tuple[float, float]] = []
+        self.sea_level_calls: list[tuple[float, float, int]] = []
         self.fail_for = fail_for
 
     async def __aenter__(self) -> "FakeClient":
@@ -229,6 +231,16 @@ class FakeClient:
         self.calls.append((lat, lon))
         if lat in self.fail_for:
             raise httpx.ConnectError("Open-Meteo injoignable")
+        return bundle(hours=6)
+
+    async def fetch_sea_level(
+        self, lat: float, lon: float, past_days: int = 30, forecast_days: int = 6
+    ):
+        # Le marégraphe de Brest n'en consomme **qu'un** : niveau marin seul.
+        # Compter trois ici masquerait une régression qui redemanderait la
+        # houle et le vent pour rien.
+        self.budget.take()
+        self.sea_level_calls.append((lat, lon, past_days))
         return bundle(hours=6)
 
 
@@ -321,17 +333,46 @@ async def test_scheduled_pass_only_touches_home_spots(
     assert created[0].calls == [(home.lat, home.lon)]
 
 
-async def test_scheduled_pass_without_home_spots_calls_nothing(
+async def test_scheduled_pass_without_home_spots_asks_for_no_surf_forecast(
     db_session, make_spot, fake_openmeteo, patch_session_factory
 ) -> None:
-    """Zéro appel tant que personne n'a mis de favori."""
+    """Zéro prévision de surf tant que personne n'a mis de favori.
+
+    Le marégraphe de Brest est la seule exception, et elle est délibérée : il
+    n'est pas un favori, c'est la source du coefficient de marée, et il
+    coûte **un** appel de niveau marin par passe. Sans lui, l'app n'aurait
+    aucun coefficient à afficher tant qu'aucun spot n'est choisi.
+    """
     created = fake_openmeteo()
     patch_session_factory(forecast_ingest, db_session)
     await make_spot(tier=SpotTier.POTENTIAL.value)
 
     await ingest_forecasts()
 
-    assert created == []
+    assert created[0].calls == []
+    assert [lat for lat, _, _ in created[0].sea_level_calls] == [BREST_LAT]
+    assert created[0].budget.used == 1
+
+
+async def test_the_reference_station_survives_a_tier_recomputation(
+    db_session, make_spot, fake_openmeteo, patch_session_factory, user
+) -> None:
+    """Brest reste `home` quoi que Jules mette en favori.
+
+    Sans `is_reference`, la première connexion — qui recalcule les niveaux —
+    le renverrait au catalogue, l'ingestion s'arrêterait et le coefficient
+    disparaîtrait de l'app sans que rien ne le dise.
+    """
+    from app.services.spot_tiers import get_or_create_preferences, recompute_tiers
+    from app.services.tide_coefficient import ensure_reference_spot
+
+    reference = await ensure_reference_spot(db_session)
+    preferences = await get_or_create_preferences(db_session, user.id)
+    await recompute_tiers(db_session, preferences)
+
+    await db_session.refresh(reference)
+    assert reference.tier == SpotTier.HOME.value
+    assert reference.is_active is True
 
 
 # ── À la demande : les cinq secondes ───────────────────────────────────────

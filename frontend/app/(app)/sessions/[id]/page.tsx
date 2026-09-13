@@ -10,14 +10,41 @@ import { api } from "@/lib/api";
 import {
   boardLength,
   clockLabel,
+  coefficientLabel,
   compass,
+  energyLabel,
   durationLabel,
   fullDayLabel,
   num,
   scoreClass,
   shortDate,
 } from "@/lib/format";
-import type { SnapshotEntry } from "@/lib/types";
+import type { SnapshotEntry, TideCoefficientDay, TideCoefficientMark } from "@/lib/types";
+
+/**
+ * Le coefficient de la pleine mer la plus proche d'un instant.
+ *
+ * Une journée en porte deux, et elles diffèrent de quelques points : celle du
+ * matin n'est pas celle du soir. La fenêtre de six heures évite d'attraper
+ * l'autre marée quand la session tombe entre les deux.
+ */
+function nearestCoefficient(
+  days: TideCoefficientDay[],
+  iso: string,
+): TideCoefficientMark | null {
+  const marks = days.flatMap((day) => day.marks);
+  if (marks.length === 0) return null;
+  const target = new Date(iso).getTime();
+  const best = marks.reduce((closest, mark) =>
+    Math.abs(new Date(mark.ts).getTime() - target) <
+    Math.abs(new Date(closest.ts).getTime() - target)
+      ? mark
+      : closest,
+  );
+  return Math.abs(new Date(best.ts).getTime() - target) <= 6 * 3_600_000
+    ? best
+    : null;
+}
 
 /**
  * **Détail d'une session** — ce qui a été noté, et ce qu'il y avait dans l'eau.
@@ -41,6 +68,12 @@ const ROWS: { key: keyof SnapshotEntry; label: string; decimals: number; unit: s
   [
     { key: "wave_height_m", label: "Houle", decimals: 1, unit: "m" },
     { key: "wave_period_s", label: "Période", decimals: 0, unit: "s" },
+    // Même grandeur et même constante que la ligne « Énergie » de l'écran
+    // Surf — 0,49 × H² × T, calculée côté serveur pour qu'il n'y ait qu'un
+    // seul chiffre possible (décidé le 13/09). Elle est dans la fenêtre parce
+    // que c'est là qu'elle dit quelque chose : une houle qui monte de 8 à
+    // 14 kJ en deux heures, c'est la session qui s'ouvre.
+    { key: "wave_energy_kj", label: "Énergie", decimals: 1, unit: "kJ" },
     { key: "wind_speed_kt", label: "Vent", decimals: 0, unit: "kt" },
     { key: "wind_gust_kt", label: "Rafales", decimals: 0, unit: "kt" },
     { key: "sea_level_m", label: "Niveau", decimals: 2, unit: "m" },
@@ -162,6 +195,14 @@ export default function SessionDetailPage() {
     enabled: Number.isFinite(sessionId),
   });
 
+  const tides = useQuery({
+    queryKey: ["tide-coefficients", "session", sessionId],
+    queryFn: () =>
+      api.tideCoefficients(data ? data.started_at.slice(0, 10) : undefined, 1),
+    enabled: data !== undefined,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
   const remove = useMutation({
     mutationFn: () => api.deleteSession(sessionId),
     onSuccess: () => {
@@ -189,6 +230,15 @@ export default function SessionDetailPage() {
 
   const snapshot = data.conditions_snapshot;
   const entry = snapshot?.observed.find((item) => item.offset_h === 0);
+
+  // Le coefficient de la marée de la session. Il n'est pas figé dans le
+  // snapshot : c'est une grandeur du **jour**, calculée à Brest, et elle se
+  // relit à l'identique tant que le niveau marin de cette date est en base.
+  // La figer en ferait une troisième copie à maintenir.
+  const coefficient = nearestCoefficient(
+    tides.data ?? [],
+    data.started_at,
+  );
 
   return (
     <main className="pb-10">
@@ -255,9 +305,20 @@ export default function SessionDetailPage() {
       {entry ? (
         <p className="tabular px-5 pt-4 text-[14px] text-ink-2">
           {num(entry.wave_height_m)} m · {num(entry.wave_period_s, 0)} s ·{" "}
-          {compass(entry.wave_direction_deg)} · vent{" "}
-          {compass(entry.wind_direction_deg)} {num(entry.wind_speed_kt, 0)} kt ·
-          eau {num(entry.water_temperature_c, 0)} °C
+          {compass(entry.wave_direction_deg)}
+          {data.wave_energy_kj !== null
+            ? ` · ${energyLabel(data.wave_energy_kj)} kJ`
+            : ""}{" "}
+          · vent {compass(entry.wind_direction_deg)}{" "}
+          {num(entry.wind_speed_kt, 0)} kt · eau{" "}
+          {num(entry.water_temperature_c, 0)} °C
+          {coefficient ? (
+            <>
+              {" "}
+              · coef.{" "}
+              {coefficientLabel(coefficient.value, coefficient.approximate)}
+            </>
+          ) : null}
         </p>
       ) : null}
 

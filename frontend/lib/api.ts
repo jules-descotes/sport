@@ -21,6 +21,7 @@ import type {
   SpotNearby,
   SpotPreferences,
   SurfSession,
+  TideCoefficientDay,
   TrainingOverview,
   User,
   Workout,
@@ -203,6 +204,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // ── Marées ────────────────────────────────────────────────────────────
+
+  /** Les coefficients des pleines mers, jour par jour.
+   *
+   *  Pas de spot en paramètre, et ce n'est pas un oubli : le coefficient est
+   *  national par définition — le SHOM le calcule à Brest et il vaut de
+   *  Dunkerque à Hendaye. */
+  tideCoefficients: (start?: string, days = 5) =>
+    request<TideCoefficientDay[]>(`/tides/coefficients${query({ start, days })}`),
 
   // ── Sessions ──────────────────────────────────────────────────────────
 

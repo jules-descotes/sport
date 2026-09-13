@@ -109,6 +109,14 @@ async def recompute_tiers(
 
     home_ids = [spot_id for spot_id in favorites if spot_id not in hidden][:HOME_MAX]
 
+    # Les spots de référence (le marégraphe de Brest) sont `home` de droit et
+    # **hors plafond** : ce ne sont pas des favoris, ce sont des sources. Sans
+    # cette ligne, la première connexion les renverrait au catalogue,
+    # l'ingestion s'arrêterait, et le coefficient de marée disparaîtrait de
+    # l'app sans que rien ne le dise.
+    references = await db.execute(select(Spot.id).where(Spot.is_reference.is_(True)))
+    home_ids += [spot_id for spot_id in references.scalars().all() if spot_id not in home_ids]
+
     potential_ids: set[int] = set()
     if preferences.home_lat is not None and preferences.home_lon is not None:
         potential_ids |= await _spot_ids_within(

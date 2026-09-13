@@ -32,6 +32,9 @@ class SpotSource(StrEnum):
 
     OSM = "osm"
     USER = "user"
+    # Posé par l'application elle-même, pas par un import ni par un humain :
+    # aujourd'hui le seul est le marégraphe de Brest.
+    SYSTEM = "system"
 
 
 class SpotType(StrEnum):

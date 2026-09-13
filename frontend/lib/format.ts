@@ -334,3 +334,30 @@ export function localDayKey(iso: string): string {
     "0",
   )}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+/**
+ * Le coefficient de marée tel qu'il s'affiche : « 95 », ou « ≈ 95 ».
+ *
+ * Le « ≈ » n'est pas de la coquetterie. L'écart mesuré contre l'annuaire SHOM
+ * (`docs/COEFFICIENT-MAREE.md`) est de six points au pire, et un chiffre
+ * approximatif annoncé comme exact est pire qu'un chiffre absent : celui-ci,
+ * on sait qu'on ne peut pas s'y fier au point près, et on peut quand même
+ * distinguer une vive-eau d'une morte-eau, ce qui est l'usage réel.
+ */
+export function coefficientLabel(
+  value: number | null | undefined,
+  approximate = false,
+): string {
+  if (value === null || value === undefined) return "—";
+  return approximate ? `≈ ${value}` : String(value);
+}
+
+/**
+ * L'énergie de houle telle qu'elle s'affiche : une décimale sous 10, aucune
+ * au-dessus. Même règle que la ligne « Énergie » du tableau horaire — à 46
+ * kJ/s/m, la décimale ne dit plus rien.
+ */
+export function energyLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return num(value, value < 10 ? 1 : 0);
+}

@@ -7,6 +7,7 @@ import { IconBack } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import {
   clockLabel,
+  coefficientLabel,
   fullDayLabel,
   num,
   scoreClass,
@@ -319,10 +320,26 @@ export function SlotDetailScreen({
               </span>
             ) : null}
           </Row>
-          {/* Le marnage du jour, jamais un coefficient : il se calcule par
-              rapport au marnage de vive-eau moyen d'un port de référence, que
-              ni Open-Meteo ni nous n'avons (cf. CLAUDE.md). */}
-          <Row label="Marnage" hint="du jour — pas un coefficient">
+          {/* Le coefficient, enfin (décidé le 13/09). Il se calcule au port de
+              référence de Brest, et il vaut pour toute la côte : c'est sa
+              définition. Le « ≈ » vient de l'écart mesuré contre l'annuaire
+              SHOM — six points au pire (`docs/COEFFICIENT-MAREE.md`). */}
+          {data.tide_coefficient !== null ? (
+            <Row
+              label="Coefficient"
+              hint={
+                data.tide_coefficient_approximate
+                  ? "calculé à Brest, à quelques points près"
+                  : "calculé à Brest, national par définition"
+              }
+            >
+              {coefficientLabel(
+                data.tide_coefficient,
+                data.tide_coefficient_approximate,
+              )}
+            </Row>
+          ) : null}
+          <Row label="Marnage" hint="du jour — la grandeur mesurée ici">
             {point.tide_range_m === null ? "—" : `${num(point.tide_range_m)} m`}
           </Row>
           <Row label="Niveau">

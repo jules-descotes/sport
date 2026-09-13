@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.models.enums import SessionStatus
 
 NOW = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
@@ -334,3 +336,48 @@ async def test_a_session_of_someone_else_is_invisible(
 
     assert (await auth_client.get(f"/api/v1/sessions/{theirs.id}")).status_code == 404
     assert (await auth_client.get("/api/v1/sessions")).json() == []
+
+
+# ── L'énergie de houle, dans le détail et l'historique ─────────────────────
+
+
+async def test_the_session_carries_the_energy_of_its_window(
+    auth_client, make_spot, fake_archive, archive_bundle
+) -> None:
+    """Même forme et même constante que l'écran Surf (décidé le 13/09).
+
+    L'énergie n'est pas stockée : elle est recalculée à la lecture depuis la
+    hauteur et la période déjà figées dans le snapshot. La stocker ferait une
+    troisième copie de la même information, et un jour trois valeurs.
+    """
+    fake_archive(bundle=archive_bundle(NOW))
+    await make_spot()
+    session = await _quick(auth_client)
+
+    detail = await auth_client.get(f"/api/v1/sessions/{session['id']}")
+    body = detail.json()
+    observed = body["conditions_snapshot"]["observed"]
+
+    # Chaque point de la fenêtre porte son énergie…
+    assert all(point["wave_energy_kj"] is not None for point in observed)
+
+    # …et elle vaut bien 0,49 × H² × T, la constante de l'écran Surf.
+    point = observed[-1]
+    expected = 0.49 * point["wave_height_m"] ** 2 * point["wave_period_s"]
+    assert point["wave_energy_kj"] == pytest.approx(expected, abs=0.05)
+
+    # La colonne de l'historique porte celle de T0, pas une moyenne.
+    at_zero = next(item for item in observed if item["offset_h"] == 0)
+    assert body["wave_energy_kj"] == at_zero["wave_energy_kj"]
+
+
+async def test_a_session_without_snapshot_has_no_energy(
+    auth_client, make_spot, fake_archive
+) -> None:
+    """Pas de fenêtre, pas de chiffre — jamais un zéro, qui se lirait « à plat »."""
+    fake_archive(fail=True)
+    await make_spot()
+    session = await _quick(auth_client)
+
+    detail = await auth_client.get(f"/api/v1/sessions/{session['id']}")
+    assert detail.json()["wave_energy_kj"] is None

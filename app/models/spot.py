@@ -95,6 +95,14 @@ class Spot(Base):
         Boolean, nullable=False, default=False, server_default=func.false()
     )
 
+    # Spot **technique**, pas un lieu de surf : le marégraphe de Brest, qui
+    # sert le coefficient de marée national (cf. `services/tide_coefficient`).
+    # Il reste `home` quoi que Jules mette en favori — ce n'est pas un favori,
+    # c'est une source — et il est écarté de toutes les listes d'écran.
+    is_reference: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=func.false()
+    )
+
     # Étiquettes OSM brutes conservées telles quelles : la couverture est
     # inégale et on ne sait pas encore ce qui servira (surface, hazard, accès).
     osm_tags: Mapped[Optional[dict]] = mapped_column(JSONVariant, nullable=True)

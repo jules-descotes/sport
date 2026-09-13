@@ -211,3 +211,10 @@ class SlotDetail(BaseModel):
     # Écarts signés depuis ce run-là. Les directions sont repliées par le court
     # chemin : 350° → 10° vaut +20°, pas −340°.
     delta: dict[str, float] = {}
+
+    # Coefficient de la pleine mer la plus proche, calculé à Brest — il est
+    # national par définition (cf. `services/tide_coefficient`). Nul tant que
+    # le spot de référence n'a rien en base : une absence se rend à l'écran,
+    # un zéro se lirait comme une morte-eau.
+    tide_coefficient: Optional[int] = None
+    tide_coefficient_approximate: bool = False

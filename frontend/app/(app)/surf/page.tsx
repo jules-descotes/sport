@@ -88,6 +88,21 @@ function SurfScreen() {
     keepPolling: (data) => data.refreshing,
   });
 
+  /**
+   * Les coefficients de marée, sur cinq jours.
+   *
+   * Une requête à part, et **sans spot** : le coefficient est national par
+   * définition (calculé à Brest). L'embarquer dans la prévision du spot
+   * laisserait croire le contraire, et le recalculerait pour chacun des
+   * milliers de spots du catalogue.
+   */
+  const tides = useQuery({
+    queryKey: ["tide-coefficients", DAYS],
+    queryFn: () => api.tideCoefficients(undefined, DAYS),
+    // Une marée ne change pas d'un quart d'heure à l'autre.
+    staleTime: 6 * 60 * 60 * 1000,
+  });
+
   const me = useQuery({ queryKey: ["me"], queryFn: api.me });
   const homeSpotId = me.data?.profile?.home_spot_id ?? null;
 
@@ -272,6 +287,7 @@ function SurfScreen() {
                 secondaryOpen={secondaryOpen}
                 onToggleSecondary={() => setSecondaryOpen((open) => !open)}
                 colWidth={colWidth}
+                coefficients={tides.data ?? []}
               />
 
               <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-[11px] text-mute">
@@ -297,6 +313,9 @@ function SurfScreen() {
                 </li>
                 <li>Colonne pâle : nuit</li>
                 <li>Touche une note pour le détail du créneau</li>
+                {tides.data && tides.data.length > 0 ? (
+                  <li>Touche la ligne marée pour le coefficient</li>
+                ) : null}
               </ul>
 
               <Freshness

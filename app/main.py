@@ -14,6 +14,7 @@ from app.api.routes.gear import router as gear_router
 from app.api.routes.recommend import router as recommend_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.spots import router as spots_router
+from app.api.routes.tides import router as tides_router
 from app.api.routes.training import router as training_router
 from app.core.config import settings
 from app.core.security import hash_password
@@ -130,6 +131,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(spots_router, prefix="/api/v1")
+app.include_router(tides_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
 app.include_router(daily_log_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
