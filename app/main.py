@@ -27,40 +27,17 @@ from app.core.security import hash_password
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.database import async_session
 
-# Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
-# Alembic la cible de l'autogénération).
-from app.models.api_quota import ApiQuota  # noqa: F401
-from app.models.calibration import ForecastVsObserved  # noqa: F401
-from app.models.api_token import ApiToken  # noqa: F401
-from app.models.daily_log import DailyLog  # noqa: F401
-from app.models.exercise import Exercise  # noqa: F401
-from app.models.forecast import Forecast, Observation  # noqa: F401
-from app.models.formula import Formula, FormulaItem  # noqa: F401
-from app.models.gear import Gear  # noqa: F401
-from app.models.habit import Habit, HabitEvent  # noqa: F401
-from app.models.nutrition import (  # noqa: F401
-    BodyMetric,
-    Food,
-    FoodLog,
-    MealPlan,
-    MealPlanItem,
-    NutritionProfile,
-    Recipe,
-    RecipeItem,
-)
-from app.models.observation_station import ObservationStation  # noqa: F401
-from app.models.objective import (  # noqa: F401
-    Objective,
-    ObjectiveMeasurement,
-)
-from app.models.profile import Profile  # noqa: F401
-from app.models.session_segment import SessionSegment  # noqa: F401
-from app.models.spot import Spot, SpotPreference  # noqa: F401
-from app.models.spot_rule import SpotRule  # noqa: F401
-from app.models.surf_session import SurfSession  # noqa: F401
-from app.models.thresholds import UserThresholds  # noqa: F401
-from app.models.user import User  # noqa: F401
-from app.models.workout import WorkoutSession, WorkoutSet  # noqa: F401
+# Enregistrement des modèles SQLAlchemy — **une seule ligne, et c'est le
+# sujet**. Elle vivait ici sous la forme de vingt-deux imports tenus à la
+# main, ce qui voulait dire que le serveur avait la liste complète et les
+# scripts, non : `scripts/import_candhis_stations.py` tombait le 15/09 sur un
+# `InvalidRequestError` parce que `Profile` ne trouvait pas `User`. La liste
+# est maintenant dans `app/models/__init__.py`, et tout le monde passe par là.
+from app.models import load_all_models
+from app.models.profile import Profile
+from app.models.user import User
+
+load_all_models()
 
 # Les journaux applicatifs doivent remonter dans les logs Railway.
 logging.basicConfig(

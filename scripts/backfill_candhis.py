@@ -35,6 +35,7 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.db.database import async_session
+from app.models import load_all_models
 from app.models.surf_session import SurfSession
 from app.services.calibration import build_pairs
 from app.services.candhis import CandhisClient, day_chunks
@@ -44,6 +45,11 @@ from app.services.observations import (
     station_by_code,
 )
 from app.services.quota import QuotaExhausted, remaining
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"

@@ -45,6 +45,7 @@ import httpx
 from sqlalchemy import select
 
 from app.db.database import async_session
+from app.models import load_all_models
 from app.models.exercise import Exercise
 from app.services.exercise_taxonomy import (
     EQUIPMENT_LABELS,
@@ -56,6 +57,11 @@ from app.services.exercise_taxonomy import (
     french_name,
 )
 from app.services.training_catalog import normalize_name
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"

@@ -35,14 +35,16 @@ from typing import Optional, Sequence
 from sqlalchemy import select
 
 from app.db.database import async_session
-from app.models.spot import Spot  # noqa: F401
+from app.models import load_all_models
 from app.models.surf_session import SurfSession
-# `Profile` porte une relation vers `User` : sans lui, la configuration des
-# mappers SQLAlchemy échoue avant la première requête.
-from app.models.user import User  # noqa: F401
 from app.services.backfill import window_offsets, window_timestamps
 from app.services.observations import station_by_code, station_window_values
 from app.services.sessions import archive_snapshot
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"

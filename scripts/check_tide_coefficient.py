@@ -30,6 +30,7 @@ import sys
 from datetime import UTC, date, datetime, timedelta
 
 from app.services.openmeteo import OpenMeteoClient
+from app.models import load_all_models
 from app.services.tide_coefficient import (
     BREST_LAT,
     BREST_LON,
@@ -37,6 +38,11 @@ from app.services.tide_coefficient import (
     TideMark,
     marks_from_levels,
 )
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 # Au-delà, l'app affiche « ≈ » : l'écart n'est plus du bruit d'arrondi.
 TOLERANCE = 5

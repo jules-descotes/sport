@@ -77,6 +77,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.database import async_session
+from app.models import load_all_models
 from app.models.enums import SpotSource, SpotType
 from app.models.spot import Spot, SpotPreference
 from app.models.surf_session import SurfSession
@@ -86,6 +87,11 @@ from app.services.geo import (
     onshore_from_coast_bearing,
 )
 from app.services.spot_catalog import slugify
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s - %(message)s"

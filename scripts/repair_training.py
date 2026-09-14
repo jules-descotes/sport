@@ -25,16 +25,17 @@ import logging
 
 from sqlalchemy import select
 
-# `app.main` et rien d'autre : c'est lui qui importe **tous** les modèles, donc
-# le seul endroit où le registre SQLAlchemy est complet. Importer `User` seul
-# fait échouer la configuration de son mapper sur `Profile`, qui n'est alors
-# nulle part — constaté au premier lancement en production.
-import app.main  # noqa: F401
 from app.db.database import async_session
+from app.models import load_all_models
 from app.models.user import User
 from app.services.exercise_images import borrow_missing_images
 from app.services.formula_repair import repair_formulas
 from app.services.training import ensure_training_seeded
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(levelname)s %(name)s - %(message)s"

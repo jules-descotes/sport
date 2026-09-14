@@ -34,6 +34,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.database import async_session
+from app.models import load_all_models
 from app.models.observation_station import ObservationStation
 from app.services.candhis import (
     HOULOGRAPHE_TYPES,
@@ -46,6 +47,11 @@ from app.services.candhis import (
 )
 from app.services.observations import link_spots_to_stations
 from app.services.quota import QuotaExhausted, remaining
+
+# Tous les modèles, pas seulement ceux dont ce script parle : SQLAlchemy
+# résout les relations écrites en chaîne à la configuration des mappers, et
+# un module manquant ne se voit qu'à la première requête (panne du 15/09).
+load_all_models()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
