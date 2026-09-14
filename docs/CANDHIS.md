@@ -185,6 +185,33 @@ la calibration ont besoin de ce qui existe le jour même.
 > journée. Une fenêtre de 3 h est donc un filtre **côté client** sur une
 > requête d'un ou deux jours. C'est ce que fait le job horaire.
 
+> ⚠️ **`dateFin` incluse ou exclue : la documentation ne le dit pas.** Elle
+> définit le paramètre comme « date de fin (sous forme AAAA-MM-JJ) » et
+> s'arrête là. C'est le deuxième trou de ce relevé, après le fuseau horaire.
+>
+> **Ses propres exemples penchent nettement pour *exclue***, et ils le font
+> deux fois :
+>
+> | Exemple | Fenêtre | `nbLig` | Si exclue | Si incluse |
+> |---|---|---|---|---|
+> | non directionnel | 12/03 → 14/03, 1ʳᵉ mesure 15 h 30 | 65 | **65** | 113 |
+> | directionnel H13 | 26/03 → 27/03, 1ʳᵉ mesure 00 h 00 | 48 | **48** | 96 |
+>
+> Au pas de 30 min, l'hypothèse « le dernier jour ne compte pas » tombe juste
+> au nombre près dans les deux cas ; l'hypothèse inverse manque de 48 lignes.
+> C'est une **inférence à partir d'exemples**, pas une phrase de la
+> documentation, et elle est notée comme telle.
+>
+> **Le client ne parie sur aucune des deux.** `real_time()` demande toujours
+> `dateFin = fin + 1 jour` : si elle est exclue on obtient exactement la
+> fenêtre voulue, si elle est incluse on obtient un jour de trop — sans
+> conséquence, l'écriture étant en `ON CONFLICT DO NOTHING` et l'appelant
+> filtrant sa fenêtre. Un jour de rab ne coûte pas un appel de plus.
+>
+> Ce n'était pas une précaution théorique : sous l'hypothèse *exclue*, la passe
+> horaire demandait `dateDeb = dateFin = aujourd'hui` et n'aurait **rien
+> ramené du tout**, tous les jours, sans un message d'erreur.
+
 **`entete` change selon le type de houlographe** — c'est le point qui rend un
 index de colonne codé en dur impossible :
 

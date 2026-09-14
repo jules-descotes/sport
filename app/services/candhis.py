@@ -61,6 +61,19 @@ MAX_RANGE_MONTHS = 12
 
 ONE_DAY = timedelta(days=1)
 
+# Longueur maximale d'un corps de réponse journalisé. Assez pour lire
+# l'enveloppe entière d'un refus — `success`, `message`, `nbLig` — sans
+# déverser douze mois de mesures dans les journaux Railway le jour où c'est
+# une réponse pleine qu'on journalise par erreur.
+LOG_BODY_MAX = 2_000
+
+
+def truncate(text: str, limit: int = LOG_BODY_MAX) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}… [tronqué, {len(text)} caractères au total]"
+
 
 class CandhisDisabled(RuntimeError):
     """Pas de clé : la fonctionnalité est éteinte, ce n'est pas une panne."""
@@ -435,7 +448,23 @@ class CandhisClient:
         except ValueError as exc:
             raise CandhisError(f"réponse CANDHIS illisible : {exc}") from exc
 
-        return parse_envelope(payload)
+        try:
+            return parse_envelope(payload)
+        except CandhisError:
+            # Un refus est presque toujours un `success: False` en HTTP 200, et
+            # le `message` seul ne suffit pas à comprendre pourquoi : « Pas de
+            # données pour la campagne X du A au B » ne dit ni si les dates ont
+            # été corrigées d'office, ni ce que l'API a compris de la requête.
+            # On journalise donc **le corps brut**, en INFO — c'est la seule
+            # façon de lire ce que le serveur dit vraiment, et un refus n'est
+            # pas une erreur d'application.
+            logger.info(
+                "CANDHIS %s a refusé — requête %s, réponse brute : %s",
+                path,
+                params,
+                truncate(response.text),
+            )
+            raise
 
     # -- Catalogue ---------------------------------------------------------
 
@@ -463,16 +492,32 @@ class CandhisClient:
     async def real_time(
         self, code: str, start: date, end: Optional[date] = None
     ) -> list[Measurement]:
-        """`getCampTR.php` — les mesures d'une campagne, par **journées**.
+        """`getCampTR.php` — les mesures d'une campagne, sur `[start, end]` inclus.
 
         `dateFin` est toujours envoyé, même quand il vaut `dateDeb` : sans lui
         l'API le met à `dateDeb + 12 mois`, et un job horaire qui l'oublierait
         demanderait une année entière à chaque passe.
+
+        **On demande un jour de plus que voulu**, et c'est le point de cette
+        méthode. La documentation du Cerema ne dit **nulle part** si `dateFin`
+        est incluse ou exclue (cf. docs/CANDHIS.md §4.6) ; ses propres exemples
+        penchent fortement pour *exclue* — 65 et 48 lignes, qui tombent juste
+        au pas de 30 min si le dernier jour ne compte pas. S'y fier serait
+        parier : sous cette hypothèse, une passe horaire qui demande
+        `dateDeb = dateFin = aujourd'hui` ne ramènerait **rien du tout**, tous
+        les jours, en silence.
+
+        Demander `end + 1 jour` rend le client juste dans les deux cas : si
+        `dateFin` est exclue on obtient exactement `[start, end]`, si elle est
+        incluse on obtient un jour de trop — sans conséquence, puisque
+        l'écriture est en `ON CONFLICT DO NOTHING` et que l'appelant filtre sa
+        fenêtre. Un jour de rab ne coûte pas un appel de plus.
         """
+        last = end or start
         params = {
             "camp": code,
             "dateDeb": start.isoformat(),
-            "dateFin": (end or start).isoformat(),
+            "dateFin": (last + ONE_DAY).isoformat(),
         }
         envelope = await self._get("getCampTR.php", params)
         return envelope.measurements()

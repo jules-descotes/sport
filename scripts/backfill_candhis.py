@@ -17,9 +17,14 @@ milieu n'annule donc rien : on relance le lendemain, et les tranches déjà
 écrites repassent en `ON CONFLICT DO NOTHING` sans rien coûter de plus qu'un
 appel. Il n'y a rien à reprendre à la main.
 
+`--since` et `--until` bornent la fenêtre à la main (dates ISO, **les deux
+incluses**), pour rejouer un trou précis sans repayer toute l'année. Sans
+elles : de la première session (ou douze mois en arrière) jusqu'à aujourd'hui.
+
 Usage :
     python -m scripts.backfill_candhis --dry-run
     python -m scripts.backfill_candhis
+    python -m scripts.backfill_candhis --since 2026-09-01 --until 2026-09-14
     python -m scripts.backfill_candhis --since 2025-01-01 --station 06402
 """
 from __future__ import annotations
@@ -71,6 +76,7 @@ async def earliest_start(db) -> Optional[date]:
 
 async def run(
     since: Optional[date] = None,
+    until: Optional[date] = None,
     station_code: Optional[str] = None,
     dry_run: bool = False,
 ) -> int:
@@ -107,6 +113,17 @@ async def run(
         today = datetime.now(UTC).date()
         floor = today - timedelta(days=DEFAULT_LOOKBACK_DAYS)
 
+        # `--until` borne la fin. Par défaut aujourd'hui : on ne demande pas de
+        # mesures au futur, la bouée ne les a pas.
+        until = until or today
+        if until > today:
+            logger.warning(
+                "--until %s est dans le futur : ramené à aujourd'hui (%s)",
+                until.isoformat(),
+                today.isoformat(),
+            )
+            until = today
+
         if since is None:
             first = await earliest_start(db)
             # `max` et pas `min` : on ne remonte pas avant douze mois, même si
@@ -119,7 +136,19 @@ async def run(
                 first.isoformat() if first else "aucune",
             )
 
-        chunks = day_chunks(since, today)
+        logger.info(
+            "Fenêtre : %s → %s (incluse)", since.isoformat(), until.isoformat()
+        )
+
+        if since > until:
+            logger.error(
+                "Fenêtre vide : --since %s est après --until %s",
+                since.isoformat(),
+                until.isoformat(),
+            )
+            return 1
+
+        chunks = day_chunks(since, until)
         left = await remaining(db, PROVIDER, settings.candhis_daily_call_cap)
         logger.info(
             "Bouée %s (%s) : %d tranche(s) de 12 mois, %d appel(s) de quota "
@@ -185,6 +214,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Date de départ AAAA-MM-JJ (défaut : première session, au plus 12 mois)",
     )
     parser.add_argument(
+        "--until",
+        help="Date de fin AAAA-MM-JJ, **incluse** (défaut : aujourd'hui)",
+    )
+    parser.add_argument(
         "--station",
         help="Code de campagne à backfiller (défaut : la bouée maison)",
     )
@@ -196,8 +229,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     since = date.fromisoformat(args.since) if args.since else None
+    until = date.fromisoformat(args.until) if args.until else None
     return asyncio.run(
-        run(since=since, station_code=args.station, dry_run=args.dry_run)
+        run(
+            since=since,
+            until=until,
+            station_code=args.station,
+            dry_run=args.dry_run,
+        )
     )
 
 

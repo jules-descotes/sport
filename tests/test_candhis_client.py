@@ -24,6 +24,7 @@ from app.services.candhis import (
     normalize_label,
     parse_envelope,
     parse_timestamp,
+    truncate,
 )
 from app.services.quota import QuotaExhausted, remaining, reserve, used_today
 
@@ -477,7 +478,12 @@ async def test_the_token_travels_bare_in_the_authorization_header(db_session) ->
 
 
 async def test_datefin_is_always_sent(db_session) -> None:
-    """Sans `dateFin`, l'API répondrait **douze mois** au lieu d'une journée."""
+    """Sans `dateFin`, l'API répondrait **douze mois** au lieu d'une journée.
+
+    Ce que ce test tient, c'est sa *présence*. Sa valeur exacte est le sujet de
+    `test_the_request_asks_for_one_day_more_than_wanted` : la documentation ne
+    dit pas si elle est incluse, donc on ne s'aligne pas dessus.
+    """
     spy: list[httpx.Request] = []
     transport = mock_transport(TR_DIRECTIONNEL_H13, spy=spy)
 
@@ -486,7 +492,7 @@ async def test_datefin_is_always_sent(db_session) -> None:
         await client.real_time("06402", date(2026, 9, 14))
 
     assert spy[0].url.params["dateDeb"] == "2026-09-14"
-    assert spy[0].url.params["dateFin"] == "2026-09-14"
+    assert "dateFin" in spy[0].url.params
 
 
 @pytest.mark.parametrize(
@@ -532,3 +538,105 @@ async def test_an_unexpected_payload_shape_is_an_error_not_a_traceback(
         client = CandhisClient(db_session, client=http, api_key="jeton")
         with pytest.raises(CandhisError):
             await client.real_time("06402", date(2026, 9, 14))
+
+
+# --- `dateFin` : incluse ou exclue, on ne parie pas ------------------------
+
+
+async def test_the_request_asks_for_one_day_more_than_wanted(db_session) -> None:
+    """La documentation ne dit pas si `dateFin` est incluse (cf. §4.6).
+
+    Ses exemples penchent pour *exclue*. Sous cette hypothèse, une passe qui
+    demanderait `dateDeb = dateFin = aujourd'hui` ne ramènerait **rien**, tous
+    les jours, en silence. On demande donc un jour de plus : juste dans les
+    deux cas, et pas un appel de plus.
+    """
+    spy: list[httpx.Request] = []
+    transport = mock_transport(TR_DIRECTIONNEL_H13, spy=spy)
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = CandhisClient(db_session, client=http, api_key="jeton")
+        await client.real_time("06402", date(2026, 9, 14))
+
+    assert spy[0].url.params["dateDeb"] == "2026-09-14"
+    assert spy[0].url.params["dateFin"] == "2026-09-15"
+
+
+async def test_a_range_also_asks_for_one_day_more(db_session) -> None:
+    spy: list[httpx.Request] = []
+    transport = mock_transport(TR_DIRECTIONNEL_H13, spy=spy)
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = CandhisClient(db_session, client=http, api_key="jeton")
+        await client.real_time("06402", date(2026, 1, 1), date(2026, 12, 31))
+
+    assert spy[0].url.params["dateDeb"] == "2026-01-01"
+    assert spy[0].url.params["dateFin"] == "2027-01-01"
+
+
+# --- Le corps brut d'un refus ---------------------------------------------
+
+
+async def test_a_refusal_logs_the_raw_body_at_info(db_session, caplog) -> None:
+    """« Pas de données » : le `message` seul ne dit pas pourquoi.
+
+    Il ne dit ni si les dates ont été corrigées d'office, ni ce que l'API a
+    compris de la requête. On journalise donc le corps entier, en INFO — un
+    refus est une réponse, pas une erreur d'application.
+    """
+    transport = mock_transport(AUCUNE_DONNEE)
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = CandhisClient(db_session, client=http, api_key="jeton")
+        with caplog.at_level("INFO"):
+            with pytest.raises(CandhisError):
+                await client.real_time("06402", date(2027, 3, 26))
+
+    assert "réponse brute" in caplog.text
+    # Le corps entier, pas seulement le message : `nbLig` et `apiVer` doivent
+    # s'y lire aussi.
+    assert "nbLig" in caplog.text
+    assert "apiVer" in caplog.text
+    # Et la requête, pour savoir ce qui a été demandé.
+    assert "dateDeb" in caplog.text
+
+
+async def test_a_long_body_is_truncated_at_two_thousand_characters(
+    db_session, caplog
+) -> None:
+    """Un refus se lit en entier ; une réponse pleine ne noie pas les journaux."""
+    payload = {**AUCUNE_DONNEE, "message": "x" * 5_000}
+    transport = mock_transport(payload)
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = CandhisClient(db_session, client=http, api_key="jeton")
+        with caplog.at_level("INFO"):
+            with pytest.raises(CandhisError):
+                await client.real_time("06402", date(2027, 3, 26))
+
+    assert "tronqué" in caplog.text
+    # La trace reste bornée : 2 000 caractères de corps, pas cinq mille.
+    assert len(caplog.text) < 4_000
+
+
+def test_truncate_keeps_a_short_body_whole() -> None:
+    assert truncate("court") == "court"
+    assert truncate("") == ""
+
+
+def test_truncate_says_how_much_it_cut() -> None:
+    cut = truncate("y" * 3_000)
+    assert cut.startswith("y" * 2_000)
+    assert "3000 caractères au total" in cut
+
+
+async def test_a_successful_response_is_not_logged(db_session, caplog) -> None:
+    """On ne déverse pas douze mois de mesures dans les journaux Railway."""
+    transport = mock_transport(TR_DIRECTIONNEL_H13)
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = CandhisClient(db_session, client=http, api_key="jeton")
+        with caplog.at_level("INFO"):
+            await client.real_time("06402", date(2026, 9, 14))
+
+    assert "réponse brute" not in caplog.text
