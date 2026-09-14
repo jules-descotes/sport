@@ -28,6 +28,7 @@ from app.db.database import async_session
 
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
 # Alembic la cible de l'autogénération).
+from app.models.api_quota import ApiQuota  # noqa: F401
 from app.models.api_token import ApiToken  # noqa: F401
 from app.models.daily_log import DailyLog  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401
@@ -110,6 +111,29 @@ async def create_default_user() -> None:
             logger.error("Création de l'utilisateur impossible : %s", exc, exc_info=True)
 
 
+def log_candhis_state() -> None:
+    """Dit au démarrage si les bouées sont branchées, et sur quoi.
+
+    Une fonctionnalité éteinte doit le dire à l'allumage, pas se manifester
+    trois semaines plus tard par un écran vide que personne ne sait expliquer.
+    Le fuseau est journalisé avec, parce qu'il n'est **pas** documenté par le
+    Cerema (cf. docs/CANDHIS.md §5) : le jour où une mesure tombe à côté de la
+    prévision, la première ligne à relire est celle-ci.
+    """
+    if settings.candhis_enabled:
+        logger.info(
+            "CANDHIS actif : %s, plafond %d appels/jour, horodatages lus en %s",
+            settings.candhis_url,
+            settings.candhis_daily_call_cap,
+            settings.candhis_tz,
+        )
+    else:
+        logger.info(
+            "CANDHIS inactif : CANDHIS_API_KEY absente. Les bouées ne sont pas "
+            "interrogées, le reste fonctionne normalement."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.services.scheduler import start_scheduler, stop_scheduler
@@ -117,6 +141,7 @@ async def lifespan(app: FastAPI):
     # Le schéma est la propriété d'Alembic : `run.py` applique les migrations
     # avant de lancer uvicorn. Rien n'est créé ici.
     await create_default_user()
+    log_candhis_state()
     start_scheduler()
     try:
         yield

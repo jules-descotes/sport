@@ -270,7 +270,7 @@ la version du format.
 | `hm0_m` | `Hm0 (m)` | `H1/3 (m)` | `H1/3 (m)` |
 | `wave_height_max_m` | `Hmax (m)` | `Hmax (m)` | `Hmax (m)` |
 | `mean_period_s` | `T02 (s)` | — | — |
-| `peak_period_s` | — | `TH1/3 (s)` | `T. au pic (s)` |
+| `peak_period_s` | — | `TH1/3 (s)` | **`T. au pic (s)`**, sinon `TH1/3 (s)` |
 | `wave_direction_deg` | `Dir. au pic (°)` | `Dir. au pic (°)` | — |
 | `directional_spread_deg` | — | `Etal. au pic (°)` | — |
 | `water_temperature_c` | `Temp. mer (°C)` | `Temp. mer (°C)` | `Temp. mer (°C)` |
@@ -278,10 +278,24 @@ la version du format.
 > `H1/3` et `Hm0` ne sont pas la même grandeur — l'une est la moyenne du tiers
 > supérieur des vagues, l'autre se déduit du moment d'ordre zéro du spectre.
 > Elles sont très proches en mer du vent et la littérature les échange
-> couramment. On les range donc dans la **même** colonne `hm0_m`, et
-> `raw` garde le libellé d'origine : le jour où l'écart comptera, il sera
-> encore là. Mettre `TH1/3` dans `mean_period_s` en revanche serait faux —
-> c'est une période de pic, pas une moyenne — d'où deux colonnes distinctes.
+> couramment. On les range donc dans la **même** colonne `hm0_m`, et `raw`
+> garde le libellé d'origine : le jour où l'écart comptera, il sera encore là.
+
+> ⚠️ **Le houlographe non directionnel publie `TH1/3` *et* `T. au pic` sur la
+> même ligne** — 11,0 s et 16,7 s dans l'exemple du Cerema. Ce sont deux
+> grandeurs différentes, et prendre la première venue retiendrait 11 s là où la
+> période de pic vaut 16,7 s : cinq secondes d'écart sur la grandeur qui décide
+> si une houle est exploitable. `T. au pic` l'emporte donc toujours, où qu'elle
+> soit dans l'en-tête, et `TH1/3` n'est qu'un **repli**.
+>
+> Ce repli n'est pas de la commodité : les houlographes H13 directionnels —
+> dont **les deux de la côte basque** — ne publient que `TH1/3`. Sans lui, la
+> bouée maison n'aurait aucune période, et la calibration des périodes n'aurait
+> jamais rien à comparer.
+>
+> *(Cette ligne du tableau était fausse dans la première version de ce
+> document : elle donnait au non directionnel `T. au pic` seul. C'est un test
+> qui l'a relevée, pas une relecture.)*
 
 `raw` (JSONB) garde **la ligne entière appariée à son en-tête**, telle que
 l'API l'a rendue. C'est ce qui permettra de récupérer une colonne qu'on n'a pas

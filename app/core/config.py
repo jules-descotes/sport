@@ -86,6 +86,33 @@ class Settings(BaseSettings):
     # mensuel, jamais depuis l'API.
     overpass_url: str = "https://overpass-api.de/api/interpreter"
 
+    # CANDHIS (lot 1 bis) — bouées du Cerema. Contrairement à Open-Meteo, il
+    # faut une clé, et elle n'a **aucun défaut** : sans elle la fonctionnalité
+    # s'éteint proprement, elle ne tombe pas sur une valeur bidon qui ferait
+    # quarante appels à 401 par jour. Elle vit en variable Railway et nulle
+    # part ailleurs (cf. CLAUDE.md, décidé le 15/09).
+    candhis_api_key: str = ""
+    candhis_url: str = "https://candhis.cerema.fr/API/v1"
+    # Quota accordé avec le jeton : 150 requêtes par jour. On s'arrête à 140.
+    # La marge n'est pas de la pudeur : notre compteur et celui du Cerema ne
+    # tomberont jamais exactement d'accord sur le fuseau d'une journée, et le
+    # code 423 de leur documentation dit qu'une IP peut être bannie.
+    candhis_daily_call_cap: int = 140
+    # Le fuseau des horodatages CANDHIS **n'est pas documenté** (cf.
+    # docs/CANDHIS.md §5). UTC est la convention des archives océanographiques
+    # et celle du reste de la base ; cette variable existe pour corriger sans
+    # redéployer le jour où la mesure dirait le contraire.
+    candhis_tz: str = "UTC"
+    # Une bouée au-delà de cette distance ne décrit plus le même plan d'eau.
+    observation_station_max_km: float = 30.0
+    # Le job horaire : ~24 requêtes par jour, loin sous le plafond.
+    candhis_ingest_interval_hours: int = 1
+
+    @property
+    def candhis_enabled(self) -> bool:
+        """Pas de clé, pas de bouée — et c'est dit au démarrage, pas à l'usage."""
+        return bool(self.candhis_api_key.strip())
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _force_async_driver(cls, value: str) -> str:
