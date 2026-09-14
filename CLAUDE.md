@@ -145,6 +145,22 @@ API_TOKEN_EXPIRE_DAYS=365       # jeton Bearer du raccourci iPhone (lot 2)
 WINDY_WEBCAMS_API_KEY=          # clé Webcams API (≠ Point Forecast)
 TIDES_API_KEY=
 FORECAST_INGEST_INTERVAL_HOURS=3
+CANDHIS_API_KEY=                # lot 1 bis — **la seule à poser à la main**
+```
+
+### CANDHIS (lot 1 bis) — une variable à poser, cinq qui ont un défaut
+
+`CANDHIS_API_KEY` n'a **aucun défaut**, et c'est volontaire : sans elle la
+fonctionnalité s'éteint proprement et le démarrage le dit sur une ligne. Une
+valeur bidon ferait quarante appels à 401 par jour. Elle vit en variable
+Railway et nulle part ailleurs.
+
+```
+CANDHIS_URL=https://candhis.cerema.fr/API/v1
+CANDHIS_DAILY_CALL_CAP=140      # 150 accordées, on s'arrête à 140
+CANDHIS_TZ=UTC                  # ⚠️ NON documenté par le Cerema — cf. docs/CANDHIS.md §5
+CANDHIS_INGEST_INTERVAL_HOURS=1 # ~24 appels/jour
+OBSERVATION_STATION_MAX_KM=30   # au-delà, aucune bouée n'est rattachée
 ```
 
 ### À ajouter sur Railway au lot 1
@@ -202,6 +218,9 @@ NEXT_PUBLIC_APP_NAME=Sport
 - [x] Panne du 14/09 — défaut booléen Postgres, chaîne testée sur Postgres,
       « Fait » atteignable en mode séance, images des six exercices maison —
       **en ligne le 2026-09-14**
+- [x] Lot 1 bis — CANDHIS : client, quota, bouée maison, calibration —
+      **code terminé le 2026-09-15**, `CANDHIS_API_KEY` à poser sur Railway
+      puis trois scripts à lancer
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 6 — stats et corrélations conditions ↔ note
 
@@ -893,6 +912,124 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - Une bouée « maison » (la plus proche du favori principal, côte basque), interrogée **toutes les heures sur une fenêtre de 3 h** (~24 requêtes/jour), pas toutes les 30 min. Backfill historique par tranches de 12 mois, une fois.
 - `observations` = mesures ; `forecasts` = prévisions. Jamais mélangées dans un vecteur. Le volet `observed` d'une session préfère la bouée quand elle est à moins de 30 km, en gardant la distance.
 - La calibration prévision ↔ mesure du §7.3 démarre ici : paires (prévision au run_ts, mesure) par heure, biais par délai de prévision, affiché sobrement.
+
+### Lot 1 bis — ce qui est livré (2026-09-15)
+
+**La documentation a été lue avant d'écrire une ligne**, et elle est consignée
+dans `docs/CANDHIS.md`. C'est la leçon de `sport=surfing` appliquée à une API :
+on vérifie la donnée avant de s'y fier. Quatre traits de cette API commandent
+tout le client, et **aucun n'était devinable** :
+
+1. **`success` se lit toujours.** Un échec métier — « pas de données pour cette
+   campagne » — répond **HTTP 200**. Un client qui se contenterait de
+   `raise_for_status()` prendrait « aucune donnée » pour un succès et écrirait
+   une passe vide sans un mot.
+2. **`999.9999` est la valeur manquante**, et elle apparaît sur `Hmax` et sur
+   la température dans les exemples du Cerema eux-mêmes. La prendre au premier
+   degré donnerait une mer à 1 000 °C.
+3. **`entete` change selon le type de houlographe** — trois formes, qui ne
+   portent même pas la même période. Un index de colonne codé en dur ne peut
+   pas marcher : on apparie sur le **libellé normalisé**.
+4. **Les dates sont des jours, pas des instants.** Aucune fenêtre de trois
+   heures ne se demande à cette API ; elle se découpe côté client.
+
+> **Ce que la relecture avait raté, et qu'un test a trouvé.** Le houlographe
+> non directionnel publie `TH1/3` **et** `T. au pic` sur la même ligne — 11,0 s
+> et 16,7 s. La règle « le premier qui remplit gagne » retenait 11,0 : cinq
+> secondes d'erreur sur la grandeur qui décide si une houle est exploitable. La
+> précédence est maintenant explicite, `T. au pic` gagne toujours, et `TH1/3`
+> n'est qu'un repli — repli indispensable, puisque **les deux bouées de la côte
+> basque ne publient que lui**.
+
+**Le fuseau horaire n'est pas documenté**, et c'est consigné comme un trou et
+non comblé par une supposition déguisée. `CANDHIS_TZ` vaut `UTC` par défaut et
+existe pour corriger sans redéployer. Surtout : **la table de calibration le
+dira toute seule**. Un décalage d'une heure apparaîtra comme un biais qui ne
+s'annule pas à délai nul alors que la bouée est à 20 km.
+
+**Le quota est en base, pas en mémoire.** Le conteneur Railway redémarre : un
+compteur en mémoire repartirait de zéro à chaque déploiement, et « 140 par
+jour » ne voudrait plus rien dire le jour où on pousse cinq fois. Même leçon
+que `run_ts` au lot 1 ter. `reserve()` réserve **avant** l'appel réseau — un
+appel compté après coup n'est pas compté du tout quand il lève, et c'est
+précisément la requête qui finit en 429 qu'on voudrait voir passer au compteur.
+Leur documentation prévoit aussi un **423 quand une IP est bannie** : on
+n'attend pas d'y arriver, c'est exactement ce qui est arrivé à l'IP Railway sur
+Overpass le 12/09.
+
+**La bouée maison n'est écrite nulle part.** Elle se déduit à l'exécution : la
+station **active** en temps réel la plus proche du favori principal, à moins de
+30 km. Changer de favori change de bouée ; une bouée qui part en carénage sort
+d'elle-même, sans redéploiement. `getCampListe.php` est la seule source de
+`Actif`. Avec le réseau d'aujourd'hui, cela donne **Anglet (06402)** pour un
+favori landais et **Saint-Jean-de-Luz (06403)** autour de Guéthary — comme un
+résultat, pas comme une constante.
+
+**Les 30 km ne sont pas une pudeur de précision.** À 40 km au large, une houle
+mesurée décrit une autre mer, et l'étiqueter « conditions du spot » serait une
+ligne fausse dans la donnée d'apprentissage. Un spot hors de portée n'a
+**aucune** bouée plutôt que la moins mauvaise, et une station retirée du réseau
+relâche les spots qu'elle tenait.
+
+**La passe horaire demande une journée et garde trois heures** — la granularité
+de l'API est le jour. Le recouvrement est ce qui rattrape la passe manquée
+pendant un redéploiement, et `ON CONFLICT DO NOTHING` le rend gratuit.
+**DO NOTHING et pas DO UPDATE** : une mesure est un constat, et un constat ne
+se corrige pas d'une passe à l'autre.
+
+**Le volet `observed` préfère la bouée — mais il la *recouvre*, il ne la
+substitue pas.** Une bouée mesure la houle et *rien d'autre* : ni le vent, ni
+le niveau de la mer. Reconstruire le volet à partir d'elle seule perdrait la
+moitié de ce qui décide d'une session. Chaque ligne porte donc `wave_source`
+(`buoy` / `model`) — sans ce marquage, l'historique mélangerait mesures et
+sorties de modèle sous la même étiquette « observé », et le modèle du lot 6 ne
+pourrait plus les départager. La station et la distance sont stockées **et
+affichées** (« bouée Anglet, 20 km »).
+
+**La calibration (§7.3) démarre**, et elle ne corrige rien. `forecast_vs_observed`
+garde une ligne par *(heure mesurée, run qui l'annonçait)* : une même heure en
+produit plusieurs, et c'est exactement la question — de combien le modèle se
+trompe **à tel délai**. C'est l'historisation des runs du lot 1 ter qui la rend
+posable. Le biais est `observé − prévu`, donc **positif = sous-estime**, et les
+phrases sont écrites côté serveur pour que ce signe n'existe qu'à un endroit.
+Sous douze paires, on affiche le compte et pas un chiffre.
+
+> ⚠️ **Le score de cold start n'a pas bougé d'un dixième.** On mesure d'abord,
+> longtemps. Un modèle recalé sur deux semaines d'un automne calme serait faux
+> tout l'hiver — et faux sans qu'on puisse le voir.
+
+Migrations **0020**, **0021** et **0022**. **880 pytest + 132 vitest verts**,
+`npm run lint` et `npm run build` propres. Vérifié en production après chaque
+push : `0019 → 0020 → 0021 → 0022`, et le démarrage annonce « CANDHIS inactif »
+tant que la clé n'est pas posée.
+
+### Lot 1 bis — ce qui reste à la main
+
+Dans l'ordre. Rien ne marche avant la première ligne.
+
+- [ ] **Poser `CANDHIS_API_KEY` sur Railway.** Tant qu'elle manque, le
+      démarrage dit « CANDHIS inactif », le job n'est même pas déclaré, et tout
+      le reste de l'app fonctionne normalement.
+- [ ] **Importer les stations** :
+      `python -m scripts.import_candhis_stations --zone Z07 --dry-run`,
+      **relire la liste**, puis sans `--dry-run`. `Z07` est le golfe de
+      Gascogne — l'import mondial dépasserait le plafond de 140 en une fois.
+      L'import est reprenable : épuiser le quota un jour et relancer le
+      lendemain finit le travail.
+- [ ] **Backfiller l'historique** : `python -m scripts.backfill_candhis --dry-run`
+      pour voir les tranches et le quota, puis sans. Par tranches de 12 mois,
+      depuis la première session ou 12 mois en arrière, la bouée maison seule.
+- [ ] **Reprendre les sessions déjà enregistrées** :
+      `python -m scripts.refill_observed --dry-run` puis sans. **Aucun appel
+      réseau** — il lit `observations`. L'ancien snapshot part dans
+      `snapshot_history`, rien n'est écrasé.
+- [ ] **Vérifier le fuseau à l'usage.** C'est le seul trou de la documentation
+      du Cerema. Si le biais à 0–6 h ne s'annule pas alors que la bouée est à
+      20 km, regarder `CANDHIS_TZ` **avant** de conclure quoi que ce soit sur
+      le modèle.
+- [ ] **Regarder le bloc « Maintenant » sur le téléphone**, au parking. Il
+      disparaît au-delà de trois heures d'âge : si on ne le voit jamais, c'est
+      que la bouée se tait, pas que l'écran est cassé.
 
 ### Décidé le 13/09 (retours n° 4)
 - **Bug prod** : `PATCH /sessions/{id}` renvoie 500 quand on ajoute des segments horaires à une session existante ; le navigateur affiche une erreur CORS parce que la réponse 500 sort du `ServerErrorMiddleware` sans en-têtes. Deux corrections : la cause du 500, et un gestionnaire d'exception global qui renvoie une `JSONResponse` (donc traversée par `CORSMiddleware`).
