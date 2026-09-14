@@ -67,6 +67,83 @@ export const FORMULA = {
   ],
 };
 
+/**
+ * Une image **portrait**, celle qui cassait l'écran.
+ *
+ * SVG en `data:` plutôt qu'un fichier : la CSP du site autorise déjà `data:`
+ * pour les images, le test ne dépend d'aucun réseau, et le rapport de forme
+ * — deux fois plus haut que large — est écrit noir sur blanc plutôt que caché
+ * dans un binaire qu'on ne relira jamais.
+ */
+const PORTRAIT_IMAGE =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1200">' +
+      '<rect width="600" height="1200" fill="#5A8FAB"/>' +
+      "</svg>",
+  );
+
+/** Une consigne longue — pas un cas tordu : wger en produit de cette taille. */
+const LONG_INSTRUCTIONS =
+  "Place-toi à quatre pattes, mains sous les épaules et genoux sous les " +
+  "hanches, le dos en position neutre. Inspire en creusant légèrement le bas " +
+  "du dos et en ouvrant la poitrine vers l'avant, regard à l'horizontale. " +
+  "Expire en enroulant la colonne vertèbre par vertèbre, menton vers le " +
+  "sternum, en poussant le sol avec les mains. Garde le mouvement lent et " +
+  "continu, sans forcer sur les extrêmes, et laisse la respiration donner le " +
+  "tempo plutôt que l'inverse.";
+
+/**
+ * L'écran Training tel qu'il était quand « Fait » sortait du cadre : une
+ * image portrait, un nom long, une consigne longue, et un maintien à lancer.
+ *
+ * Chaque pièce ajoute de la hauteur, et c'est leur addition qui débordait —
+ * pas l'image seule. Un test qui n'en garderait qu'une passerait sans rien
+ * prouver.
+ */
+export function tallOverview() {
+  const exercise = {
+    id: 10,
+    slug: "ex-10",
+    name: "Cat Cow Thoracic Mobilisation With Controlled Breathing",
+    name_fr: "Chat-vache avec respiration contrôlée et ouverture thoracique",
+    category: "mobility",
+    muscle_group: "dos",
+    group_key: "dos",
+    instructions: LONG_INSTRUCTIONS,
+    description_fr: LONG_INSTRUCTIONS,
+    image_url: PORTRAIT_IMAGE,
+    images: [PORTRAIT_IMAGE],
+    source: "wger",
+    license: "CC BY-SA 4.0",
+    source_url: "https://wger.de/",
+  };
+
+  const formula = {
+    ...FORMULA,
+    items: [
+      {
+        id: 1,
+        position: 1,
+        sets: 1,
+        reps: null,
+        duration_s: 40,
+        tempo: "3-1-3",
+        rest_s: 30,
+        note: "Sans forcer sur les extrêmes",
+        exercise,
+      },
+      { ...FORMULA.items[1] },
+    ],
+  };
+
+  return {
+    ...OVERVIEW,
+    formulas: [formula],
+    proposal: { ...OVERVIEW.proposal, formula, alternatives: [] },
+  };
+}
+
 export const OVERVIEW = {
   objectives: [
     {
