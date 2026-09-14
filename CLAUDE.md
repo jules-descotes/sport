@@ -43,7 +43,13 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 - Back seul : `python run.py` (port 8000)
 - Front seul : `cd frontend && npm run dev` (port 3000)
 - Tests back : `pytest tests/ -v`
+- Tests back **sur Postgres** (chaîne de migrations + démarrage) :
+  `TEST_POSTGRES_URL=postgresql+asyncpg://... pytest tests/ -v`. Sans la
+  variable, ces tests-là se **sautent** — c'est le seul moteur sur lequel
+  vérifier la chaîne veut dire quelque chose (cf. panne du 14/09)
 - Tests front (file hors ligne) : `cd frontend && npm run test`
+- Tests navigateur : `cd frontend && npm run test:e2e` (Chromium + mobile) et
+  `npm run test:e2e:iphone` (WebKit, à la main)
 - API docs local : http://localhost:8000/docs
 - Import OSM : `python -m scripts.import_osm_spots [--bbox min_lat,min_lon,max_lat,max_lon] [--dry-run]`
 
@@ -52,6 +58,7 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 ## Conventions code
 - **Une seule session Claude Code à la fois sur ce dépôt.** Deux sessions en parallèle ont provoqué deux pannes de production le 13/09 (chaînes de migrations Alembic divergentes). Avant de commencer : `git status` propre, sinon on s'arrête et on demande. En terminant : rien d'uncommitted, jamais.
 - **Une migration ne dépend que d'une révision que `main` possède** (test `tests/test_migration_chain.py`). Numéro de révision = ordre réel dans la chaîne, jamais réservé à l'avance.
+- **La chaîne de migrations se vérifie sur Postgres, jamais sur SQLite seul.** SQLite range les booléens dans des entiers et accepte `DEFAULT 0` ; Postgres le refuse, et c'est ce qui a mis la production à terre le 14/09 avec tous les tests au vert. Écrire `sa.false()` / `sa.true()` dans les migrations, `func.false()` / `func.true()` dans les modèles — **jamais `0`, `"0"` ni `sa.text("0")` sur un `Boolean`**. La CI monte un Postgres 16 pour ça ; en local, `TEST_POSTGRES_URL` active les mêmes tests, et sans elle ils se sautent.
 - **Rapports de fin de lot en français.**
 - Commits en anglais, préfixe `feat/fix/chore/test/perf`
 - Push direct sur `main` (repo solo, pas de PR)
@@ -192,6 +199,9 @@ NEXT_PUBLIC_APP_NAME=Sport
       seuils personnels, dépense du jour, training en français avec images et
       générateur, habitudes à réduire, classement des favoris, webcams —
       **en ligne le 2026-09-13**
+- [x] Panne du 14/09 — défaut booléen Postgres, chaîne testée sur Postgres,
+      « Fait » atteignable en mode séance, images des six exercices maison —
+      **en ligne le 2026-09-14**
 - [ ] Lot 3 — reco (règles puis plus proche voisin)
 - [ ] Lot 6 — stats et corrélations conditions ↔ note
 
@@ -431,10 +441,20 @@ Renfo — jambes). Le pop-up n'existe dans aucune base ouverte, et c'est exactem
 l'exercice qu'il ne fallait pas remplacer : la première version de la règle lui
 avait substitué un « développé épaules à la poulie ».
 
-**Six exercices maison restent sans image** — Chien tête en bas, Cobra, Passage
-de bâton, Pop-up à sec, Rotation thoracique, Torsion allongée. Aucun n'a
-d'équivalent dans les bases ouvertes. Leur donner une photo voisine ferait faire
-le mauvais mouvement ; ils restent donc sans image et hors du générateur.
+> ⚠️ **Cette recomposition a été annulée le 14/09**, et c'est voulu : les six
+> exercices qui la motivaient ont maintenant une image. Les sept lignes du
+> tableau ci-dessus sont **revenues à leur composition d'origine** — le cobra
+> est de retour dans Post-surf, Post-surf — épaules, Post-surf — express et
+> Souplesse — haut du corps, le passage de bâton dans les trois Post-surf, le
+> chien tête en bas dans Souplesse — ischios. Le tableau reste ici parce qu'il
+> raconte pourquoi on avait accepté de les retirer.
+
+**Les six exercices maison ont une image depuis le 14/09** — Chien tête en bas,
+Cobra, Passage de bâton, Pop-up à sec, Rotation thoracique, Torsion allongée.
+Trois photos libres de Wikimedia Commons, trois pictogrammes dessinés dans
+l'application (cf. « Les images des six exercices maison » plus bas). Les six
+sont de nouveau éligibles au générateur et aux formules ; **22 lignes de
+formule** les portent.
 
 ### Retours n° 3 et n° 4 — ce qui reste à la main
 
@@ -452,6 +472,143 @@ le mauvais mouvement ; ils restent donc sans image et hors du générateur.
       couvrent le minuteur, pas la lisibilité de l'image à un mètre.
 - [ ] **Poser `NEXT_PUBLIC_WEBCAM_FRAME_HOSTS` sur Vercel** le jour où une
       webcam vient d'un hôte absent des défauts.
+
+### Panne de production du 14/09 — ce qui est livré
+
+**La panne, et sa cause en une ligne.** `alembic upgrade head` échouait au
+démarrage sur `server_default=sa.text("0")` posé sur une colonne booléenne.
+**SQLite range les booléens dans des entiers** et accepte `DEFAULT 0` sans un
+mot ; **Postgres a un vrai type booléen** et le refuse. Le DDL est
+transactionnel : la base est restée à 0017, rien à réparer côté données.
+
+Deux occurrences seulement, trouvées en parcourant l'AST de tous les
+`Column` / `mapped_column` du dépôt plutôt qu'à l'œil : la migration du menu et
+`app/models/nutrition.py`. Les deux passent à `sa.false()` / `func.false()` —
+ce que tous les autres booléens du projet utilisaient déjà. Le dialecte choisit
+le littéral, pas nous.
+
+**La migration du menu est renumérotée 0015 → 0018.** Elle se chaîne derrière
+0017, et un numéro qui contredit la chaîne rend l'ordre illisible au moment
+précis où on a besoin de le lire.
+
+**Ce qui l'empêche désormais.** La leçon n'est pas « il manquait un test » — il
+y en avait un, l'aller-retour complet des migrations, et il était **vert**.
+Elle est que **le moteur des tests doit être celui de la production** :
+
+- **Postgres 16 dans la CI** (service GitHub Actions), à côté de SQLite qui
+  garde les 750 tests unitaires rapides. La chaîne y monte depuis un schéma
+  vide, redescend à `base`, remonte. Le schéma est **déposé et recréé** et non
+  vidé : une séquence restée derrière ferait passer un `upgrade` qui aurait
+  échoué sur une base neuve.
+- **Toutes les colonnes booléennes de la base produite** doivent défaillir sur
+  `true` ou `false`, relu dans `information_schema` — ce que le contrôle du
+  code ne peut pas voir passer par du SQL brut.
+- **`run.py` doit atteindre uvicorn** sur un Postgres vide, et **ne doit pas
+  l'atteindre** quand une migration échoue.
+- Quatre contrôles statiques : deux fichiers déclarant la même révision
+  (Alembic en joue un et oublie l'autre, en silence), un numéro hors de l'ordre
+  de la chaîne, un défaut entier sur un booléen, et la règle existante du
+  parent commité.
+- **Les détecteurs ont leurs propres tests.** Un garde-fou qu'on n'a jamais vu
+  refuser quelque chose ne garde rien : on leur donne les quatre façons
+  d'écrire la faute et les trois façons de l'écrire correctement. C'est ce qui
+  a révélé que le message d'erreur plantait sur un chemin hors dépôt.
+- **`TEST_POSTGRES_URL` mal orthographiée ne peut pas sauter Postgres en
+  silence** : un test échoue si elle manque alors que `CI` vaut `true`.
+
+**Le démarrage dit où il va avant d'y aller** : `migration 0018 → 0019 : OK`,
+ou `ÉCHEC : <raison>` sur une seule ligne avant l'arrêt. Le 14/09 le journal
+n'annonçait que « upgrade head », et la cause tenait à la dernière de quarante
+lignes de pile asyncpg.
+
+### Mode séance — « Fait » hors d'atteinte (14/09)
+
+Avec une image portrait et une consigne longue, le bouton sortait du cadre et
+rien ne défilait. **L'image était le déclencheur, pas la cause** : le mode
+séance est un `fixed inset-0`, qui n'a par définition aucun débordement à faire
+défiler, et sa zone centrale était un simple `flex-1` — or un enfant `flex-1` a
+`min-height: auto` et **refuse de descendre sous la taille de son contenu**.
+
+Trois pièces, et elles ne valent qu'ensemble : `min-h-0` pour que la zone
+accepte de rétrécir, `overflow-y-auto` pour que son contenu reste lisible quand
+elle rétrécit, `shrink-0` sur la barre d'actions pour qu'elle garde sa place.
+La barre vit **hors** de la zone qui défile plutôt qu'en `sticky` : un pied
+collant suit le contenu jusqu'à venir se coller, celui-ci n'y entre jamais.
+Hauteurs en **`dvh`** et non `vh` — le `vh` de Safari reste calé sur la grande
+hauteur, celle qu'on n'a pas quand la barre d'adresse est déployée. Image
+plafonnée à 40 dvh. L'écran de repos et l'écran de fin ont la même structure.
+
+**Six tests Playwright à 390 × 844** pilotent une formule faite pour déborder :
+image portrait, nom long, consigne longue, minuteur de maintien. Vérifiés
+contre l'ancienne mise en page : **les six échouent**, Playwright répondant
+« element is outside of the viewport ». Un septième contrôle que le contenu
+déborde vraiment — sans quoi les autres passeraient au vert sans rien éprouver.
+
+### Les images des six exercices maison (14/09)
+
+Un exercice sans image n'entre ni dans le générateur ni dans une formule
+(`Exercise.is_eligible`). Six étaient donc écrits, corrects, et jamais montrés.
+
+**Trois photos de Wikimedia Commons**, licence et auteur relevés par l'**API de
+Commons** — pas lus sur une page, pas supposés — et **chaque photo regardée
+avant d'être retenue** : la recherche « Supta Matsyendrasana » ne rend que des
+torsions *assises*, qui sont un autre mouvement, et c'est exactement l'erreur
+que ce projet s'interdit.
+
+| Exercice | Auteur | Licence |
+|---|---|---|
+| Cobra | Kennguru | CC BY 3.0 |
+| Chien tête en bas | Iveto | CC BY 3.0 |
+| Torsion allongée | Satheesan.vn | CC BY-SA 3.0 |
+
+Les fichiers sont **copiés dans le dépôt** (`frontend/public/exercises/`) et
+non liés à chaud : une image servie depuis upload.wikimedia.org disparaît le
+jour où le fichier y est renommé, et l'exercice redeviendrait silencieusement
+non éligible. Redimensionnées à 1 200 px et 28 à 142 Ko — le mode séance
+s'ouvre souvent sur le réseau d'un parking.
+
+Ces licences **exigent de nommer l'auteur**, et aucune colonne ne pouvait le
+porter : `license` dit ce qu'on a le droit de faire, pas à qui on le doit, et
+un lien vers la page du fichier n'attribue rien puisque personne ne clique.
+D'où la **migration 0019** et une colonne `exercises.image_author`.
+
+**Trois pictogrammes dessinés** pour ce qui n'existe nulle part : rotation
+thoracique à quatre pattes, passage de bâton, pop-up à sec. **SVG en ligne dans
+le code** et non fichiers `.svg` : le thème bascule sur
+`@media (min-width: 1024px)`, et un SVG chargé dans une balise `img` est un
+document isolé dont les media queries se mesurent à la taille de l'image — il
+ne peut pas suivre. Même grammaire pour les trois : deux poses, départ à
+gauche, arrivée à droite, une flèche, **un seul segment en accent**, celui qui
+bouge. `image_url` porte une clé `pictogram:…`, reconnue par `ExerciseImage` et
+par lui seul.
+
+**Le semis pose ces images**, ce qui est une exception à sa règle de ne jamais
+toucher à ce qu'un import a enrichi — celles-ci ne viennent pas d'un import.
+Elle reste une exception : l'image n'est écrite que si la ligne n'en a aucune,
+**ou** si celle qu'elle porte est déjà l'une des nôtres. Une vraie photo de
+pop-up trouvée un jour par une base ouverte gagnerait ; et corriger un dessin
+ici se propage sans migration.
+
+**Vérifié en production** : les six éligibles, 22 lignes de formule restaurées,
+`repair_training` ne signale plus aucune ligne inéligible, et les trois images
+répondent en 200.
+
+### 14/09 — ce qui reste à la main
+
+- [ ] **Regarder les trois pictogrammes sur le téléphone**, au soleil, à bout
+      de bras. Ils sont dessinés pour être lus à un mètre, mais ça ne se
+      vérifie que là — les tests disent qu'ils s'affichent, pas qu'ils se
+      comprennent. S'il en faut un plus lisible, il se corrige dans
+      `ExercisePictogram.tsx` et le semis le repropage au démarrage suivant,
+      sans migration.
+- [ ] **Refaire une séance Post-surf** : elle a retrouvé le cobra et le
+      passage de bâton, donc sa composition d'origine. C'est celle qui avait
+      le plus perdu à la recomposition du 13/09.
+- [ ] **La photo du chien tête en bas a un fond chargé** (mur de bois, tapis
+      rose) là où les deux autres sont sur blanc. Le mouvement est sans
+      ambiguïté, mais si l'écart saute aux yeux en usage, une autre se cherche
+      sur Commons — filtrer sur CC BY / CC BY-SA / CC0, et **la regarder avant
+      de la prendre**.
 
 ### Lot 0 — ce qui est livré (2026-09-12)
 - Dépôt git sur `main`, remote `jules-descotes/sport`, `.gitignore` + `.gitattributes` (LF)
