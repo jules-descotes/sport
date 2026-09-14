@@ -337,6 +337,38 @@ Ordre révisé le 12/09 (soir) : l'accueil « Jour » mêle tous les domaines, d
 
 ---
 
+## 9 bis. Backlog vie quotidienne (noté le 15/09)
+
+L'app devient **l'outil perso du quotidien** de Jules, le surf en étant le module premier. À prioriser après le lot 3.
+
+**Training**
+- **Équipement possédé** : inventaire dans le Profil (élastiques, haltères, barre de traction, kettlebell, tapis, swiss ball…) ; le générateur ne propose que ce qui est faisable avec, et signale ce qu'un achat débloquerait.
+- **Prévisualiser une séance** avant de la lancer ; **noter chaque exercice** (pendant ou en prévisualisation) et **remplacer** ce qu'on n'aime pas en un tap — le générateur apprend les exclusions et les préférences.
+
+**Nutrition / courses**
+- **Liste de courses personnelle** : un item libre que Jules complète lui-même, fusionné avec la liste générée par le menu de la semaine ; cocher en magasin, ajout par Siri via raccourci (« ajoute du lait »).
+- **Ingrédients disponibles** → recettes adaptées. Pistes : (a) **Lidl Plus** — bibliothèque Python non officielle `lidl-plus` qui lit ses propres tickets (connexion à son compte, 2FA, fragile mais réel) ; (b) **Leclerc** — rien d'équivalent trouvé, repli = **photo du ticket + OCR** ; (c) saisie manuelle « j'ai / je n'ai plus ». Le stock déduit alimente le générateur de menu et la liste de courses.
+
+**Surf**
+- **Montre Rip Curl Search GPS** : pas d'API publique ; la montre synchronise vers l'app Rip Curl Search (et Surfline Sessions, payant, sans API). À investiguer : export depuis l'app ; sinon la porte réaliste reste Raccourcis iOS / Apple Health si une montre compatible arrive un jour. **Ne pas bloquer le lot 3 dessus.**
+
+**Retenu le 15/09 (ordre indicatif après le lot 3)**
+
+| Lot | Contenu | Point d'attention |
+|---|---|---|
+| **7 · Agenda** | Abonnement à un ou plusieurs calendriers **iCal** (URL .ics) ; free/busy suffit. Sur Jour : les fenêtres de mer **où Jules est libre**, et la notification de la veille ne parle que de celles-là | **Pas de connecteur Microsoft Graph** vers le tenant CAFPI : ça exigerait un enregistrement d'application côté entreprise, pour un projet perso. Outlook sait **publier un calendrier en .ics** (occupé/libre seulement) depuis le compte lui-même — c'est la voie, sans toucher au tenant, sans faire sortir de données CAFPI au-delà de « occupé / libre » |
+| **8 · Courses** | Liste personnelle libre + fusion avec la liste générée par le menu ; cocher en magasin ; ajout vocal par raccourci Siri (POST) | — |
+| **9 · Matos** | Listes de matos **nommées** (« hiver », « foil », « trip Portugal ») avec items et « à ne pas oublier » ; rappels pilotés par les données (wax ↔ température de l'eau, leash/dérives ↔ heures à l'eau) ; checklist avant de partir | — |
+| **10 · Social** | Création de compte, amis (invitation, acceptation), **sessions prévues** (intention : spot, créneau) visibles par les amis — « qui va à l'eau demain ? » | **C'est le passage du mono au multi-utilisateur.** Le `user_id` est partout depuis la première migration (§5), mais il faut un **audit de toutes les requêtes** avant d'ouvrir : chaque lecture filtrée par l'utilisateur ou par le lien d'amitié, sinon fuite entre amis. Plus : e-mail de vérification, mot de passe oublié, suppression de compte (RGPD), réglage de visibilité par module (sessions prévues oui, nutrition et habitudes **jamais**). Un lot à part entière, prudent, à faire après le lot 3 |
+| **11 · Maison** | Bloc « maison » sur Jour, branché sur Home Assistant (API locale ou Nabu Casa) — déménagement proche, maison connectée prévue | Phase 2, quand Home Assistant tournera |
+
+**Idées ouvertes (brainstorm 15/09, non retenues pour l'instant)**
+- Sommeil (heure de coucher / lever, via raccourci iOS) pour le croiser avec le ressenti des sessions.
+- Photo du ticket de caisse → dépenses par poste (surf, courses) — light, pas une app de budget.
+- Mode voyage : checklist de départ + spots du catalogue mondial autour de la destination.
+
+---
+
 ## 10. Adaptations proposées sur la demande initiale
 
 1. **« Scraping météo » → API.** Open-Meteo couvre tout, gratuitement, avec l'historique en bonus.
