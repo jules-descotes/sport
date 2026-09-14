@@ -50,6 +50,9 @@ Stack **volontairement identique à `atelier-okomi`**, moins Stripe / SEO / admi
 > Contrairement à Okomi, **`frontend/.env.local` pointe vers le back LOCAL** (`http://localhost:8000/api/v1`). Le dev local tape le local.
 
 ## Conventions code
+- **Une seule session Claude Code à la fois sur ce dépôt.** Deux sessions en parallèle ont provoqué deux pannes de production le 13/09 (chaînes de migrations Alembic divergentes). Avant de commencer : `git status` propre, sinon on s'arrête et on demande. En terminant : rien d'uncommitted, jamais.
+- **Une migration ne dépend que d'une révision que `main` possède** (test `tests/test_migration_chain.py`). Numéro de révision = ordre réel dans la chaîne, jamais réservé à l'avance.
+- **Rapports de fin de lot en français.**
 - Commits en anglais, préfixe `feat/fix/chore/test/perf`
 - Push direct sur `main` (repo solo, pas de PR)
 - Slugs en kebab-case
