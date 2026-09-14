@@ -127,6 +127,17 @@ class Exercise(Base):
     # leur alternance qui montre le mouvement ; `image_url` reste la première,
     # pour les écrans qui n'en veulent qu'une.
     images: Mapped[Optional[list]] = mapped_column(JSONVariant, nullable=True)
+    # **L'auteur de l'image, et lui seul** — pas celui de l'exercice.
+    #
+    # `license` dit sous quelles conditions on a le droit de l'afficher ;
+    # celle-ci dit à qui on le doit. Les deux sont nécessaires dès qu'une
+    # photo est en CC BY ou CC BY-SA : ces licences demandent de nommer
+    # l'auteur, et un lien vers la page du fichier ne le fait pas — il faut
+    # cliquer pour savoir, et personne ne clique.
+    #
+    # Nulle pour wger et free-exercise-db, qui publient au nom du projet et
+    # non d'une personne. Nulle aussi pour les pictogrammes dessinés ici.
+    image_author: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=func.true()

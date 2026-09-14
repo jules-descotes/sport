@@ -504,6 +504,92 @@ EXERCISES: tuple[dict[str, Any], ...] = (
 )
 
 
+# ── Les images des exercices maison ────────────────────────────────────────
+#
+# Six exercices rédigés ici n'avaient aucune image : leurs `aliases` anglais
+# n'ont rencontré aucun nom des bases ouvertes, et l'emprunt par groupe et
+# pattern (`services/exercise_images.py`) n'a rien trouvé non plus. Sans
+# image, un exercice n'entre **ni dans une formule ni dans le générateur**
+# (`Exercise.is_eligible`) : les six étaient donc écrits, corrects, et jamais
+# proposés.
+#
+# Deux origines, et le choix entre les deux tient à une seule question : la
+# posture existe-t-elle ailleurs, photographiée sous une licence libre ?
+#
+# 1. **Wikimedia Commons** pour les trois postures de yoga, qui sont
+#    universelles et abondamment photographiées. Licence, auteur et page
+#    d'origine sont relevés par l'API de Commons — pas lus sur une page web,
+#    pas supposés. Les fichiers sont **copiés dans le dépôt** et non liés à
+#    chaud : une image servie depuis upload.wikimedia.org disparaîtrait le jour
+#    où le fichier est renommé, et l'exercice redeviendrait silencieusement
+#    non éligible.
+# 2. **Des pictogrammes dessinés** pour les trois autres, qui n'existent nulle
+#    part : la rotation thoracique à quatre pattes, le passage de bâton, et le
+#    pop-up à sec — ce dernier n'existant dans aucune base ouverte, c'est
+#    précisément l'exercice qu'il ne fallait pas rapprocher de quelque chose
+#    d'autre (la première version de la règle d'emprunt lui avait donné un
+#    « développé épaules à la poulie »).
+#
+# Le préfixe `pictogram:` n'est pas une URL : c'est une clé que le composant
+# `ExerciseImage` reconnaît et rend en SVG **en ligne**, pour que le dessin
+# suive le thème clair ou sombre. Elle occupe `image_url` parce que c'est ce
+# champ qui décide de l'éligibilité — et un dessin juste vaut une photo.
+
+HOUSE_IMAGES: dict[str, dict[str, Optional[str]]] = {
+    "cobra": {
+        "image_url": "/exercises/cobra.jpg",
+        "image_author": "Kennguru",
+        "license": "CC BY 3.0",
+        "source_url": (
+            "https://commons.wikimedia.org/wiki/"
+            "File:Bhujangasana_Yoga-Asana_Nina-Mel.jpg"
+        ),
+        "source": "wikimedia-commons",
+    },
+    "chien-tete-en-bas": {
+        "image_url": "/exercises/chien-tete-en-bas.jpg",
+        "image_author": "Iveto",
+        "license": "CC BY 3.0",
+        "source_url": (
+            "https://commons.wikimedia.org/wiki/File:Downward-Facing-Dog.JPG"
+        ),
+        "source": "wikimedia-commons",
+    },
+    "torsion-au-sol": {
+        "image_url": "/exercises/torsion-allongee.jpg",
+        "image_author": "Satheesan.vn",
+        "license": "CC BY-SA 3.0",
+        "source_url": (
+            "https://commons.wikimedia.org/wiki/File:Waist_Rotating_Pose.jpg"
+        ),
+        "source": "wikimedia-commons",
+    },
+    "rotation-thoracique": {
+        "image_url": "pictogram:rotation-thoracique",
+        "image_author": None,
+        "license": "personnelle",
+        "source_url": None,
+        "source": "sport",
+    },
+    # Le slug est « dislocation-batons » et le nom « Passage de bâton » : la
+    # clé du pictogramme suit le **nom**, plus lisible dans le dessin.
+    "dislocation-batons": {
+        "image_url": "pictogram:passage-de-baton",
+        "image_author": None,
+        "license": "personnelle",
+        "source_url": None,
+        "source": "sport",
+    },
+    "pop-up": {
+        "image_url": "pictogram:pop-up",
+        "image_author": None,
+        "license": "personnelle",
+        "source_url": None,
+        "source": "sport",
+    },
+}
+
+
 # ── Formules ───────────────────────────────────────────────────────────────
 #
 # Chaque entrée : `items` = (slug d'exercice, séries, reps, durée_s, repos_s,

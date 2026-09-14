@@ -137,12 +137,30 @@ async def test_formula_items_never_carry_reps_and_duration_at_once(
 
 
 async def test_builtin_exercises_declare_their_licence(db_session) -> None:
+    """Tout ce que le semis pose dit sous quelle licence il le pose.
+
+    La source n'est plus « builtin » pour tout le monde depuis le 14/09 :
+    **elle décrit l'image, pas la consigne**. Six exercices maison ont reçu
+    une illustration — trois photos de Wikimedia Commons, trois pictogrammes
+    dessinés ici — et portent donc `wikimedia-commons` ou `sport`. Les
+    consignes, elles, restent écrites pour ce projet dans les trente cas.
+
+    Ce qui ne bouge pas, et que ce test garde : une licence sur chaque ligne,
+    des consignes sur chaque ligne, et aucune source venue d'ailleurs que du
+    catalogue — un semis n'a rien à importer.
+    """
+    from app.services.training_catalog import HOUSE_IMAGES
+
     await seed_exercises(db_session)
     exercises = (await db_session.execute(select(Exercise))).scalars().all()
+
+    catalogue_sources = {"builtin"} | {
+        house["source"] for house in HOUSE_IMAGES.values()
+    }
     for exercise in exercises:
-        assert exercise.source == "builtin"
-        assert exercise.license
-        assert exercise.instructions
+        assert exercise.source in catalogue_sources, exercise.slug
+        assert exercise.license, exercise.slug
+        assert exercise.instructions, exercise.slug
 
 
 # ── Import d'exercices, sur un extrait fixé ────────────────────────────────

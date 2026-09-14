@@ -37,6 +37,7 @@ from app.services.training_catalog import (
     BUILTIN_TAXONOMY,
     EXERCISES,
     FORMULAS,
+    HOUSE_IMAGES,
     OBJECTIVES,
     normalize_name,
 )
@@ -63,6 +64,11 @@ async def seed_exercises(db: AsyncSession) -> int:
     (nom, catégorie, consignes, alias) et **jamais** sur `image_url`, `source`,
     `license` ni `source_url` : ceux-là viennent de l'import des bases
     ouvertes, et un semis ne doit pas effacer ce qu'un import a enrichi.
+
+    **Une exception, et elle est explicite** : les six exercices de
+    `HOUSE_IMAGES`, dont l'image n'est pas importée mais choisie ou dessinée
+    ici (cf. plus bas). Elle ne s'applique qu'à une ligne sans image, ou dont
+    l'image est déjà l'une des nôtres.
     """
     existing = {
         exercise.slug: exercise
@@ -103,6 +109,33 @@ async def seed_exercises(db: AsyncSession) -> int:
                 exercise.effort_kind,
                 exercise.unilateral,
             ) = taxonomy
+
+        # ── Les images des six exercices maison (14/09) ────────────────────
+        #
+        # La règle ci-dessus — « un semis n'écrase jamais une image » — vise
+        # ce qu'un **import** a trouvé. Celles-ci ne viennent pas d'un import :
+        # ce sont des photos libres choisies et vérifiées une à une, et des
+        # pictogrammes dessinés dans l'application. Elles appartiennent au
+        # catalogue au même titre que les consignes.
+        #
+        # La condition les protège quand même dans les deux sens : on ne pose
+        # l'image que si la ligne n'en a aucune, **ou** si celle qu'elle porte
+        # est déjà l'une des nôtres. Le jour où un import trouve enfin une
+        # vraie photo de pop-up, elle reste ; et corriger un pictogramme ici se
+        # propage au prochain démarrage sans migration.
+        house = HOUSE_IMAGES.get(entry["slug"])
+        if house is not None and (
+            exercise.image_url is None or exercise.source == house["source"]
+        ):
+            exercise.image_url = house["image_url"]
+            exercise.image_author = house["image_author"]
+            exercise.license = house["license"]
+            exercise.source_url = house["source_url"]
+            exercise.source = house["source"]
+            # `images` sert l'alternance des deux photos de free-exercise-db.
+            # Une image unique n'a rien à y faire : la laisser ferait clignoter
+            # la même image contre elle-même.
+            exercise.images = None
 
     await db.commit()
     return created

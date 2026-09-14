@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  ExercisePictogram,
+  pictogramKey,
+} from "@/components/training/ExercisePictogram";
 import type { Exercise } from "@/lib/types";
 
 /**
@@ -113,6 +117,20 @@ export function ExerciseImage({
     return () => window.clearInterval(timer);
   }, [animate, frames.length]);
 
+  // Un pictogramme maison : dessiné en ligne, donc il suit le thème — clair
+  // sur téléphone, sombre sur bureau — là où un fichier SVG dans une balise
+  // `img` resterait figé sur une seule palette.
+  const pictogram = pictogramKey(frames[0] ?? exercise.image_url);
+  if (pictogram) {
+    return (
+      <div
+        className={`flex aspect-[4/3] items-center justify-center rounded-card border border-line bg-card p-3 ${className}`}
+      >
+        <ExercisePictogram name={pictogram} />
+      </div>
+    );
+  }
+
   if (frames.length === 0) {
     return (
       <div
@@ -139,24 +157,44 @@ export function ExerciseImage({
 }
 
 /**
- * L'attribution — **obligatoire pour le CC BY-SA**, et seulement pour lui.
+ * L'attribution — **obligatoire dès qu'il y a un CC BY**, pas seulement un
+ * CC BY-SA.
  *
  * wger est sous CC BY-SA 4.0 : la licence exige de citer la source.
  * free-exercise-db est dans le domaine public et n'exige rien — on garde
  * quand même la source, parce qu'un projet perso d'aujourd'hui peut devenir
  * autre chose demain, et que retrouver l'origine d'une image après coup est
  * impossible.
+ *
+ * Les photos de Wikimedia Commons (14/09) sont en CC BY 3.0 et CC BY-SA 3.0,
+ * et **ces licences-là nomment l'auteur** : « attribuer l'œuvre à son auteur »
+ * n'est pas satisfait par un lien vers la page du fichier. D'où `image_author`
+ * sur la ligne, affiché ici. Une photo prise par quelqu'un et donnée sous
+ * CC BY se paie d'un nom ; c'est le prix, et il est très bas.
  */
 export function ExerciseCredit({
   exercise,
   className = "",
 }: {
-  exercise: Pick<Exercise, "source" | "license" | "source_url" | "image_url">;
+  exercise: Pick<
+    Exercise,
+    "source" | "license" | "source_url" | "image_url" | "image_author"
+  >;
   className?: string;
 }) {
   if (!exercise.image_url) return null;
 
-  const label =
+  // Un dessin fait ici : rien à attribuer à personne, mais on le dit quand
+  // même — pour qu'on sache, dans six mois, lesquels sont à nous.
+  if (pictogramKey(exercise.image_url)) {
+    return (
+      <p className={`text-[11px] text-mute ${className}`}>
+        Pictogramme : Sport — licence personnelle
+      </p>
+    );
+  }
+
+  const origin =
     exercise.source === "wger"
       ? `wger.de — ${exercise.license ?? "CC BY-SA 4.0"}`
       : exercise.source === "free-exercise-db"
@@ -164,6 +202,10 @@ export function ExerciseCredit({
         : exercise.license
           ? `${exercise.source} — ${exercise.license}`
           : exercise.source;
+
+  const label = exercise.image_author
+    ? `${exercise.image_author} — ${origin}`
+    : origin;
 
   return (
     <p className={`text-[11px] text-mute ${className}`}>

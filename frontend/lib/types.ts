@@ -661,6 +661,10 @@ export interface Exercise {
   source: string;
   license: string | null;
   source_url: string | null;
+  /** L'auteur de l'image, quand la licence demande de le nommer (CC BY,
+   *  CC BY-SA). Nul pour wger et free-exercise-db, qui publient au nom du
+   *  projet, et pour les pictogrammes dessinés dans l'application. */
+  image_author: string | null;
 
   // ── Taxonomie (13/09) ───────────────────────────────────────────────────
   group_key: string;

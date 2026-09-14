@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
 
 /**
@@ -26,9 +28,24 @@ import { defineConfig } from "vitest/config";
  * demandent en tête de fichier, par `@vitest-environment jsdom`.
  */
 export default defineConfig({
+  // Le même alias que `tsconfig.json` (`@/*` → `./*`). Les tests de `lib`
+  // s'en passaient en important en relatif, mais un composant, lui, importe
+  // ses voisins en `@/` : sans cet alias, vitest ne sait pas charger le
+  // fichier qu'on lui demande de tester.
+  resolve: {
+    alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
+  },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "lib/**/*.test.tsx"],
+    // `components` s'ajoute à `lib` depuis le 14/09 : les pictogrammes maison
+    // mettent une clé `pictogram:…` dans `image_url`, et il faut un test qui
+    // garantisse qu'elle ne part jamais dans une balise `img`. Cette
+    // vérification-là ne se fait qu'en rendant le composant.
+    include: [
+      "lib/**/*.test.ts",
+      "lib/**/*.test.tsx",
+      "components/**/*.test.tsx",
+    ],
     setupFiles: ["./vitest.setup.ts"],
   },
 });
