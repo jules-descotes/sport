@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+from app.db.types import JSONVariant
 
 
 class Forecast(Base):
@@ -123,8 +124,8 @@ class Observation(Base):
     mélanger dans un même vecteur de features, c'est du décalage train/serve,
     et ça ne se voit qu'en production (cf. PROJET.md §7.1).
 
-    Créée vide au lot 1 : elle se remplira au lot 1 bis, à la réception du
-    jeton CANDHIS.
+    Créée vide au lot 1, remplie au lot 1 bis depuis CANDHIS (`getCampTR.php`,
+    cf. `docs/CANDHIS.md`).
     """
 
     __tablename__ = "observations"
@@ -133,6 +134,8 @@ class Observation(Base):
             "station_id", "ts", "source", name="uq_observations_station_ts_source"
         ),
         Index("ix_observations_spot_ts", "spot_id", "ts"),
+        # Lecture type du bloc « Maintenant » : la dernière mesure d'une station.
+        Index("ix_observations_station_ts", "station_id", "ts"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -146,15 +149,34 @@ class Observation(Base):
     source: Mapped[str] = mapped_column(String, nullable=False, default="candhis")
 
     # Hauteur significative et périodes, telles que les publie CANDHIS.
+    #
+    # `hm0_m` reçoit `Hm0` **ou** `H1/3` selon le houlographe : deux estimateurs
+    # très proches de la même grandeur, que la littérature échange couramment.
+    # `raw` garde le libellé d'origine pour le jour où l'écart comptera.
     hm0_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wave_height_max_m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     peak_period_s: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     mean_period_s: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     wave_direction_deg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Étalement directionnel au pic : la houle est-elle rangée ou éparpillée.
+    # Seuls les houlographes directionnels H13 le publient.
+    directional_spread_deg: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
 
     wind_speed_kt: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     wind_gust_kt: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     wind_direction_deg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     water_temperature_c: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # La ligne entière, appariée à son en-tête, telle que l'API l'a rendue.
+    # Une colonne qu'on n'a pas su lire aujourd'hui reste récupérable sans
+    # redemander douze mois d'archive à une API qui en accorde 150 par jour.
+    raw: Mapped[Optional[dict]] = mapped_column(JSONVariant, nullable=True)
+    # Le type de houlographe reconnu — même principe que `model_version` sur
+    # `forecasts` : le jour où le format change, l'historique dit dans quelle
+    # grammaire il a été écrit.
+    format_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

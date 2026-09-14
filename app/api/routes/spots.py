@@ -95,6 +95,7 @@ from app.services.webcams import (
     normalize_webcam_url,
 )
 from app.services.sun import is_daylight, sun_events
+from app.services.observations import link_spots_to_stations
 from app.services.spot_tiers import (
     HOME_MAX,
     get_or_create_preferences,
@@ -529,6 +530,10 @@ async def create_spot(
     # il tombe dans le rayon, donc en « potentiel », dès le recalcul.
     preferences = await get_or_create_preferences(db, current_user.id)
     await recompute_tiers(db, preferences)
+
+    # Sa bouée tout de suite, plutôt qu'au prochain import de stations : un
+    # spot ajouté à la main est précisément celui qu'on va regarder ce soir.
+    await link_spots_to_stations(db, [spot.id])
     await db.refresh(spot)
 
     return SpotRead.model_validate(spot)

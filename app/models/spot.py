@@ -80,6 +80,17 @@ class Spot(Base):
 
     webcam_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # La bouée qui mesure ce plan d'eau — la plus proche, et `NULL` au-delà de
+    # 30 km : au large de cette distance, une houle mesurée ne décrit plus la
+    # même mer. La distance est **stockée** et non recalculée à l'affichage :
+    # elle se lit à l'écran (« bouée d'Anglet, 4 km ») et elle ne bouge jamais.
+    observation_station_code: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    observation_station_distance_m: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
+
     # Niveau d'ingestion. Recalculé à chaque login, à chaque changement de
     # favoris et à chaque changement de position — jamais par l'import.
     tier: Mapped[str] = mapped_column(

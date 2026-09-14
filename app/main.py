@@ -46,6 +46,7 @@ from app.models.nutrition import (  # noqa: F401
     Recipe,
     RecipeItem,
 )
+from app.models.observation_station import ObservationStation  # noqa: F401
 from app.models.objective import (  # noqa: F401
     Objective,
     ObjectiveMeasurement,
