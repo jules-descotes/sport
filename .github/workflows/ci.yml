@@ -10,6 +10,34 @@ jobs:
   test-backend:
     name: Tests pytest
     runs-on: ubuntu-latest
+
+    # Postgres 16, la version de Railway. La suite tourne sur SQLite — 750
+    # tests qui monteraient un schéma Postgres à chaque fixture ne se
+    # lanceraient plus — mais la **chaîne de migrations** et le **démarrage**
+    # se jouent ici, sur le moteur de la production.
+    #
+    # C'est ce qui manquait le 14/09 : `server_default=sa.text("0")` sur une
+    # colonne booléenne passe sous SQLite, qui range les booléens dans des
+    # entiers, et fait tomber Postgres, qui a un vrai type booléen. Tous les
+    # tests étaient verts et l'API ne démarrait pas.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sport
+          POSTGRES_PASSWORD: sport
+          POSTGRES_DB: sport_test
+        ports:
+          - 5432:5432
+        # Sans l'attente de disponibilité, le premier test part avant que
+        # Postgres n'accepte les connexions, et l'échec se lit « connection
+        # refused » — un message qui envoie chercher au mauvais endroit.
+        options: >-
+          --health-cmd "pg_isready -U sport"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v5
 
@@ -26,6 +54,12 @@ jobs:
         run: pytest tests/ -v --tb=short
         env:
           DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          # Lue par `tests/test_migration_chain.py` et `tests/test_startup.py`
+          # seulement. Absente, ils se **sautent** : d'où le contrôle
+          # `test_postgres_is_configured_in_ci`, qui échoue si elle manque
+          # alors que CI vaut true. Une variable mal orthographiée ne doit pas
+          # pouvoir retirer en silence la moitié qui compte.
+          TEST_POSTGRES_URL: "postgresql+asyncpg://sport:sport@localhost:5432/sport_test"
           SECRET_KEY: test-secret-key-for-ci-only
           DEBUG: "True"
           STORAGE_BACKEND: local

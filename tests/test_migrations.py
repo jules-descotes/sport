@@ -15,15 +15,12 @@ SQLite jetable semée à la révision précédente.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent
+from tests._alembic import run_alembic
 
 # Deux sessions : une notée 4 / 5, une pas encore notée. La seconde est le cas
 # qui casse les migrations écrites trop vite — `NULL * 2` vaut `NULL`, et il
@@ -48,27 +45,13 @@ VALUES
 """
 
 
-def _alembic(database_url: str, *args: str) -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
-        cwd=REPO,
-        env={**os.environ, "DATABASE_URL": database_url},
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        pytest.fail(
-            f"alembic {' '.join(args)} a échoué :\n{result.stdout}\n{result.stderr}"
-        )
-
-
 @pytest.fixture
 def seeded_at_0009(tmp_path: Path) -> tuple[str, Path]:
     """Une base à la révision 0009, avec deux sessions notées à l'ancienne."""
     db_path = tmp_path / "migration.db"
     url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
 
-    _alembic(url, "upgrade", "0009")
+    run_alembic(url, "upgrade", "0009")
 
     connection = sqlite3.connect(db_path)
     connection.executescript(SEED)
@@ -96,7 +79,7 @@ def test_0010_doubles_the_existing_ratings(seeded_at_0009) -> None:
     """Un 4 devient 8, et se relit 4,0. L'historique d'apprentissage est intact."""
     url, db_path = seeded_at_0009
 
-    _alembic(url, "upgrade", "0010")
+    run_alembic(url, "upgrade", "0010")
 
     assert _rows(
         db_path,
@@ -113,7 +96,7 @@ def test_0010_leaves_unrated_sessions_unrated(seeded_at_0009) -> None:
     sans jamais avoir été notée.
     """
     url, db_path = seeded_at_0009
-    _alembic(url, "upgrade", "0010")
+    run_alembic(url, "upgrade", "0010")
 
     assert _rows(
         db_path,
@@ -125,7 +108,7 @@ def test_0010_removes_the_old_columns(seeded_at_0009) -> None:
     """Les garder « au cas où » laisserait deux vérités pour la même note, et
     la seconde serait périmée dès la première notation."""
     url, db_path = seeded_at_0009
-    _alembic(url, "upgrade", "0010")
+    run_alembic(url, "upgrade", "0010")
 
     columns = _columns(db_path, "surf_sessions")
     assert "rating_conditions" not in columns
@@ -137,8 +120,8 @@ def test_0010_can_be_rolled_back(seeded_at_0009) -> None:
     seule perte possible, et elle est assumée — revenir en arrière veut dire
     revenir à une échelle qui n'a pas de demi-point."""
     url, db_path = seeded_at_0009
-    _alembic(url, "upgrade", "0010")
-    _alembic(url, "downgrade", "0009")
+    run_alembic(url, "upgrade", "0010")
+    run_alembic(url, "downgrade", "0009")
 
     assert _rows(
         db_path,
@@ -156,6 +139,6 @@ def test_every_migration_runs_forward_and_back(tmp_path: Path) -> None:
     db_path = tmp_path / "roundtrip.db"
     url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
 
-    _alembic(url, "upgrade", "head")
-    _alembic(url, "downgrade", "base")
-    _alembic(url, "upgrade", "head")
+    run_alembic(url, "upgrade", "head")
+    run_alembic(url, "downgrade", "base")
+    run_alembic(url, "upgrade", "head")
