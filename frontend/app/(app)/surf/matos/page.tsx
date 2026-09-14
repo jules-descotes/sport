@@ -7,7 +7,20 @@ import { useState } from "react";
 import { SurfTabs } from "@/components/surf/SurfTabs";
 import { IconBack, IconBoard, IconPlus, IconTrash } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
-import { boardLength, lengthFromFeet, num, shortDate } from "@/lib/format";
+import { boardLength, num, shortDate } from "@/lib/format";
+import {
+  FEET,
+  GEAR_TYPES,
+  INCHES,
+  NEW_GEAR,
+  VOLUMES,
+  draftFromGear,
+  draftLength,
+  draftVolume,
+  gearPatch,
+  withValue,
+} from "@/lib/gear-form";
+import type { GearDraft } from "@/lib/gear-form";
 import type { Discipline, GearType, GearWithUsage } from "@/lib/types";
 
 /**
@@ -21,11 +34,12 @@ import type { Discipline, GearType, GearWithUsage } from "@/lib/types";
  * Et on ne saisit pas au clavier : des molettes, ici comme partout ailleurs
  * (`PROJET.md` §1, règle 5). Seul le nom — « 6'2 Pyzel » — demande des
  * lettres, et c'est le seul champ texte de l'écran.
+ *
+ * **Un seul formulaire sert à créer et à corriger.** Deux divergeraient, et
+ * une planche corrigée finirait par ne plus porter les mêmes champs qu'une
+ * planche créée — la même raison qui fait partager `SessionForm` entre la
+ * saisie manuelle et l'écran de notation.
  */
-
-const FEET = [4, 5, 6, 7, 8, 9, 10] as const;
-const INCHES = [0, 2, 4, 6, 8, 10] as const;
-const VOLUMES = [24, 26, 28, 30, 32, 35, 40, 50, 65] as const;
 
 const TYPE_LABELS: Record<GearType, string> = {
   board: "Planche",
@@ -33,7 +47,7 @@ const TYPE_LABELS: Record<GearType, string> = {
   accessory: "Accessoire",
 };
 
-function Wheel<T extends number>({
+function Wheel<T extends string | number>({
   label,
   options,
   value,
@@ -72,8 +86,160 @@ function Wheel<T extends number>({
   );
 }
 
+/**
+ * Créer du matos, ou corriger celui qui est déjà là.
+ *
+ * En correction, **on n'envoie que ce qui a changé**. Un PATCH qui renverrait
+ * tous les champs réécrirait la longueur avec ce que la molette sait afficher :
+ * une planche entrée à 6'3 repartirait à 6'2 parce qu'on a corrigé son volume.
+ */
+function GearForm({
+  gear,
+  onDone,
+}: {
+  gear?: GearWithUsage;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<GearDraft>(() =>
+    gear ? draftFromGear(gear) : NEW_GEAR,
+  );
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const set = <K extends keyof GearDraft>(key: K, value: GearDraft[K]) =>
+    setDraft((previous) => ({ ...previous, [key]: value }));
+
+  const name = draft.name.trim();
+  const length = draftLength(draft);
+  const patch = gear ? gearPatch(gear, draft) : null;
+  // Rien de changé, rien à enregistrer : le bouton reste inerte plutôt que de
+  // faire semblant.
+  const changed = patch === null || Object.keys(patch).length > 0;
+
+  const save = useMutation({
+    mutationFn: () => {
+      if (gear === undefined) {
+        return api.createGear({
+          name,
+          gear_type: draft.type,
+          discipline: "surf" as Discipline,
+          length_m: length,
+          volume_l: draftVolume(draft),
+        });
+      }
+      return api.updateGear(gear.id, patch ?? {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gear"] });
+      onDone();
+    },
+    onError: (error) => {
+      setFailure(
+        error instanceof ApiError ? error.message : "Enregistrement impossible.",
+      );
+    },
+  });
+
+  return (
+    <form
+      className="flex flex-col gap-4 rounded-card border border-line bg-card px-4 py-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (name && changed) {
+          setFailure(null);
+          save.mutate();
+        }
+      }}
+    >
+      <div>
+        <label
+          htmlFor={`gear-name-${gear?.id ?? "new"}`}
+          className="block pb-1.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute"
+        >
+          Nom court
+        </label>
+        <input
+          id={`gear-name-${gear?.id ?? "new"}`}
+          value={draft.name}
+          onChange={(event) => set("name", event.target.value)}
+          placeholder="6'2 Pyzel"
+          maxLength={40}
+          autoComplete="off"
+          className="min-h-touch w-full rounded-button border border-line bg-soft px-3 text-[16px] text-ink placeholder:text-mute"
+        />
+      </div>
+
+      <Wheel
+        label="Type"
+        options={GEAR_TYPES}
+        value={draft.type}
+        onChange={(option) => set("type", option)}
+        format={(option) => TYPE_LABELS[option]}
+      />
+
+      {draft.type === "board" ? (
+        <>
+          <div className="flex gap-4">
+            <Wheel
+              label="Pieds"
+              options={withValue(FEET, draft.feet)}
+              value={draft.feet}
+              onChange={(option) => set("feet", option)}
+            />
+            <Wheel
+              label="Pouces"
+              options={withValue(INCHES, draft.inches)}
+              value={draft.inches}
+              onChange={(option) => set("inches", option)}
+            />
+          </div>
+          {length !== null ? (
+            <p className="tabular -mt-2 text-[13px] text-mute">
+              {draft.feet}&apos;{draft.inches} — stocké {num(length, 2)} m
+            </p>
+          ) : null}
+          <Wheel
+            label="Volume (L)"
+            options={withValue(VOLUMES, draft.volume)}
+            value={draft.volume}
+            onChange={(option) => set("volume", option)}
+          />
+        </>
+      ) : null}
+
+      {failure ? (
+        <p className="rounded-chip bg-soft px-3 py-2 text-[13px] leading-snug text-ink-2">
+          {failure}
+        </p>
+      ) : null}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={onDone}
+          className="min-h-touch flex-1 rounded-button border border-line bg-soft px-4 text-[15px] font-semibold text-ink-2"
+        >
+          Annuler
+        </button>
+        <button
+          type="submit"
+          disabled={!name || !changed || save.isPending}
+          className="min-h-touch flex-1 rounded-button bg-accent px-4 text-[15px] font-semibold text-on-accent disabled:opacity-40"
+        >
+          {save.isPending
+            ? "Enregistrement…"
+            : gear
+              ? "Enregistrer"
+              : "Ajouter"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function GearCard({ gear }: { gear: GearWithUsage }) {
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
 
@@ -103,6 +269,10 @@ function GearCard({ gear }: { gear: GearWithUsage }) {
       );
     },
   });
+
+  if (editing) {
+    return <GearForm gear={gear} onDone={() => setEditing(false)} />;
+  }
 
   return (
     <article
@@ -141,21 +311,20 @@ function GearCard({ gear }: { gear: GearWithUsage }) {
         </p>
       ) : null}
 
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={() => toggle.mutate()}
-          disabled={toggle.isPending}
-          className="min-h-touch flex-1 rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink-2 disabled:opacity-50"
-        >
-          {gear.is_active ? "Ranger" : "Remettre en service"}
-        </button>
-        {confirming ? (
-          <>
+      {confirming ? (
+        <>
+          <p className="mt-3 text-[14px] leading-snug text-ink-2">
+            {gear.session_count > 0
+              ? `${gear.name} porte ${gear.session_count} session${
+                  gear.session_count > 1 ? "s" : ""
+                } : la suppression sera refusée. Range-le plutôt.`
+              : `Supprimer ${gear.name} ? Aucune session n'y est rattachée.`}
+          </p>
+          <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="min-h-touch rounded-button border border-line bg-card px-3 text-[14px] font-semibold text-ink-2"
+              className="min-h-touch flex-1 rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink-2"
             >
               Annuler
             </button>
@@ -163,12 +332,32 @@ function GearCard({ gear }: { gear: GearWithUsage }) {
               type="button"
               onClick={() => remove.mutate()}
               disabled={remove.isPending}
-              className="min-h-touch rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink disabled:opacity-50"
+              className="min-h-touch flex-1 rounded-button border border-line bg-card px-3 text-[14px] font-semibold text-ink disabled:opacity-50"
             >
-              Confirmer
+              Supprimer
             </button>
-          </>
-        ) : (
+          </div>
+        </>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setRefusal(null);
+              setEditing(true);
+            }}
+            className="min-h-touch flex-1 rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink-2"
+          >
+            Modifier
+          </button>
+          <button
+            type="button"
+            onClick={() => toggle.mutate()}
+            disabled={toggle.isPending}
+            className="min-h-touch flex-1 rounded-button border border-line bg-soft px-3 text-[14px] font-semibold text-ink-2 disabled:opacity-50"
+          >
+            {gear.is_active ? "Ranger" : "Ressortir"}
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -180,125 +369,9 @@ function GearCard({ gear }: { gear: GearWithUsage }) {
           >
             <IconTrash className="h-4 w-4" />
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </article>
-  );
-}
-
-function NewGearForm({ onDone }: { onDone: () => void }) {
-  const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<GearType>("board");
-  const [feet, setFeet] = useState<number | null>(6);
-  const [inches, setInches] = useState<number | null>(2);
-  const [volume, setVolume] = useState<number | null>(30);
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.createGear({
-        name: name.trim(),
-        gear_type: type,
-        discipline: "surf" as Discipline,
-        length_m:
-          type === "board" && feet !== null && inches !== null
-            ? lengthFromFeet(feet, inches)
-            : null,
-        volume_l: type === "board" ? volume : null,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gear"] });
-      onDone();
-    },
-  });
-
-  return (
-    <form
-      className="flex flex-col gap-4 rounded-card border border-line bg-card px-4 py-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (name.trim()) create.mutate();
-      }}
-    >
-      <div>
-        <label
-          htmlFor="gear-name"
-          className="block pb-1.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute"
-        >
-          Nom court
-        </label>
-        <input
-          id="gear-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="6'2 Pyzel"
-          maxLength={40}
-          autoComplete="off"
-          className="min-h-touch w-full rounded-button border border-line bg-soft px-3 text-[16px] text-ink placeholder:text-mute"
-        />
-      </div>
-
-      <Wheel
-        label="Type"
-        options={[0, 1, 2] as const}
-        value={(["board", "wetsuit", "accessory"] as GearType[]).indexOf(
-          type,
-        ) as 0 | 1 | 2}
-        onChange={(index) =>
-          setType((["board", "wetsuit", "accessory"] as GearType[])[index])
-        }
-        format={(index) =>
-          TYPE_LABELS[(["board", "wetsuit", "accessory"] as GearType[])[index]]
-        }
-      />
-
-      {type === "board" ? (
-        <>
-          <div className="flex gap-4">
-            <Wheel
-              label="Pieds"
-              options={FEET}
-              value={feet as (typeof FEET)[number] | null}
-              onChange={setFeet}
-            />
-            <Wheel
-              label="Pouces"
-              options={INCHES}
-              value={inches as (typeof INCHES)[number] | null}
-              onChange={setInches}
-            />
-          </div>
-          {feet !== null && inches !== null ? (
-            <p className="tabular -mt-2 text-[13px] text-mute">
-              {feet}&apos;{inches} — stocké {num(lengthFromFeet(feet, inches), 2)} m
-            </p>
-          ) : null}
-          <Wheel
-            label="Volume (L)"
-            options={VOLUMES}
-            value={volume as (typeof VOLUMES)[number] | null}
-            onChange={setVolume}
-          />
-        </>
-      ) : null}
-
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={onDone}
-          className="min-h-touch flex-1 rounded-button border border-line bg-soft px-4 text-[15px] font-semibold text-ink-2"
-        >
-          Annuler
-        </button>
-        <button
-          type="submit"
-          disabled={!name.trim() || create.isPending}
-          className="min-h-touch flex-1 rounded-button bg-accent px-4 text-[15px] font-semibold text-on-accent disabled:opacity-40"
-        >
-          {create.isPending ? "Ajout…" : "Ajouter"}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -353,7 +426,7 @@ export default function MatosPage() {
         )}
 
         {adding ? (
-          <NewGearForm onDone={() => setAdding(false)} />
+          <GearForm onDone={() => setAdding(false)} />
         ) : (
           <button
             type="button"

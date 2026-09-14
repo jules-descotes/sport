@@ -107,6 +107,13 @@ async def create_gear(
     return GearRead.model_validate(gear)
 
 
+#: Un `null` sur ces champs ferait tomber la contrainte NOT NULL en base, en
+#: 500. Pydantic les laisse passer — ici tout est optionnel, c'est ce qui permet
+#: de corriger un volume sans retaper le reste — mais « effacer le nom » n'est
+#: pas une correction qui existe : on ignore.
+_NON_NULLABLE = frozenset({"name", "gear_type", "discipline", "is_active"})
+
+
 @router.patch("/{gear_id}", response_model=GearRead)
 async def update_gear(
     gear_id: int,
@@ -114,9 +121,18 @@ async def update_gear(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> GearRead:
+    """Corriger ce qui a été mal saisi — un volume, une longueur, un nom.
+
+    Ce qui n'est pas envoyé ne bouge pas (`exclude_unset`) : l'écran n'envoie
+    que les champs touchés, et une planche entrée à 6'3 ne repart pas à 6'2
+    parce qu'on a corrigé son volume. `null` reste un effacement volontaire sur
+    les champs qui l'acceptent.
+    """
     gear = await _get_gear(db, current_user.id, gear_id)
 
     for field, value in data.model_dump(exclude_unset=True).items():
+        if value is None and field in _NON_NULLABLE:
+            continue
         if value is not None and hasattr(value, "value"):
             value = value.value
         if field == "name" and isinstance(value, str):

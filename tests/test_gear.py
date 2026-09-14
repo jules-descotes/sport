@@ -48,6 +48,51 @@ async def test_create_read_update_a_board(auth_client) -> None:
     assert [item["name"] for item in listing.json()] == ["6'2 Pyzel"]
 
 
+async def test_a_mistyped_board_can_be_corrected_field_by_field(
+    auth_client, user, make_gear
+) -> None:
+    """Se tromper de planche à la saisie n'est pas une fatalité.
+
+    Le PATCH ne touche qu'aux champs envoyés : corriger une longueur ne doit
+    pas ramener le volume à ce que la molette de l'écran savait afficher.
+    """
+    gear = await make_gear(user, name="6'2 Pizel", length_m=1.88, volume_l=30.0)
+
+    fixed = await auth_client.patch(
+        f"/api/v1/gear/{gear.id}",
+        # 6'3, et un nom qui s'écrit comme sur la planche.
+        json={"name": "6'3 Pyzel", "length_m": 1.905},
+    )
+
+    assert fixed.status_code == 200
+    body = fixed.json()
+    assert body["name"] == "6'3 Pyzel"
+    assert body["length_m"] == 1.905
+    assert body["volume_l"] == 30.0
+    assert body["gear_type"] == GearType.BOARD.value
+
+
+async def test_a_correction_cannot_erase_what_the_base_requires(
+    auth_client, user, make_gear
+) -> None:
+    """`null` sur un champ non nullable est ignoré, pas passé à la base.
+
+    Tout est optionnel dans `GearUpdate` — c'est ce qui permet de corriger un
+    volume sans retaper le reste — donc rien n'empêche d'envoyer `name: null`.
+    En base, ce serait une contrainte NOT NULL violée et un 500.
+    """
+    gear = await make_gear(user, name="6'2 Pyzel")
+
+    response = await auth_client.patch(
+        f"/api/v1/gear/{gear.id}", json={"name": None, "volume_l": 28.0}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "6'2 Pyzel"
+    # Ce qui était envoyable, lui, est bien passé.
+    assert response.json()["volume_l"] == 28.0
+
+
 async def test_a_length_outside_any_surfboard_is_refused(auth_client) -> None:
     """18 m n'est pas une planche, c'est une faute de frappe."""
     response = await auth_client.post(

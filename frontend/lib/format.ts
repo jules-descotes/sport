@@ -189,9 +189,16 @@ export function highTideAfter<T extends { ts: string; sea_level_m: number | null
  * surfeur ne dit « ma 1,88 m ». La conversion est donc un affichage, au même
  * titre que celle des heures UTC en heure locale : la base porte la grandeur,
  * le front porte la coutume.
+ *
+ * L'arrondi vit ici, une seule fois : la carte du matos l'affiche et la
+ * molette de correction s'en sert pour se pré-remplir. Deux arrondis
+ * divergents feraient lire 6'2 à un écran et 6'1 à l'autre pour la même
+ * planche — et corriger le volume d'une planche en changerait la longueur.
  */
-export function boardLength(lengthM: number | null | undefined): string {
-  if (lengthM === null || lengthM === undefined) return "";
+export function boardFeetInches(lengthM: number): {
+  feet: number;
+  inches: number;
+} {
   const totalInches = lengthM / 0.0254;
   let feet = Math.floor(totalInches / 12);
   let inches = Math.round(totalInches - feet * 12);
@@ -200,6 +207,13 @@ export function boardLength(lengthM: number | null | undefined): string {
     feet += 1;
     inches = 0;
   }
+  return { feet, inches };
+}
+
+/** La même chose, écrite — « 6'2 ». */
+export function boardLength(lengthM: number | null | undefined): string {
+  if (lengthM === null || lengthM === undefined) return "";
+  const { feet, inches } = boardFeetInches(lengthM);
   return `${feet}'${inches}`;
 }
 
