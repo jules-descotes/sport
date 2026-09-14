@@ -26,7 +26,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.forecast import Observation
+from app.models.forecast import Forecast, Observation
 from app.models.observation_station import ObservationStation
 from app.models.profile import Profile
 from app.models.spot import Spot
@@ -386,6 +386,30 @@ async def ingest_home_observations(db: AsyncSession) -> int:
             since=since,
         )
 
+    if written:
+        # Les paires de calibration se construisent **à chaque ingestion**, pas
+        # à la lecture : au moment où la mesure arrive, tous les runs qui
+        # l'avaient annoncée sont encore en base. Attendre qu'un écran les
+        # demande, c'est risquer qu'un nettoyage des vieux runs soit passé
+        # entre-temps — et une paire manquante ne se reconstitue pas.
+        from app.services.calibration import build_pairs
+
+        try:
+            pairs = await build_pairs(
+                db,
+                spot,
+                station.code,
+                since - timedelta(hours=1),
+                now,
+                distance_m=distance,
+            )
+            if pairs:
+                logger.info("Calibration : %d paire(s) ajoutée(s)", pairs)
+        except Exception as exc:
+            # La calibration est un tableau de bord : elle ne doit jamais faire
+            # perdre une mesure déjà écrite.
+            logger.error("Calibration impossible : %s", exc, exc_info=True)
+
     return written
 
 
@@ -408,6 +432,159 @@ async def latest_observation(
         # été écrit (cf. `app/schemas/types.py`).
         observation.ts = observation.ts.replace(tzinfo=UTC)
     return observation
+
+
+# Colonne d'`observations` -> champ du `conditions_snapshot`.
+#
+# La bouée mesure **la houle**, et rien d'autre : ni le vent, ni le niveau de
+# la mer. Le volet `observed` garde donc l'archive Open-Meteo pour tout le
+# reste, et la mesure ne recouvre que ce qu'elle sait vraiment. Remplacer le
+# vent par une valeur de bouée qui n'existe pas laisserait un trou là où il y
+# avait une donnée.
+SNAPSHOT_BY_COLUMN = {
+    "hm0_m": "wave_height_m",
+    "mean_period_s": "wave_period_s",
+    "peak_period_s": "wave_peak_period_s",
+    "wave_direction_deg": "wave_direction_deg",
+    "water_temperature_c": "water_temperature_c",
+}
+
+# Une mesure est rapportée à l'heure pleine la plus proche, dans cette limite.
+# Les mesures sont demi-horaires : au-delà de trente minutes, il n'y a
+# simplement pas de mesure pour cette heure.
+SNAP_TOLERANCE_MIN = 30
+
+
+async def station_window_values(
+    db: AsyncSession,
+    station_code: str,
+    timestamps: Sequence[datetime],
+) -> dict[datetime, dict[str, Optional[float]]]:
+    """Les mesures de la bouée, rapportées aux heures d'une fenêtre de session.
+
+    Rendues dans le vocabulaire du `conditions_snapshot`, pour pouvoir se
+    superposer à l'archive sans traduction au point d'usage.
+    """
+    if not timestamps:
+        return {}
+
+    start = min(timestamps) - timedelta(minutes=SNAP_TOLERANCE_MIN)
+    end = max(timestamps) + timedelta(minutes=SNAP_TOLERANCE_MIN)
+    rows = await observations_between(db, station_code, start, end)
+    if not rows:
+        return {}
+
+    out: dict[datetime, dict[str, Optional[float]]] = {}
+    for ts in timestamps:
+        best: Optional[Observation] = None
+        best_gap = timedelta(minutes=SNAP_TOLERANCE_MIN)
+        for row in rows:
+            gap = abs(row.ts - ts)
+            if gap <= best_gap:
+                best, best_gap = row, gap
+        if best is None:
+            continue
+
+        values = {
+            field: getattr(best, column)
+            for column, field in SNAPSHOT_BY_COLUMN.items()
+            if getattr(best, column) is not None
+        }
+        if values:
+            out[ts] = values
+    return out
+
+
+# Au-delà, la mesure ne décrit plus « maintenant » et le bloc disparaît.
+# Trois heures et pas une : les bouées se taisent régulièrement une heure ou
+# deux, et faire clignoter le bloc à chaque trou serait pire que de l'enlever.
+NOW_MAX_AGE_MIN = 180
+
+
+async def buoy_now(
+    db: AsyncSession, spot: Spot, at: Optional[datetime] = None
+) -> Optional[dict[str, Any]]:
+    """La dernière mesure de la bouée du spot, face à ce qui était prévu.
+
+    Rend `None` — donc le bloc disparaît — dans tous les cas où il n'y a rien
+    d'honnête à montrer : pas de bouée rattachée, aucune mesure, ou une mesure
+    de plus de trois heures. Un bloc « Maintenant » qui afficherait la houle de
+    ce matin serait plus trompeur qu'un écran sans bloc.
+    """
+    at = at or datetime.now(UTC)
+
+    station = await station_by_code(db, spot.observation_station_code)
+    if station is None:
+        return None
+
+    observation = await latest_observation(db, station.code)
+    if observation is None:
+        return None
+
+    age_minutes = int((at - observation.ts).total_seconds() // 60)
+    if age_minutes > NOW_MAX_AGE_MIN or age_minutes < -NOW_MAX_AGE_MIN:
+        return None
+
+    # La prévision pour **l'heure de la mesure**, pas pour l'heure courante :
+    # comparer 9 h 30 mesuré à 11 h prévu ne mesurerait que le temps qui passe.
+    hour = observation.ts.replace(minute=0, second=0, microsecond=0)
+    forecast = await _latest_forecast_at(db, spot.id, hour)
+
+    forecast_hm0 = forecast.wave_height_m if forecast else None
+    forecast_period = (
+        (forecast.wave_peak_period_s or forecast.wave_period_s) if forecast else None
+    )
+
+    return {
+        "station_code": station.code,
+        "station_name": station.name,
+        "distance_m": spot.observation_station_distance_m,
+        "ts": observation.ts,
+        "age_minutes": max(0, age_minutes),
+        "hm0_m": observation.hm0_m,
+        "peak_period_s": observation.peak_period_s or observation.mean_period_s,
+        "wave_direction_deg": observation.wave_direction_deg,
+        "water_temperature_c": observation.water_temperature_c,
+        "forecast_hm0_m": forecast_hm0,
+        "forecast_period_s": forecast_period,
+        "hm0_delta_m": (
+            round(observation.hm0_m - forecast_hm0, 2)
+            if observation.hm0_m is not None and forecast_hm0 is not None
+            else None
+        ),
+        "period_delta_s": (
+            round((observation.peak_period_s or 0) - forecast_period, 1)
+            if observation.peak_period_s is not None and forecast_period is not None
+            else None
+        ),
+        "sentence": _now_sentence(observation.hm0_m, forecast_hm0),
+    }
+
+
+def _now_sentence(measured: Optional[float], forecast: Optional[float]) -> Optional[str]:
+    """« prévu 1,4 m, mesuré 1,2 m » — l'écart en clair, sans jugement.
+
+    Pas de « le modèle se trompe » : une prévision et une mesure qui diffèrent
+    de 20 cm, c'est une mer normale, pas une faute. Le jugement, s'il vient un
+    jour, viendra de la calibration sur trente jours — pas d'un point.
+    """
+    if measured is None or forecast is None:
+        return None
+    return f"prévu {forecast:.1f} m, mesuré {measured:.1f} m".replace(".", ",")
+
+
+async def _latest_forecast_at(
+    db: AsyncSession, spot_id: int, ts: datetime
+) -> Optional[Forecast]:
+    """Le run le plus récent qui annonçait cette heure-là."""
+    result = await db.execute(
+        select(Forecast)
+        .where(Forecast.spot_id == spot_id)
+        .where(Forecast.ts == ts)
+        .order_by(Forecast.run_ts.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 async def observations_between(

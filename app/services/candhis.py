@@ -34,7 +34,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.quota import QuotaExhausted, reserve
+from app.services.quota import reserve
 
 logger = logging.getLogger(__name__)
 

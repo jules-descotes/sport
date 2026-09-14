@@ -51,6 +51,10 @@ export interface Spot {
    *  téléphone qu'à une requête partie du serveur. */
   webcam_warning?: string | null;
   tier: SpotTier;
+  /** La bouée qui mesure ce plan d'eau. Nulle au-delà de 30 km : à cette
+   *  distance, une houle mesurée décrit une autre mer. */
+  observation_station_code?: string | null;
+  observation_station_distance_m?: number | null;
 }
 
 export interface SpotNearby extends Spot {
@@ -190,6 +194,33 @@ export interface Thresholds {
   wave_big_m: number;
 }
 
+// ── La bouée (lot 1 bis) ─────────────────────────────────────────────────
+//
+// Une **mesure**, pas une prévision. Les deux se regardent côte à côte dans le
+// bloc « Maintenant » ; elles ne se moyennent jamais (règle 9 du cadrage).
+
+export interface BuoyNow {
+  station_code: string;
+  station_name: string;
+  /** Distance spot ↔ bouée. Nulle au-delà de 30 km — auquel cas il n'y a pas
+   *  de bloc du tout : à cette distance, c'est une autre mer. */
+  distance_m: number | null;
+  /** Heure de la mesure, en UTC. */
+  ts: string;
+  age_minutes: number;
+  hm0_m: number | null;
+  peak_period_s: number | null;
+  wave_direction_deg: number | null;
+  water_temperature_c: number | null;
+  /** Ce que la dernière prévision annonçait pour **cette même heure**. */
+  forecast_hm0_m: number | null;
+  forecast_period_s: number | null;
+  hm0_delta_m: number | null;
+  period_delta_s: number | null;
+  /** « prévu 1,4 m, mesuré 1,2 m » — écrite côté serveur. */
+  sentence: string | null;
+}
+
 export interface SpotForecast {
   spot: Spot;
   /** Open-Meteo a dépassé les 5 s : la réponse vient de la base. */
@@ -203,6 +234,10 @@ export interface SpotForecast {
    *  Servis avec la prévision plutôt que demandés à part : c'est une requête
    *  de moins à l'ouverture de l'écran, sur un réseau de parking de plage. */
   thresholds: Thresholds | null;
+  /** Le bloc « Maintenant ». Nul quand la mesure a plus de trois heures :
+   *  une bouée muette depuis ce matin ne décrit plus « maintenant », et un
+   *  bloc qui afficherait la houle de 6 h serait pire qu'aucun bloc. */
+  now: BuoyNow | null;
   points: ForecastPoint[];
 }
 
@@ -572,6 +607,16 @@ export interface ConditionsSnapshot {
     trend_m_per_h: number | null;
   };
   observed_error?: string;
+  /** La bouée qui a mesuré cette fenêtre, quand il y en a une. Absente
+   *  quand le volet `observed` vient entièrement de l'archive. */
+  observed_station?: {
+    code: string;
+    name: string;
+    distance_m: number | null;
+    source: string;
+    /** Nombre d'heures de la fenêtre réellement mesurées. */
+    hours: number;
+  };
 }
 
 export interface QuickSessionResponse {
@@ -1215,4 +1260,34 @@ export interface ProfileStats {
   nutrition: NutritionStats;
   training: TrainingStats;
   habits: HabitTrend[];
+}
+
+// ── Calibration prévision ↔ mesure (§7.3, lot 1 bis) ─────────────────────
+//
+// Un tableau de bord, pas une correction. Le score de cold start ne bouge pas
+// (décision du 15/09) : on mesure d'abord, on corrigera avec des mois de
+// données, pas des jours.
+
+export interface CalibrationBucket {
+  /** « 0-6h », « 6-24h », « 24-48h », « 48h+ ». */
+  bucket: string;
+  /** Rendu même quand il est trop faible pour un chiffre : « 4 mesures » est
+   *  une information, un zéro se lirait comme un modèle parfait. */
+  pairs: number;
+  /** `observé − prévu`. Positif = le modèle **sous-estime**. */
+  bias: number | null;
+  mae: number | null;
+  bias_pct: number | null;
+  mean_observed: number | null;
+}
+
+export interface Calibration {
+  station_id: string | null;
+  window_days: number;
+  pairs: number;
+  distance_m: number | null;
+  hm0: CalibrationBucket[];
+  period: CalibrationBucket[];
+  /** Phrases écrites côté serveur — le signe du biais n'est écrit qu'une fois. */
+  sentences: string[];
 }

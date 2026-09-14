@@ -29,6 +29,7 @@ from app.schemas.spot_rule import (
     SpotRuleUpdate,
 )
 from app.schemas.spot import (
+    BuoyNow,
     FavoriteDayRanking,
     FavoriteRanking,
     RulesPreview,
@@ -95,7 +96,7 @@ from app.services.webcams import (
     normalize_webcam_url,
 )
 from app.services.sun import is_daylight, sun_events
-from app.services.observations import link_spots_to_stations
+from app.services.observations import buoy_now, link_spots_to_stations
 from app.services.spot_tiers import (
     HOME_MAX,
     get_or_create_preferences,
@@ -814,8 +815,16 @@ async def spot_forecast(
         # et un aller-retour de plus à l'ouverture de l'écran serait une
         # requête de trop sur un réseau de parking de plage.
         thresholds=ThresholdsRead(**asdict(thresholds)),
+        # Le bloc « Maintenant » voyage avec, pour la même raison que les
+        # seuils : c'est le même écran, ouvert au même moment.
+        now=await _buoy_now(db, spot),
         points=points,
     )
+
+
+async def _buoy_now(db: AsyncSession, spot: Spot) -> Optional[BuoyNow]:
+    payload = await buoy_now(db, spot)
+    return BuoyNow(**payload) if payload else None
 
 
 @router.get("/{spot_ref}/slot", response_model=SlotDetail)

@@ -32,6 +32,11 @@ class SpotRead(BaseModel):
     # jette pas l'adresse (décidé le 13/09, retours n° 4).
     webcam_warning: Optional[str] = None
     tier: str = SpotTier.CATALOG.value
+    # La bouée qui mesure ce plan d'eau, et à quelle distance. Nuls au-delà
+    # de 30 km : au large de cette distance, une houle mesurée décrit une
+    # autre mer.
+    observation_station_code: Optional[str] = None
+    observation_station_distance_m: Optional[float] = None
 
 
 class SpotNearby(SpotRead):
@@ -168,6 +173,37 @@ class SunDay(BaseModel):
     sunset: Optional[datetime] = None
 
 
+class BuoyNow(BaseModel):
+    """Le bloc « Maintenant » — ce que la bouée mesure, contre ce qui était prévu.
+
+    C'est le premier endroit du produit où une **mesure** et une **prévision**
+    se regardent en face. Elles restent deux grandeurs distinctes (règle 9) :
+    on les affiche côte à côte, on ne les moyenne pas.
+    """
+
+    station_code: str
+    station_name: str
+    distance_m: Optional[float] = None
+    # Heure de la mesure, en UTC. Le front affiche en heure locale.
+    ts: datetime
+    age_minutes: int
+
+    hm0_m: Optional[float] = None
+    peak_period_s: Optional[float] = None
+    wave_direction_deg: Optional[float] = None
+    water_temperature_c: Optional[float] = None
+
+    # Ce que la dernière prévision annonçait pour **cette même heure**, et
+    # l'écart. Nuls quand aucun run ne couvre l'heure mesurée — ce qui arrive
+    # sur un spot qu'on vient d'ouvrir.
+    forecast_hm0_m: Optional[float] = None
+    forecast_period_s: Optional[float] = None
+    hm0_delta_m: Optional[float] = None
+    period_delta_s: Optional[float] = None
+    # La phrase toute faite : « prévu 1,4 m, mesuré 1,2 m ».
+    sentence: Optional[str] = None
+
+
 class SpotForecastResponse(BaseModel):
     spot: SpotRead
     # `True` quand Open-Meteo a dépassé les cinq secondes : la réponse vient de
@@ -185,6 +221,12 @@ class SpotForecastResponse(BaseModel):
     # pour la même règle finiraient par montrer une cellule « bonne » sous une
     # note de 2. Et c'est une requête de moins à l'ouverture de l'écran.
     thresholds: Optional["ThresholdsRead"] = None
+    # Le bloc « Maintenant », servi **avec** la prévision plutôt que par un
+    # second appel : c'est le même écran, ouvert au même moment, et une
+    # requête de plus sur le réseau d'un parking est une requête de trop.
+    # Nul quand la mesure a plus de trois heures — une bouée muette depuis
+    # ce matin ne décrit plus « maintenant ».
+    now: Optional[BuoyNow] = None
     points: list[ForecastPoint] = []
 
 

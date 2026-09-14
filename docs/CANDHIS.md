@@ -338,3 +338,49 @@ Les données sont diffusées par le Cerema sous les conditions de
 `https://candhis.cerema.fr/doc/01_Utilisation.fr.pdf`. Usage strictement
 personnel et non commercial ici, comme Open-Meteo et Open Food Facts. On ne
 réhéberge rien et on ne rediffuse rien.
+
+## 9. Ce qu'on en fait — les trois usages
+
+**Le volet `observed` d'une session.** Quand la bouée du spot est à moins de
+30 km et qu'elle a mesuré la fenêtre, ses valeurs de houle **recouvrent**
+celles de l'archive Open-Meteo. Recouvrent et ne remplacent pas : une bouée ne
+mesure ni le vent ni le niveau de la mer, et un volet reconstruit à partir
+d'elle seule perdrait la moitié de ce qui décide d'une session. Chaque ligne
+porte donc `wave_source` (`buoy` ou `model`) — sans ce marquage, l'historique
+mélangerait des mesures et des sorties de modèle sous la même étiquette
+« observé », et le modèle du lot 6 ne pourrait plus les départager.
+
+Une mesure est rapportée à l'heure pleine **la plus proche, à trente minutes
+près**. Les mesures sont demi-horaires : exiger l'heure pleine n'en garderait
+aucune, et rapprocher une mesure de 8 h d'une heure de 10 h ne serait plus un
+arrondi mais une invention.
+
+`scripts/refill_observed.py` rejoue ce recouvrement sur les sessions déjà
+enregistrées, **sans aucun appel réseau** — il lit `observations`. L'ancien
+snapshot part dans `snapshot_history` avec sa raison ; rien n'est écrasé.
+
+**Le bloc « Maintenant ».** La dernière mesure de la bouée, face à ce que la
+dernière prévision annonçait **pour cette même heure** — comparer 9 h 30 mesuré
+à 11 h prévu ne mesurerait que le temps qui passe. Le bloc disparaît au-delà de
+trois heures d'âge : une bouée muette depuis ce matin ne décrit plus
+« maintenant ».
+
+**La calibration (§7.3).** `forecast_vs_observed` garde une ligne par *(heure
+mesurée, run qui l'annonçait)*. Une même heure en produit plusieurs — annoncée
+trois jours avant, la veille, le matin — et c'est exactement la question qu'on
+veut poser : de combien le modèle se trompe **à tel délai**. C'est
+l'historisation des runs du lot 1 ter qui la rend posable.
+
+Le biais est `observé − prévu` : **positif = le modèle sous-estime**. Les
+phrases sont écrites côté serveur pour que ce signe ne soit écrit qu'à un seul
+endroit — le dupliquer en TypeScript finirait par inverser « sous-estime » et
+« surestime » sur un seul des deux écrans. En dessous de douze paires sur une
+tranche, on affiche le compte et pas un chiffre : un biais sur huit mesures est
+du bruit présenté avec une décimale.
+
+> ⚠️ **Rien n'est corrigé.** Le score de cold start ne bouge pas d'un dixième
+> (décision du 15/09). On mesure d'abord, longtemps ; on corrigera avec des
+> mois de données, pas avec trois jours. Un modèle recalé sur deux semaines
+> d'un automne calme serait faux tout l'hiver — et faux sans qu'on puisse le
+> voir, ce qui est le genre de correction qui s'installe et qu'on ne retrouve
+> plus.

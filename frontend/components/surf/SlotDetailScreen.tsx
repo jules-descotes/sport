@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { DirectionArrow } from "@/components/surf/DirectionArrow";
 import { IconBack } from "@/components/ui/Icons";
+import { CalibrationCard } from "@/components/surf/CalibrationCard";
 import { api } from "@/lib/api";
 import {
   clockLabel,
@@ -403,6 +404,38 @@ export function SlotDetailScreen({
           </p>
         )}
       </section>
+
+      {/* L'écart mesuré sur trente jours, sous l'écart entre deux runs. Les
+          deux disent « de combien ça bouge », mais pas la même chose : le
+          premier compare deux prévisions, celui-ci compare la prévision à
+          l'eau. Il n'apparaît que là où une bouée mesure vraiment ce spot. */}
+      <CalibrationPanel />
     </Frame>
+  );
+}
+
+/**
+ * La carte de calibration, chargée à part.
+ *
+ * Requête séparée et non jointe au créneau : elle porte sur trente jours et ne
+ * change pas d'un créneau à l'autre, donc TanStack Query la sert depuis son
+ * cache quand on ouvre le deuxième créneau. La joindre au détail la
+ * rechargerait à chaque tap sur le tableau.
+ */
+function CalibrationPanel() {
+  const { data } = useQuery({
+    queryKey: ["calibration"],
+    queryFn: () => api.calibration(),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  // Rien à montrer tant qu'aucune paire n'existe : une carte « 0 comparaison »
+  // sur un écran de créneau serait du bruit, pas une information.
+  if (!data || data.pairs === 0) return null;
+
+  return (
+    <section className="mt-6 px-5">
+      <CalibrationCard calibration={data} unit="m" quantity="hm0" />
+    </section>
   );
 }

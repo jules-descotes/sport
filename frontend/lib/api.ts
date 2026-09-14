@@ -2,6 +2,7 @@ import type {
   ApiToken,
   BodyMetric,
   ApiTokenCreated,
+  Calibration,
   DailyLogEntry,
   DailyLogStatus,
   DailyLogToday,
@@ -195,6 +196,13 @@ export const api = {
    *  déjà affiché, donc d'une prévision déjà en base. */
   spotSlot: (ref: string | number, ts: string) =>
     request<SlotDetail>(`/spots/${ref}/slot${query({ ts })}`),
+
+  /** Le biais du modèle mesuré contre la bouée, par tranche de délai.
+   *  Ne corrige rien : c'est un tableau de bord (cf. §7.3). */
+  calibration: (station?: string | null, days?: number) =>
+    request<Calibration>(
+      `/calibration${query({ station: station ?? undefined, days })}`,
+    ),
 
   /** Recherche par nom dans le catalogue. N'ingère rien. */
   searchSpots: (

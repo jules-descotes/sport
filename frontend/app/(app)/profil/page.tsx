@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { HabitSettings } from "@/components/habits/HabitSettings";
 import { ProfileStatsCards } from "@/components/habits/ProfileStatsCards";
+import { CalibrationCard } from "@/components/surf/CalibrationCard";
 import { NutritionSettings } from "@/components/nutrition/NutritionSettings";
 import { ThresholdSettings } from "@/components/surf/ThresholdSettings";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
@@ -124,6 +125,11 @@ export default function ProfilPage() {
           c'est ce qu'on vient chercher en ouvrant le profil, avant les
           réglages (décidé le 13/09). */}
       <ProfileStatsCards />
+
+      {/* La calibration a sa place ici et pas dans les réglages : ce n'est
+          pas un bouton, c'est un chiffre sur soi — ou plutôt sur la mer qu'on
+          regarde. Elle ne s'affiche que lorsqu'une bouée a vraiment mesuré. */}
+      <CalibrationSection />
 
       {/* Le matos et l'historique sont passés dans Surf le 13/09 : le profil
           redevient ce qu'il doit être, des réglages. Les deux lignes restent
@@ -343,5 +349,28 @@ export default function ProfilPage() {
         </button>
       </section>
     </>
+  );
+}
+
+/**
+ * La comparaison prévision ↔ mesure, sur trente jours glissants.
+ *
+ * Absente tant qu'aucune paire n'existe. Une carte vide dans un profil est une
+ * promesse non tenue : on préfère qu'elle apparaisse le jour où elle a quelque
+ * chose à dire.
+ */
+function CalibrationSection() {
+  const calibration = useQuery({
+    queryKey: ["calibration"],
+    queryFn: () => api.calibration(),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  if (!calibration.data || calibration.data.pairs === 0) return null;
+
+  return (
+    <section className="px-5 pb-6">
+      <CalibrationCard calibration={calibration.data} unit="m" quantity="hm0" />
+    </section>
   );
 }

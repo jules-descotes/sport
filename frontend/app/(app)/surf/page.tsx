@@ -21,6 +21,7 @@ import { IconPlus, IconSearch, IconStar } from "@/components/ui/Icons";
 import { ApiError, api } from "@/lib/api";
 import { dayLabel, localDayKey } from "@/lib/format";
 import { forecastKey } from "@/lib/forecast-cache";
+import { BuoyNowBlock } from "@/components/surf/BuoyNowBlock";
 import type { SpotForecast } from "@/lib/types";
 import { useCachedForecast } from "@/lib/useCachedForecast";
 import { useIsDesktop } from "@/lib/useMediaQuery";
@@ -328,6 +329,15 @@ function SurfScreen() {
                   );
                 })}
               </nav>
+            ) : null}
+
+            {forecast.data?.now ? (
+              /* Au-dessus du tableau : c'est la seule ligne de cet écran qui
+                 soit une **mesure**. La reléguer sous cinq jours de prévision
+                 reviendrait à ne jamais la lire. */
+              <div className="px-5 pb-4 lg:px-0">
+                <BuoyNowBlock now={forecast.data.now} />
+              </div>
             ) : null}
 
             <div className={selectedTs ? "px-5 lg:px-0" : "px-5"}>

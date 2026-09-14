@@ -176,13 +176,38 @@ def observed_panel_from_bundle(
     bundle: HourlyBundle,
     timestamps: list[datetime],
     offsets: Optional[tuple[int, ...]] = None,
+    measured: Optional[dict[datetime, dict[str, Optional[float]]]] = None,
 ) -> list[dict[str, Any]]:
-    """Volet `observed` à partir d'une réponse d'archive déjà récupérée."""
-    return [
-        _entry(offset, ts, bundle.rows[ts])
-        for offset, ts in zip(offsets or WINDOW_HOURS, timestamps)
-        if ts in bundle.rows
-    ]
+    """Volet `observed` : l'archive, **recouverte** par la bouée quand il y en a.
+
+    Recouverte et non remplacée, et la nuance porte tout le sens : une bouée
+    mesure la houle, et *rien d'autre*. Ni le vent, ni le niveau de la mer. Un
+    volet reconstruit à partir de la seule bouée perdrait le vent — c'est-à-dire
+    la moitié de ce qui décide d'une session.
+
+    Chaque ligne dit d'où viennent ses valeurs de houle. Sans ça, l'historique
+    mélangerait des mesures de bouée et des sorties de modèle sous la même
+    étiquette « observé », et personne ne pourrait plus les départager — y
+    compris le modèle du lot 6.
+    """
+    measured = measured or {}
+    panel: list[dict[str, Any]] = []
+
+    for offset, ts in zip(offsets or WINDOW_HOURS, timestamps):
+        values = bundle.rows.get(ts)
+        overlay = measured.get(ts)
+        if values is None and overlay is None:
+            continue
+
+        entry = _entry(offset, ts, values or {})
+        if overlay:
+            entry.update(overlay)
+            entry["wave_source"] = "buoy"
+        else:
+            entry["wave_source"] = "model"
+        panel.append(entry)
+
+    return panel
 
 
 async def fetch_observed(
@@ -219,6 +244,27 @@ async def fetch_observed(
         return None
 
 
+async def _measured_window(
+    db: AsyncSession,
+    spot: Spot,
+    timestamps: list[datetime],
+) -> tuple[Optional[Any], dict[datetime, dict[str, Optional[float]]]]:
+    """La bouée du spot et ses mesures sur la fenêtre — ou rien du tout.
+
+    Import local : `services/observations` importe `services/geo` et les
+    modèles, et le faire en tête créerait un cycle avec les modules qui
+    importent déjà `backfill`.
+    """
+    from app.services.observations import station_by_code, station_window_values
+
+    station = await station_by_code(db, spot.observation_station_code)
+    if station is None:
+        return None, {}
+
+    measured = await station_window_values(db, station.code, timestamps)
+    return (station if measured else None), measured
+
+
 async def build_conditions_snapshot(
     db: AsyncSession,
     spot: Spot,
@@ -237,8 +283,15 @@ async def build_conditions_snapshot(
 
     forecast_panel = await _forecast_panel(db, spot.id, timestamps, offsets)
     bundle = await fetch_observed(spot, timestamps, client)
-    observed = (
-        observed_panel_from_bundle(bundle, timestamps, offsets) if bundle else []
+
+    # La bouée prime sur l'archive quand elle est assez proche et qu'elle a
+    # mesuré cette fenêtre : c'est une mesure contre une sortie de modèle. Elle
+    # n'est pas toujours là — une session à l'étranger, une bouée en panne, une
+    # session d'avant le lot 1 bis — et c'est pour ça que l'archive reste le
+    # socle plutôt que le repli.
+    station, measured = await _measured_window(db, spot, timestamps)
+    observed = observed_panel_from_bundle(
+        bundle or HourlyBundle(), timestamps, offsets, measured
     )
 
     # La position dans la marée se lit sur les extrêmes du **jour**, pas sur
@@ -280,6 +333,21 @@ async def build_conditions_snapshot(
             "coast_bearing_deg": spot.coast_bearing_deg,
         },
     }
+
+    if station is not None:
+        # La source **et** la distance, parce que les deux s'affichent
+        # (« bouée d'Anglet, 4 km ») et que les deux comptent : une mesure à
+        # 25 km ne vaut pas une mesure à 4 km, et il faudra pouvoir le dire
+        # sans rouvrir le catalogue des stations.
+        snapshot["observed_station"] = {
+            "code": station.code,
+            "name": station.name,
+            "distance_m": spot.observation_station_distance_m,
+            "source": "candhis",
+            "hours": sum(
+                1 for entry in observed if entry.get("wave_source") == "buoy"
+            ),
+        }
 
     if not observed:
         # Une session sans volet `observed` reste exploitable, mais elle doit

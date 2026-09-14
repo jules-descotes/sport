@@ -359,7 +359,17 @@ export default function SessionDetailPage() {
         <>
           <Window
             title="Constaté"
-            hint="archive, à l'heure de la session"
+            hint={
+              snapshot.observed_station
+                ? `bouée ${snapshot.observed_station.name}${
+                    snapshot.observed_station.distance_m !== null
+                      ? `, ${Math.round(
+                          snapshot.observed_station.distance_m / 1000,
+                        )} km`
+                      : ""
+                  }`
+                : "archive, à l'heure de la session"
+            }
             entries={snapshot.observed}
           />
           <Window
@@ -372,6 +382,19 @@ export default function SessionDetailPage() {
             {snapshot.model_version ? ` ${snapshot.model_version}` : ""}. Les
             deux volets restent séparés : une prévision et une mesure ne sont
             pas la même grandeur.
+            {snapshot.observed_station ? (
+              <>
+                {" "}
+                {snapshot.observed_station.hours} heure
+                {snapshot.observed_station.hours > 1 ? "s" : ""} de ce volet
+                {snapshot.observed_station.hours > 1
+                  ? " viennent"
+                  : " vient"}{" "}
+                de la bouée {snapshot.observed_station.name} — une mesure, pas
+                un modèle. La houle en vient ; le vent et la marée restent
+                ceux de l&apos;archive, que la bouée ne mesure pas.
+              </>
+            ) : null}
           </p>
         </>
       ) : null}

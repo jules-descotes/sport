@@ -28,7 +28,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Optional, Sequence
 
 from sqlalchemy import func, select
@@ -36,6 +36,7 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.db.database import async_session
 from app.models.surf_session import SurfSession
+from app.services.calibration import build_pairs
 from app.services.candhis import CandhisClient, day_chunks
 from app.services.observations import (
     home_station,
@@ -74,7 +75,10 @@ async def run(
     async with async_session() as db:
         if station_code:
             station = await station_by_code(db, station_code)
-            spot_id = None
+            # Une station demandée nommément n'est rattachée à aucun spot : on
+            # ingère ses mesures, mais on n'apparie rien — une paire de
+            # calibration a besoin du point de grille d'un spot en face.
+            spot, spot_id = None, None
             if station is None:
                 logger.error(
                     "Station %s inconnue — lancer d'abord "
@@ -127,6 +131,7 @@ async def run(
             return 0
 
         total = 0
+        paired = 0
         async with CandhisClient(db) as client:
             for start, end in chunks:
                 try:
@@ -143,7 +148,26 @@ async def run(
                     break
                 total += written
 
-        logger.info("Backfill terminé : %d mesure(s) écrites au total", total)
+                if written and spot_id is not None:
+                    # On apparie ce qui peut l'être. Sur l'ancien, ce sera peu :
+                    # `forecasts` ne remonte pas avant le début de l'ingestion,
+                    # et une mesure sans prévision en face ne donne pas de
+                    # paire. C'est normal, et c'est pour ça qu'on ne s'alarme
+                    # pas d'un backfill qui écrit mille mesures et deux paires.
+                    paired += await build_pairs(
+                        db,
+                        spot,
+                        station.code,
+                        datetime.combine(start, time.min, tzinfo=UTC),
+                        datetime.combine(end, time.max, tzinfo=UTC),
+                        distance_m=spot.observation_station_distance_m,
+                    )
+
+        logger.info(
+            "Backfill terminé : %d mesure(s) écrites, %d paire(s) de calibration",
+            total,
+            paired,
+        )
 
     return 0
 

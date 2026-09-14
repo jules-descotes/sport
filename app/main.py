@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.calibration import router as calibration_router
 from app.api.routes.daily_log import router as daily_log_router
 from app.api.routes.expenditure import router as expenditure_router
 from app.api.routes.gear import router as gear_router
@@ -29,6 +30,7 @@ from app.db.database import async_session
 # Import des modèles : enregistre les métadonnées SQLAlchemy (et fournit à
 # Alembic la cible de l'autogénération).
 from app.models.api_quota import ApiQuota  # noqa: F401
+from app.models.calibration import ForecastVsObserved  # noqa: F401
 from app.models.api_token import ApiToken  # noqa: F401
 from app.models.daily_log import DailyLog  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401
@@ -184,6 +186,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(spots_router, prefix="/api/v1")
 app.include_router(tides_router, prefix="/api/v1")
+app.include_router(calibration_router, prefix="/api/v1")
 app.include_router(recommend_router, prefix="/api/v1")
 app.include_router(daily_log_router, prefix="/api/v1")
 app.include_router(expenditure_router, prefix="/api/v1")
