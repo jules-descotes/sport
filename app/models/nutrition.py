@@ -307,7 +307,7 @@ class RecipeNote(Base):
         Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True
     )
     favorite: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean, nullable=False, default=False, server_default=func.false()
     )
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Combien de fois elle a été cuisinée — incrémenté quand on la journalise.

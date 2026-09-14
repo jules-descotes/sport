@@ -820,8 +820,9 @@ d'actions par créneau (voir, autre plat, choisir, échanger, pas là),
 bibliothèque `/nutrition/recettes` (toutes / favorites / les miennes, et
 « écrire une recette »).
 
-**Migration `0015`**. **622 tests pytest + 121 vitest verts**, `npm run lint` et
-`npm run build` propres.
+**Migration `0018`** (renumérotée le 14/09 : elle se chaîne derrière 0017, et
+un numéro de révision dit sa place dans la chaîne). **622 tests pytest + 121
+vitest verts**, `npm run lint` et `npm run build` propres.
 
 ### Lot 5 bis — ce qui reste (hors code)
 - [ ] Sans la table Ciqual, les recettes n'ont pas de macros et le générateur

@@ -1,6 +1,6 @@
 """13/09 (retours n° 5) — le menu se réduit à deux repas, et les recettes deviennent les siennes
 
-Revision ID: 0015
+Revision ID: 0018
 Revises: 0017
 Create Date: 2026-09-13
 
@@ -39,12 +39,12 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0015"
-# Chaînée sur 0016 et non sur 0014 : 0016 (taxonomie des exercices) a été
-# livrée pendant que celle-ci était encore en cours d'écriture, et deux
-# migrations partant du même parent donnent deux têtes — `alembic upgrade
-# head` échoue alors au démarrage et l'API ne répond plus. Le contenu des
-# deux est indépendant, l'ordre n'a donc aucune importance.
+# **0018 et non 0015** : le numéro dit la place dans la chaîne, jamais la date
+# à laquelle on a commencé à écrire le fichier. Celle-ci a été rédigée pendant
+# que 0016 et 0017 étaient livrées, et elle se chaîne donc derrière elles —
+# porter le numéro 0015 en queue de chaîne rendait l'ordre réel illisible, et
+# c'est précisément ce qu'un numéro de révision sert à dire.
+revision: str = "0018"
 down_revision: Union[str, Sequence[str], None] = "0017"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -93,8 +93,13 @@ def upgrade() -> None:
             sa.ForeignKey("recipes.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        # `sa.false()`, jamais `sa.text("0")` : Postgres refuse un entier comme
+        # défaut de booléen (`DEFAULT 0` -> erreur de type), là où SQLite
+        # l'accepte sans broncher. C'est exactement ce qui a mis la production
+        # à terre le 14/09. `sa.false()` rend `false` sur Postgres et `0` sur
+        # SQLite — le dialecte tranche, pas nous.
         sa.Column(
-            "favorite", sa.Boolean(), nullable=False, server_default=sa.text("0")
+            "favorite", sa.Boolean(), nullable=False, server_default=sa.false()
         ),
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column(
