@@ -888,6 +888,12 @@ ingéré, trois mois en arrière — backfillée à 2,08 m / 11,8 s / 191°.
 - **Training : générateur de séances** — taxonomie des exercices (groupe, pattern de mouvement, matériel, difficulté 1-5), niveau de Jules par catégorie **déduit de ce qu'il a déjà fait** (charges, reps, temps tenus), génération de **plusieurs séances différentes** pour une demande (« abdos, 15 min, sans matériel »), progression douce, variété sur 14 jours. Algorithme déterministe et testable, pas de LLM.
 - **Images d'exercices** : déjà importées (free-exercise-db domaine public, wger CC BY-SA — licence stockée par ligne, CSP `img-src https:` ouverte). À **afficher** en mode séance et dans la bibliothèque, avec attribution pour les CC BY-SA. Les 13 exercices du catalogue maison sans image sont à rapprocher d'un exercice importé qui en a une.
 
+### Décidé le 15/09 — CANDHIS (lot 1 bis)
+- Jeton CANDHIS reçu : **`CANDHIS_API_KEY` en variable Railway uniquement**, jamais dans le dépôt ni dans un fichier. Quota **150 requêtes / jour**, **12 mois de données par requête au maximum** — compteur journalier persisté en base, plafond dur à 140, la fonctionnalité s'éteint proprement sans clé.
+- Une bouée « maison » (la plus proche du favori principal, côte basque), interrogée **toutes les heures sur une fenêtre de 3 h** (~24 requêtes/jour), pas toutes les 30 min. Backfill historique par tranches de 12 mois, une fois.
+- `observations` = mesures ; `forecasts` = prévisions. Jamais mélangées dans un vecteur. Le volet `observed` d'une session préfère la bouée quand elle est à moins de 30 km, en gardant la distance.
+- La calibration prévision ↔ mesure du §7.3 démarre ici : paires (prévision au run_ts, mesure) par heure, biais par délai de prévision, affiché sobrement.
+
 ### Décidé le 13/09 (retours n° 4)
 - **Bug prod** : `PATCH /sessions/{id}` renvoie 500 quand on ajoute des segments horaires à une session existante ; le navigateur affiche une erreur CORS parce que la réponse 500 sort du `ServerErrorMiddleware` sans en-têtes. Deux corrections : la cause du 500, et un gestionnaire d'exception global qui renvoie une `JSONResponse` (donc traversée par `CORSMiddleware`).
 - **Plusieurs favoris, pour de vrai** : étoile par spot dans Surf et dans la recherche, liste des favoris réordonnable, favori principal distinct. L'UI actuelle n'en laisse voir qu'un.
