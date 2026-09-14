@@ -323,17 +323,24 @@ async def test_recipes_pick_up_their_macros_after_a_ciqual_import(
     assert riz["protein_g"] > 0
 
 
+def _slot(plan, day_index, meal):
+    return next(
+        item
+        for item in plan["items"]
+        if item["day_index"] == day_index and item["meal"] == meal
+    )
+
+
 async def test_a_week_can_be_generated_and_regenerated(auth_client):
     plan = (await auth_client.post("/api/v1/nutrition/plan?seed=1")).json()
 
-    assert len(plan["items"]) == 28
+    # Quatorze créneaux : sept déjeuners, sept dîners. Le petit déjeuner et
+    # l'en-cas se journalisent, ils ne se prévoient plus.
+    assert len(plan["items"]) == 14
+    assert {item["meal"] for item in plan["items"]} == {"lunch", "dinner"}
     assert plan["shopping"]
 
-    target = next(
-        item
-        for item in plan["items"]
-        if item["day_index"] == 2 and item["meal"] == "dinner"
-    )
+    target = _slot(plan, 2, "dinner")
     regenerated = (
         await auth_client.post(
             "/api/v1/nutrition/plan/regenerate",
@@ -341,14 +348,19 @@ async def test_a_week_can_be_generated_and_regenerated(auth_client):
         )
     ).json()
 
-    replaced = next(
-        item
-        for item in regenerated["items"]
-        if item["day_index"] == 2 and item["meal"] == "dinner"
-    )
-    assert replaced["recipe"]["id"] != target["recipe"]["id"]
+    assert _slot(regenerated, 2, "dinner")["recipe"]["id"] != target["recipe"]["id"]
     # Le reste de la semaine n'a pas bougé : c'est tout l'intérêt du geste.
-    assert len(regenerated["items"]) == 28
+    assert len(regenerated["items"]) == 14
+
+
+async def test_a_breakfast_cannot_be_planned(auth_client):
+    """Le menu ne prévoit que le déjeuner et le dîner, et il le dit."""
+    await auth_client.post("/api/v1/nutrition/plan?seed=1")
+    response = await auth_client.post(
+        "/api/v1/nutrition/plan/regenerate",
+        json={"day_index": 0, "meal": "breakfast"},
+    )
+    assert response.status_code == 422
 
 
 async def test_the_shopping_list_aggregates_the_week(auth_client):
@@ -357,10 +369,33 @@ async def test_the_shopping_list_aggregates_the_week(auth_client):
     assert len(labels) == len(set(labels)), "un ingrédient apparaît deux fois"
 
 
+async def test_the_shopping_list_counts_what_is_counted(auth_client):
+    """Des œufs se comptent, du riz se pèse, du lait se verse.
+
+    C'est la liste qu'on lit dans le rayon : personne ne demande 165 g d'œufs.
+    """
+    plan = (await auth_client.post("/api/v1/nutrition/plan?seed=2")).json()
+    by_label = {line["label"].lower(): line for line in plan["shopping"]}
+
+    eggs = by_label.get("œufs")
+    if eggs is not None:
+        assert eggs["unit"] == "piece"
+        assert eggs["quantity"] == int(eggs["quantity"])
+        assert eggs["unit_label"] in {"œuf", "œufs"}
+
+    rice = by_label.get("riz blanc cuit")
+    if rice is not None:
+        assert rice["unit"] == "g"
+
+    # Quoi qu'il arrive, la grandeur vraie est toujours là.
+    assert all(line["quantity_g"] > 0 for line in plan["shopping"])
+
+
 async def test_the_day_screen_shows_the_planned_meals(auth_client):
     await auth_client.post("/api/v1/nutrition/plan?seed=3")
     body = (await auth_client.get("/api/v1/nutrition/day")).json()
-    assert len(body["planned"]) == 4
+    assert len(body["planned"]) == 2
+    assert {item["meal"] for item in body["planned"]} == {"lunch", "dinner"}
 
 
 async def test_regenerating_without_a_plan_is_a_404(auth_client):
@@ -370,6 +405,421 @@ async def test_regenerating_without_a_plan_is_a_404(auth_client):
         params={"week": "2030-01-07"},
     )
     assert response.status_code == 404
+
+
+# ── « Je ne suis pas chez moi » ────────────────────────────────────────────
+
+
+async def test_a_meal_away_leaves_its_ingredients_at_the_shop(auth_client, make_food):
+    """Le seul effet qui compte : on n'achète pas le dîner qu'on prendra
+    ailleurs."""
+    await make_food(name="Riz blanc cuit", code="1", kcal=130)
+    plan = (await auth_client.post("/api/v1/nutrition/plan?seed=4")).json()
+
+    dinner = _slot(plan, 3, "dinner")
+    ingredients = {item["label"] for item in dinner["recipe"]["items"]}
+    # Ce qui n'est demandé que par ce dîner-là, et par rien d'autre.
+    others = {
+        item["label"]
+        for slot in plan["items"]
+        if slot is not dinner and slot["recipe"]
+        for item in slot["recipe"]["items"]
+    }
+    exclusive = ingredients - others
+
+    after = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/away",
+            json={"day_index": 3, "meal": "dinner", "away": True},
+        )
+    ).json()
+
+    assert _slot(after, 3, "dinner")["status"] == "away"
+    labels = {line["label"] for line in after["shopping"]}
+    assert not (exclusive & labels)
+
+
+async def test_coming_home_puts_a_dish_back(auth_client):
+    """Rentrer plus tôt que prévu ne doit pas laisser un trou."""
+    await auth_client.post("/api/v1/nutrition/plan?seed=5")
+    await auth_client.post(
+        "/api/v1/nutrition/plan/away",
+        json={"day_index": 1, "meal": "lunch", "away": True},
+    )
+    back = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/away",
+            json={"day_index": 1, "meal": "lunch", "away": False},
+        )
+    ).json()
+
+    slot = _slot(back, 1, "lunch")
+    assert slot["status"] == "planned"
+    assert slot["recipe"] is not None
+
+
+async def test_away_survives_a_full_regeneration(auth_client):
+    """« Tout régénérer » ne doit pas effacer le fait qu'on dîne dehors jeudi.
+
+    C'est une contrainte de la semaine, pas une proposition de l'algorithme.
+    La redéclarer à chaque régénération suffirait à ce qu'on cesse de la
+    déclarer.
+    """
+    await auth_client.post("/api/v1/nutrition/plan?seed=6")
+    await auth_client.post(
+        "/api/v1/nutrition/plan/away",
+        json={"day_index": 4, "meal": "dinner", "away": True},
+    )
+
+    again = (await auth_client.post("/api/v1/nutrition/plan?seed=7")).json()
+    slot = _slot(again, 4, "dinner")
+    assert slot["status"] == "away"
+    assert slot["recipe"] is None
+    assert len(again["items"]) == 14
+
+
+async def test_being_away_can_be_declared_before_the_week_exists(auth_client):
+    """C'est même le bon ordre : le générateur lira la contrainte au lieu de
+    proposer un plat pour rien."""
+    plan = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/away",
+            json={"day_index": 2, "meal": "dinner", "away": True},
+        )
+    ).json()
+    assert _slot(plan, 2, "dinner")["status"] == "away"
+
+    generated = (await auth_client.post("/api/v1/nutrition/plan?seed=8")).json()
+    assert _slot(generated, 2, "dinner")["recipe"] is None
+    assert len(generated["items"]) == 14
+
+
+# ── Interchanger ──────────────────────────────────────────────────────────
+
+
+async def test_two_meals_can_be_swapped(auth_client):
+    """Le plat du mercredi soir passe au vendredi. On l'avait choisi : le
+    déplacer vaut mieux que le régénérer."""
+    plan = (await auth_client.post("/api/v1/nutrition/plan?seed=9")).json()
+    wednesday = _slot(plan, 2, "dinner")["recipe"]["id"]
+    friday = _slot(plan, 4, "dinner")["recipe"]["id"]
+
+    swapped = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/swap",
+            json={
+                "a": {"day_index": 2, "meal": "dinner"},
+                "b": {"day_index": 4, "meal": "dinner"},
+            },
+        )
+    ).json()
+
+    assert _slot(swapped, 2, "dinner")["recipe"]["id"] == friday
+    assert _slot(swapped, 4, "dinner")["recipe"]["id"] == wednesday
+
+
+async def test_swapping_carries_the_away_mark(auth_client):
+    """Échanger un dîner prévu avec un soir où l'on n'est pas là, c'est bien
+    intervertir les deux soirées."""
+    await auth_client.post("/api/v1/nutrition/plan?seed=10")
+    await auth_client.post(
+        "/api/v1/nutrition/plan/away",
+        json={"day_index": 0, "meal": "dinner", "away": True},
+    )
+
+    swapped = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/swap",
+            json={
+                "a": {"day_index": 0, "meal": "dinner"},
+                "b": {"day_index": 6, "meal": "dinner"},
+            },
+        )
+    ).json()
+
+    assert _slot(swapped, 0, "dinner")["status"] == "planned"
+    assert _slot(swapped, 6, "dinner")["status"] == "away"
+
+
+async def test_swapping_a_slot_with_itself_is_refused(auth_client):
+    await auth_client.post("/api/v1/nutrition/plan?seed=11")
+    response = await auth_client.post(
+        "/api/v1/nutrition/plan/swap",
+        json={
+            "a": {"day_index": 0, "meal": "dinner"},
+            "b": {"day_index": 0, "meal": "dinner"},
+        },
+    )
+    assert response.status_code == 422
+
+
+async def test_a_chosen_recipe_wins_over_the_draw(auth_client):
+    """Le tirage propose, on dispose — y compris une recette étiquetée pour un
+    autre repas. Les étiquettes servent au générateur, pas à arbitrer ce que
+    quelqu'un a décidé de manger."""
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    breakfast = next(item for item in recipes if "breakfast" in item["meals"])
+    await auth_client.post("/api/v1/nutrition/plan?seed=12")
+
+    plan = (
+        await auth_client.post(
+            "/api/v1/nutrition/plan/set",
+            json={
+                "day_index": 5,
+                "meal": "dinner",
+                "recipe_id": breakfast["id"],
+            },
+        )
+    ).json()
+
+    assert _slot(plan, 5, "dinner")["recipe"]["id"] == breakfast["id"]
+
+
+# ── La fiche recette : favori, note, version perso ────────────────────────
+
+
+async def test_a_recipe_can_be_favourited_and_annotated(auth_client):
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    first = recipes[0]
+
+    updated = (
+        await auth_client.put(
+            f"/api/v1/nutrition/recipes/{first['id']}/note",
+            json={"favorite": True, "note": "Sans le piment c'est meilleur."},
+        )
+    ).json()
+    assert updated["favorite"] is True
+    assert updated["note"] == "Sans le piment c'est meilleur."
+
+    # Et la note se relit, y compris depuis la liste.
+    listed = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    assert listed[0]["id"] == first["id"], "les favorites passent en tête"
+    assert listed[0]["favorite"] is True
+
+    only = (
+        await auth_client.get("/api/v1/nutrition/recipes?favorite=true")
+    ).json()
+    assert [item["id"] for item in only] == [first["id"]]
+
+
+async def test_an_emptied_note_is_a_removed_note(auth_client):
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    recipe_id = recipes[0]["id"]
+    await auth_client.put(
+        f"/api/v1/nutrition/recipes/{recipe_id}/note", json={"note": "à revoir"}
+    )
+    cleared = (
+        await auth_client.put(
+            f"/api/v1/nutrition/recipes/{recipe_id}/note", json={"note": "   "}
+        )
+    ).json()
+    assert cleared["note"] is None
+
+
+async def test_editing_a_catalog_recipe_forks_it(auth_client, make_food):
+    """**Le point délicat du lot.**
+
+    Le semis remplace les ingrédients en bloc sur les recettes du catalogue, et
+    il rejoue après chaque import Ciqual : une modification écrite directement
+    sur une ligne semée disparaîtrait sans un mot, des semaines plus tard. Donc
+    on copie.
+    """
+    await make_food(name="Riz blanc cuit", code="1", kcal=130)
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    original = next(item for item in recipes if item["slug"] == "riz-poulet-brocoli")
+
+    forked = (
+        await auth_client.patch(
+            f"/api/v1/nutrition/recipes/{original['id']}",
+            json={
+                "name": "Riz poulet brocoli (ma version)",
+                "items": [
+                    {"label": "Riz blanc cuit", "quantity_g": 300},
+                    {"label": "Brocoli", "quantity_g": 200},
+                ],
+            },
+        )
+    ).json()
+
+    assert forked["id"] != original["id"]
+    assert forked["source"] == "user"
+    assert forked["based_on_id"] == original["id"]
+    assert forked["name"] == "Riz poulet brocoli (ma version)"
+
+    # L'original est intact : le catalogue est commun.
+    again = (
+        await auth_client.get(f"/api/v1/nutrition/recipes/{original['id']}")
+    ).json()
+    assert again["name"] == original["name"]
+    assert len(again["items"]) == len(original["items"])
+
+
+async def test_a_forked_recipe_replaces_the_original_in_this_week(auth_client):
+    """Le menu de la semaine suit la version perso : c'est le plat qu'on va
+    cuisiner."""
+    plan = (await auth_client.post("/api/v1/nutrition/plan?seed=13")).json()
+    slot = _slot(plan, 0, "dinner")
+    original_id = slot["recipe"]["id"]
+
+    forked = (
+        await auth_client.patch(
+            f"/api/v1/nutrition/recipes/{original_id}",
+            json={"prep_min": 12},
+        )
+    ).json()
+
+    after = (await auth_client.get("/api/v1/nutrition/plan")).json()
+    assert _slot(after, 0, "dinner")["recipe"]["id"] == forked["id"]
+
+
+async def test_a_note_follows_its_recipe_when_it_is_forked(auth_client):
+    """Une note restée sur l'original se lirait comme une note perdue."""
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    original = recipes[0]
+    await auth_client.put(
+        f"/api/v1/nutrition/recipes/{original['id']}/note",
+        json={"favorite": True, "note": "cuire le riz 2 min de plus"},
+    )
+
+    forked = (
+        await auth_client.patch(
+            f"/api/v1/nutrition/recipes/{original['id']}", json={"prep_min": 9}
+        )
+    ).json()
+
+    assert forked["note"] == "cuire le riz 2 min de plus"
+    assert forked["favorite"] is True
+
+
+async def test_a_recipe_can_be_written_from_scratch(auth_client, make_food):
+    await make_food(name="Riz blanc cuit", code="1", kcal=130, protein=2.7)
+
+    created = (
+        await auth_client.post(
+            "/api/v1/nutrition/recipes",
+            json={
+                "name": "Riz du dimanche",
+                "meals": ["dinner"],
+                "prep_min": 12,
+                "steps": "Rien de compliqué.",
+                "items": [{"label": "Riz blanc cuit", "quantity_g": 200}],
+            },
+        )
+    ).json()
+
+    assert created["source"] == "user"
+    # Préfixé : une recette perso ne peut pas occuper le slug d'une recette
+    # que le catalogue ajoutera demain.
+    assert created["slug"] == "perso-riz-du-dimanche"
+    # Les macros ne sont jamais saisies : elles se déduisent des ingrédients.
+    assert created["kcal"] == pytest.approx(260, abs=1)
+
+
+async def test_a_recipe_without_ingredients_is_refused(auth_client):
+    """Sans ingrédients, pas de macros ; sans macros, pas de menu."""
+    response = await auth_client.post(
+        "/api/v1/nutrition/recipes", json={"name": "Rien"}
+    )
+    assert response.status_code == 422
+
+
+async def test_the_catalog_cannot_be_deleted(auth_client):
+    """Il est commun. On le met de côté en ne le mettant jamais au menu."""
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    response = await auth_client.delete(
+        f"/api/v1/nutrition/recipes/{recipes[0]['id']}"
+    )
+    assert response.status_code == 409
+
+
+async def test_a_personal_recipe_does_not_stop_the_catalog_from_being_seeded(
+    auth_client,
+):
+    """Le semis compte le **catalogue**, pas la table entière.
+
+    Sinon une recette écrite avant le premier accès à l'écran suffirait à le
+    convaincre qu'il a déjà tourné : la banque tiendrait en un plat, et le menu
+    de la semaine proposerait sept fois le même.
+    """
+    await auth_client.post(
+        "/api/v1/nutrition/recipes",
+        json={
+            "name": "Tout premier plat",
+            "meals": ["dinner"],
+            "items": [{"label": "Riz blanc cuit", "quantity_g": 150}],
+        },
+    )
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    assert len(recipes) >= 35
+
+
+async def test_deleting_a_recipe_empties_its_slots_instead_of_hiding_them(
+    auth_client,
+):
+    """Un menu avec un dîner « à choisir » se corrige ; un menu où le jeudi a
+    silencieusement perdu sa ligne se relit trois fois."""
+    # Le catalogue est semé d'abord : c'est le menu complet qu'on veut voir
+    # survivre à la suppression, pas une semaine à un seul plat.
+    await auth_client.get("/api/v1/nutrition/recipes")
+    created = (
+        await auth_client.post(
+            "/api/v1/nutrition/recipes",
+            json={
+                "name": "Plat de passage",
+                "meals": ["dinner"],
+                "items": [{"label": "Riz blanc cuit", "quantity_g": 150}],
+            },
+        )
+    ).json()
+
+    await auth_client.post("/api/v1/nutrition/plan?seed=14")
+    await auth_client.post(
+        "/api/v1/nutrition/plan/set",
+        json={"day_index": 6, "meal": "dinner", "recipe_id": created["id"]},
+    )
+
+    assert (
+        await auth_client.delete(f"/api/v1/nutrition/recipes/{created['id']}")
+    ).status_code == 204
+
+    plan = (await auth_client.get("/api/v1/nutrition/plan")).json()
+    slot = _slot(plan, 6, "dinner")
+    assert slot["recipe"] is None
+    assert slot["status"] == "planned"
+    assert len(plan["items"]) == 14
+
+
+async def test_a_logged_recipe_counts_as_cooked(auth_client):
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    recipe_id = recipes[0]["id"]
+
+    await auth_client.post(
+        "/api/v1/nutrition/log",
+        json={"recipe_id": recipe_id, "meal": "dinner", "servings": 1},
+    )
+    detail = (
+        await auth_client.get(f"/api/v1/nutrition/recipes/{recipe_id}")
+    ).json()
+    assert detail["cooked_count"] == 1
+
+
+async def test_a_recipe_says_how_its_ingredients_are_bought(auth_client):
+    """Deux œufs, pas 110 g. Les grammes restent à côté : la conversion est une
+    moyenne, et une moyenne présentée seule passerait pour une mesure."""
+    recipes = (await auth_client.get("/api/v1/nutrition/recipes")).json()
+    with_eggs = next(
+        (
+            recipe
+            for recipe in recipes
+            if any(item["label"] == "Œufs" for item in recipe["items"])
+        ),
+        None,
+    )
+    assert with_eggs is not None
+    eggs = next(item for item in with_eggs["items"] if item["label"] == "Œufs")
+    assert eggs["unit"] == "piece"
+    assert eggs["quantity"] >= 1
+    assert eggs["quantity_g"] > 0
 
 
 # ── L'import Ciqual ────────────────────────────────────────────────────────

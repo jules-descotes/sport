@@ -182,16 +182,22 @@ class NutritionProfileUpdate(BaseModel):
 
 
 class RecipeItemRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Un ingrédient, avec **l'unité dans laquelle on l'achète**.
+
+    `quantity_g` reste la grandeur — c'est elle qui calcule les macros. Le
+    reste est sa lecture : deux œufs, un avocat, 200 g de riz. Personne n'a
+    jamais cassé « 110 g d'œufs ».
+    """
 
     label: str
     quantity_g: float
     food_id: Optional[int] = None
+    unit: str = "g"
+    quantity: float = 0.0
+    unit_label: Optional[str] = None
 
 
 class RecipeRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     name: str
@@ -208,20 +214,76 @@ class RecipeRead(BaseModel):
     fat_g: Optional[float] = None
     items: list[RecipeItemRead] = []
 
+    # `catalog` ou `user`. Une version perso ne se modifie pas comme une
+    # recette semée : l'une est à soi, l'autre se dédouble quand on y touche.
+    source: str = "catalog"
+    based_on_id: Optional[int] = None
+    # Ce que l'utilisateur en pense. Vides tant qu'il n'a rien dit.
+    favorite: bool = False
+    note: Optional[str] = None
+    cooked_count: int = 0
+
+
+class RecipeItemWrite(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    quantity_g: float = Field(gt=0, le=5000)
+    # Le nom cherché dans Ciqual. Facultatif : à défaut, on cherche le libellé
+    # lui-même, ce qui marche pour « Riz blanc cuit » et pas pour « le riz de
+    # mardi ». L'ingrédient reste lisible dans les deux cas.
+    ciqual_query: Optional[str] = Field(default=None, max_length=120)
+
+
+class RecipeWrite(BaseModel):
+    """Une recette écrite ou modifiée à la main.
+
+    Tous les champs sont facultatifs à la modification : on corrige une
+    quantité sans réécrire la recette. À la création, `name` et `items` sont
+    exigés par la route — une recette sans ingrédients n'a pas de macros, et
+    une recette sans macros ne peut pas entrer dans un menu.
+    """
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    meals: Optional[list[str]] = None
+    tags: Optional[list[str]] = None
+    servings: Optional[int] = Field(default=None, ge=1, le=12)
+    prep_min: Optional[int] = Field(default=None, ge=0, le=240)
+    steps: Optional[str] = Field(default=None, max_length=4000)
+    items: Optional[list[RecipeItemWrite]] = None
+
+
+class RecipeNoteWrite(BaseModel):
+    """Le favori et la note libre. Les deux sont indépendants : on peut noter
+    une recette sans l'aimer, et l'aimer sans avoir rien à en dire."""
+
+    favorite: Optional[bool] = None
+    note: Optional[str] = Field(default=None, max_length=2000)
+
 
 class MealPlanItemRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     day_index: int
     meal: str
     servings: float
-    recipe: RecipeRead
+    # **Nulle** quand le créneau est `away` sans plat, ou quand il reste à
+    # remplir. Un créneau vide est un état du menu, pas une anomalie.
+    recipe: Optional[RecipeRead] = None
+    # `planned` ou `away`.
+    status: str = "planned"
 
 
 class ShoppingLineRead(BaseModel):
+    """Une ligne de courses — et **l'unité dans laquelle on l'achète**.
+
+    `quantity_g` est le total agrégé, toujours. `unit` / `quantity` /
+    `unit_label` sont sa traduction au supermarché : trois œufs, un litre et
+    demi de lait, quatre cents grammes de riz.
+    """
+
     label: str
     quantity_g: float
     food_group: Optional[str] = None
+    unit: str = "g"
+    quantity: float = 0.0
+    unit_label: Optional[str] = None
 
 
 class MealPlanRead(BaseModel):
@@ -229,6 +291,9 @@ class MealPlanRead(BaseModel):
 
     Sept dîners qui demandent chacun deux cents grammes de riz font un kilo
     quatre de riz, et c'est ça qu'on lit au supermarché — pas sept lignes.
+
+    Les créneaux `away` n'entrent pas dans la liste : un dîner qu'on ne prendra
+    pas chez soi n'a rien à faire dans le caddie.
     """
 
     week_start: date
@@ -236,9 +301,41 @@ class MealPlanRead(BaseModel):
     shopping: list[ShoppingLineRead] = []
 
 
-class RegenerateRequest(BaseModel):
+class SlotRef(BaseModel):
+    """Un créneau du menu : un jour, un repas."""
+
     day_index: int = Field(ge=0, le=6)
     meal: str
+
+
+class RegenerateRequest(SlotRef):
+    pass
+
+
+class SetRecipeRequest(SlotRef):
+    """Poser **cette** recette sur ce créneau. Le tirage propose, on dispose."""
+
+    recipe_id: int
+    servings: float = Field(default=1.0, gt=0, le=10)
+
+
+class SwapRequest(BaseModel):
+    """Échanger deux créneaux. Le mercredi soir passe au vendredi, et
+    réciproquement — y compris quand l'un des deux est vide."""
+
+    a: SlotRef
+    b: SlotRef
+
+
+class AwayRequest(SlotRef):
+    """« Je ne suis pas chez moi. »
+
+    `away=False` fait revenir le créneau : si le plat d'origine est encore là,
+    il reprend sa place ; sinon on en tire un. Rentrer plus tôt que prévu ne
+    doit pas laisser un trou.
+    """
+
+    away: bool = True
 
 
 NutritionDay.model_rebuild()

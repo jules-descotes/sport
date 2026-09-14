@@ -39,9 +39,12 @@ export function DayMealBlock() {
 
   const { target, totals, planned, entries } = day.data;
   // Le prochain repas prévu qui n'a pas encore été noté : c'est celui qu'on
-  // regarde. Proposer le petit déjeuner à 19 h serait du bruit.
+  // regarde. Les créneaux « pas là » sont sautés — annoncer un dîner qu'on
+  // prend ailleurs serait pire que de ne rien annoncer.
   const logged = new Set(entries.map((entry) => entry.meal));
-  const next = planned.find((item) => !logged.has(item.meal));
+  const next = planned.find(
+    (item) => !logged.has(item.meal) && item.status === "planned" && item.recipe,
+  );
 
   return (
     <div className="overflow-hidden rounded-card border border-line bg-card">
@@ -54,8 +57,8 @@ export function DayMealBlock() {
           <span className="font-semibold uppercase tracking-wide text-mute">
             {MEAL_LABELS[next.meal]}
           </span>{" "}
-          {next.recipe.name}
-          {next.recipe.kcal !== null
+          {next.recipe?.name}
+          {next.recipe?.kcal !== null && next.recipe?.kcal !== undefined
             ? ` · ${num(next.recipe.kcal, 0)} kcal`
             : ""}
         </p>

@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
 import { DayGauges, TargetBreakdown } from "@/components/nutrition/DayGauges";
 import { FoodSearch } from "@/components/nutrition/FoodSearch";
+import { RecipeSheet } from "@/components/nutrition/RecipeSheet";
 import { WeekMenu } from "@/components/nutrition/WeekMenu";
 import { WeighIn } from "@/components/nutrition/WeighIn";
 import { ScreenHeader } from "@/components/shell/ScreenHeader";
-import { IconChevronDown, IconTrash } from "@/components/ui/Icons";
+import { IconAway, IconChevronDown, IconTrash } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { num } from "@/lib/format";
 import { MEALS, MEAL_LABELS, type Meal } from "@/lib/types";
@@ -32,6 +34,9 @@ import { MEALS, MEAL_LABELS, type Meal } from "@/lib/types";
 export default function NutritionPage() {
   const queryClient = useQueryClient();
   const [detailOpen, setDetailOpen] = useState(false);
+  // La fiche d'une recette s'ouvre depuis « prévu aujourd'hui » : ce qui est au
+  // menu ce soir est exactement ce qu'on veut lire avant de faire les courses.
+  const [recipeId, setRecipeId] = useState<number | null>(null);
 
   const day = useQuery({
     queryKey: ["nutrition-day"],
@@ -181,26 +186,51 @@ export default function NutritionPage() {
         <div className="pt-5 lg:pt-0">
           {planned.length > 0 ? (
             <section className="px-5 pb-5" aria-label="Prévu aujourd'hui">
-              <h2 className="pb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
-                Prévu aujourd&apos;hui
-              </h2>
+              <div className="flex items-baseline justify-between gap-3 pb-2">
+                <h2 className="text-[12px] font-semibold uppercase tracking-[0.14em] text-mute">
+                  Prévu aujourd&apos;hui
+                </h2>
+                <Link
+                  href="/nutrition/recettes"
+                  className="min-h-touch text-[13px] font-semibold text-mute"
+                >
+                  Mes recettes
+                </Link>
+              </div>
               <ul className="overflow-hidden rounded-card border border-line bg-card">
                 {planned.map((item) => (
                   <li
                     key={item.meal}
-                    className="flex items-center gap-3 border-b border-line px-4 py-2 last:border-0"
+                    className="flex items-center gap-3 border-b border-line px-4 last:border-0"
                   >
                     <span className="w-[74px] shrink-0 text-[12px] font-semibold uppercase tracking-wide text-mute">
                       {MEAL_LABELS[item.meal]}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[15px] text-ink">
-                      {item.recipe.name}
-                    </span>
-                    {item.recipe.kcal !== null ? (
-                      <span className="tabular shrink-0 text-[13px] text-mute">
-                        {num(item.recipe.kcal, 0)} kcal
+                    {item.status === "away" ? (
+                      <span className="flex min-h-touch flex-1 items-center gap-1.5 text-[15px] text-mute">
+                        <IconAway className="h-4 w-4" />
+                        Pas là
                       </span>
-                    ) : null}
+                    ) : item.recipe ? (
+                      <button
+                        type="button"
+                        onClick={() => setRecipeId(item.recipe!.id)}
+                        className="flex min-h-touch min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[15px] text-ink">
+                          {item.recipe.name}
+                        </span>
+                        {item.recipe.kcal !== null ? (
+                          <span className="tabular shrink-0 text-[13px] text-mute">
+                            {num(item.recipe.kcal, 0)} kcal
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : (
+                      <span className="flex min-h-touch flex-1 items-center text-[15px] text-mute">
+                        À choisir
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -210,6 +240,10 @@ export default function NutritionPage() {
           <WeekMenu />
         </div>
       </div>
+
+      {recipeId !== null ? (
+        <RecipeSheet recipeId={recipeId} onClose={() => setRecipeId(null)} />
+      ) : null}
     </main>
   );
 }

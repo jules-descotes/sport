@@ -110,11 +110,21 @@ def recompute_macros(recipe: Recipe, foods: dict[int, Food]) -> None:
 
 
 async def _upsert_recipe(db: AsyncSession, spec: RecipeSpec) -> Recipe:
-    result = await db.execute(select(Recipe).where(Recipe.slug == spec.slug))
+    # **Le catalogue seulement.** Une recette écrite par l'utilisateur ne doit
+    # jamais être ramassée par le semis, qui remplace les ingrédients en bloc :
+    # ce serait effacer son travail sans un mot. Les slugs perso portent un
+    # préfixe (`perso-`) qui rend la collision impossible, mais la condition
+    # est écrite quand même — la protection ne doit pas dépendre d'une
+    # convention de nommage.
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.slug == spec.slug)
+        .where(Recipe.source == "catalog")
+    )
     recipe = result.scalar_one_or_none()
 
     if recipe is None:
-        recipe = Recipe(slug=spec.slug)
+        recipe = Recipe(slug=spec.slug, source="catalog")
         db.add(recipe)
 
     recipe.name = spec.name
@@ -183,8 +193,17 @@ async def ensure_seeded(db: AsyncSession) -> None:
     situation d'après-import, et il n'y a aucune raison d'obliger à lancer un
     script pour la résoudre.
     """
+    # Le compte porte sur le **catalogue**, pas sur la table entière : une
+    # recette perso écrite avant le premier accès à l'écran suffirait sinon à
+    # convaincre le semis qu'il a déjà tourné, et le catalogue ne serait jamais
+    # semé. Un seul plat dans la banque, et le menu de la semaine propose sept
+    # fois le même.
     recipes = (
-        await db.execute(select(func.count()).select_from(Recipe))
+        await db.execute(
+            select(func.count())
+            .select_from(Recipe)
+            .where(Recipe.source == "catalog")
+        )
     ).scalar_one()
     if recipes == 0:
         await seed_recipes(db)
@@ -196,7 +215,10 @@ async def ensure_seeded(db: AsyncSession) -> None:
 
     unpriced = (
         await db.execute(
-            select(func.count()).select_from(Recipe).where(Recipe.kcal.is_(None))
+            select(func.count())
+            .select_from(Recipe)
+            .where(Recipe.source == "catalog")
+            .where(Recipe.kcal.is_(None))
         )
     ).scalar_one()
     if unpriced:

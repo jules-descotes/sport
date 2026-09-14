@@ -23,6 +23,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -108,6 +109,30 @@ class Recipe(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+
+    # `catalog` (semée par l'application) ou `user` (écrite ou modifiée ici).
+    #
+    # La distinction n'est pas décorative : le semis **remplace les ingrédients
+    # en bloc** sur les recettes du catalogue, et il rejoue après chaque import
+    # Ciqual. Une modification faite sur une ligne `catalog` serait donc effacée
+    # sans prévenir. D'où la règle : modifier une recette du catalogue en crée
+    # une **copie** `user`, que le semis ne touche jamais.
+    source: Mapped[str] = mapped_column(
+        String, nullable=False, default="catalog", server_default="catalog"
+    )
+    # Nul pour le catalogue, qui est commun. Renseigné pour une recette écrite
+    # par l'utilisateur — le projet est mono-utilisateur, mais une recette
+    # perso qui ne dit pas à qui elle est finirait par être servie à tout le
+    # monde le jour où il y en aurait deux.
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # La recette du catalogue dont celle-ci est la version perso. Gardée pour
+    # pouvoir dire « ta version de Poulet riz brocoli », et pour ne pas
+    # reproposer les deux côte à côte comme si elles étaient étrangères.
+    based_on_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
     # `breakfast`, `lunch`, `dinner`, `snack` — les repas où elle a sa place.
     meals: Mapped[list[str]] = mapped_column(JSONVariant, nullable=False, default=list)
     tags: Mapped[list[str]] = mapped_column(JSONVariant, nullable=False, default=list)
@@ -237,12 +262,70 @@ class MealPlanItem(Base):
     # 0 = lundi.
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     meal: Mapped[str] = mapped_column(String, nullable=False)
-    recipe_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False
+
+    # **Facultative**, et c'est toute la nouveauté : un créneau peut exister
+    # sans plat. « Jeudi soir je ne suis pas là » est une information qu'on
+    # pose *avant* de générer la semaine, et le générateur doit pouvoir la
+    # lire. Un créneau `away` sans recette n'est pas un trou, c'est une
+    # réponse.
+    recipe_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True
+    )
+    # `planned` ou `away`. `away` = pas chez soi, donc rien à prévoir et rien à
+    # acheter — c'est la seule chose qui sort un plat de la liste de courses.
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="planned", server_default="planned"
     )
     servings: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
-    recipe: Mapped["Recipe"] = relationship(lazy="selectin")
+    recipe: Mapped[Optional["Recipe"]] = relationship(lazy="selectin")
+
+
+class RecipeNote(Base):
+    """Ce que **l'utilisateur** pense d'une recette : favorite, et sa note libre.
+
+    Séparée de `recipes` pour une raison simple : le catalogue est commun et
+    semé, la note est personnelle et ne doit jamais être écrasée par un semis.
+    Poser `favorite` sur `recipes` reviendrait à mettre une préférence dans une
+    table que l'application réécrit toute seule.
+
+    La note libre est le seul champ de texte de l'écran Nutrition — « sans le
+    piment c'est meilleur », « cuire le riz 2 min de plus ». C'est ce qui
+    transforme une banque de recettes générique en carnet de cuisine.
+    """
+
+    __tablename__ = "recipe_notes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "recipe_id", name="uq_recipe_notes_user_recipe"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recipe_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    favorite: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Combien de fois elle a été cuisinée — incrémenté quand on la journalise.
+    # Calculable depuis `food_log`, mais une requête d'agrégat par recette à
+    # chaque ouverture de la bibliothèque coûterait plus cher que la colonne.
+    cooked_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class BodyMetric(Base):

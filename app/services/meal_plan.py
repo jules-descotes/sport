@@ -7,6 +7,13 @@ pas**. Quand le générateur propose du poisson trois soirs de suite, on doit
 pouvoir dire pourquoi — ici, parce que la contrainte de protéines était haute
 et que la variété n'a pas suffi à l'emporter.
 
+Quatorze créneaux, pas vingt-huit : **le déjeuner et le dîner seulement**. Un
+petit déjeuner ne se choisit pas le dimanche pour le mardi — il se répète — et
+un en-cas planifié est un en-cas qu'on ne mange pas. Les deux continuent de se
+journaliser ; ils ne se prévoient plus. Certains créneaux sont en plus
+**sautés** (`skip`) : ce sont les repas qu'on prend ailleurs, et ils ne
+reçoivent rien.
+
 Le glouton remplit les créneaux dans l'ordre de la semaine, et choisit à chaque
 fois la recette qui **minimise un coût**. Le coût mélange trois choses :
 
@@ -27,13 +34,34 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Collection, Optional, Sequence
 
-# Les repas d'une journée, dans l'ordre où ils se vivent.
+from app.services.food_units import to_shopping_unit
+
+# Les repas d'une journée, dans l'ordre où ils se vivent. Ils servent au
+# **journal** : on note ce qu'on mange, petit déjeuner et en-cas compris.
 MEALS: tuple[str, ...] = ("breakfast", "lunch", "snack", "dinner")
+
+# Ceux que le menu **planifie**, et c'est tout : déjeuner et dîner.
+#
+# Décidé à l'usage : un petit déjeuner ne se planifie pas, il se répète — c'est
+# toujours le même, on ne le choisit pas le dimanche pour le mardi. Et un
+# en-cas planifié est un en-cas qu'on ne mange pas. Planifier les quatre repas
+# donnait vingt-huit créneaux dont la moitié était ignorée, et une liste de
+# courses gonflée de ce qu'on n'achèterait jamais — ce qui suffit à faire
+# jeter la liste entière.
+#
+# Les deux autres repas ne disparaissent pas du produit : ils se journalisent
+# comme avant, ils ne se prévoient plus.
+PLANNED_MEALS: tuple[str, ...] = ("lunch", "dinner")
 
 # Part de la cible calorique attribuée à chaque repas. Le déjeuner et le dîner
 # portent l'essentiel ; l'en-cas est ce qu'il est — un en-cas.
+#
+# Les parts de `breakfast` et `snack` restent écrites alors qu'on ne les
+# planifie plus, et c'est voulu : ce sont **elles** qui laissent au déjeuner et
+# au dîner leur juste taille. Les retirer répartirait toute la journée sur deux
+# plats, et le menu proposerait des dîners à 900 kcal.
 MEAL_SHARE: dict[str, float] = {
     "breakfast": 0.25,
     "lunch": 0.35,
@@ -61,6 +89,25 @@ PROTEIN_COST_PER_G = 12.0
 # que de l'écarter. Sinon, tant que Ciqual n'est pas importé, aucun menu ne
 # pourrait se générer.
 NEUTRAL_COST = 400.0
+
+
+def day_share(away: Collection[str] = ()) -> float:
+    """La part de la cible que le menu couvre pour une journée.
+
+    0,65 en temps normal — le déjeuner et le dîner. Moins quand un des deux se
+    prend ailleurs. **Elle ne remonte jamais à 1** : les calories du petit
+    déjeuner et de l'en-cas ne se reversent pas sur les repas prévus, et celles
+    d'un dîner au restaurant non plus.
+
+    Un seul endroit, parce qu'elle sert à deux moments qui doivent s'accorder :
+    la génération de la semaine, et le remplacement d'un plat. Si le
+    remplacement visait la journée entière alors que la génération vise 65 %,
+    le bouton « un autre plat » proposerait systématiquement plus gros que ce
+    qu'il remplace — et le menu dériverait vers le haut à chaque tap.
+    """
+    return sum(
+        MEAL_SHARE[meal] for meal in PLANNED_MEALS if meal not in away
+    )
 
 
 @dataclass(frozen=True)
@@ -185,25 +232,44 @@ def generate_week(
     protein_target: float,
     days: int = 7,
     seed: Optional[int] = None,
+    skip: frozenset[tuple[int, str]] = frozenset(),
 ) -> WeekPlan:
-    """Remplit les vingt-huit créneaux de la semaine.
+    """Remplit les quatorze créneaux de la semaine — sept déjeuners, sept dîners.
 
     La cible du jour est répartie entre les repas selon `MEAL_SHARE`, puis
     **ajustée en cours de journée** : ce qui n'a pas été servi au déjeuner
     reste disponible pour le dîner. C'est ce qui empêche une journée de finir
-    systématiquement 300 kcal sous la cible parce que le petit déjeuner était
-    léger.
+    systématiquement 300 kcal sous la cible parce que le déjeuner était léger.
+
+    `skip` porte les créneaux où **on ne mange pas chez soi**. Ils ne sont pas
+    remplis, et leur part de calories n'est pas reversée sur le repas suivant :
+    un dîner au restaurant n'est pas une raison de prévoir un déjeuner à
+    900 kcal.
     """
     rng = random.Random(seed)
     plan = WeekPlan()
     last_seen: dict[int, int] = {}
 
     for day_index in range(days):
-        remaining_kcal = kcal_target
-        remaining_protein = protein_target
-        remaining_share = 1.0
+        meals = [
+            meal
+            for meal in PLANNED_MEALS
+            if (day_index, meal) not in skip
+        ]
+        # La part de la journée que le menu couvre vraiment. Le petit déjeuner
+        # et l'en-cas n'en sont pas, et un repas pris dehors non plus : les
+        # calories de ce qu'on ne prévoit pas ne se reversent **jamais** sur ce
+        # qu'on prévoit, sinon le générateur proposerait des dîners à 900 kcal
+        # les soirs où l'on déjeune dehors.
+        remaining_share = day_share(
+            [meal for meal in PLANNED_MEALS if meal not in meals]
+        )
+        if remaining_share <= 0:
+            continue
+        remaining_kcal = kcal_target * remaining_share
+        remaining_protein = protein_target * remaining_share
 
-        for meal in MEALS:
+        for meal in meals:
             share = MEAL_SHARE[meal]
             # Part du reste, et non part de la cible : une journée qui a pris
             # du retard le rattrape au repas suivant.
@@ -288,9 +354,20 @@ def regenerate_meal(
 
 @dataclass
 class ShoppingLine:
+    """Une ligne de courses : ce qu'on prend, et **dans quelle unité**.
+
+    `quantity_g` reste la grandeur agrégée — c'est elle qui a du sens, et c'est
+    sur elle qu'on pourrait un jour recalculer autre chose. `unit`, `quantity`
+    et `unit_label` sont sa traduction au supermarché : trois œufs, un litre de
+    lait, quatre cents grammes de riz (cf. `services/food_units`).
+    """
+
     label: str
     quantity_g: float
     food_group: Optional[str] = None
+    unit: str = "g"
+    quantity: float = 0.0
+    unit_label: Optional[str] = None
 
 
 def shopping_list(
@@ -305,6 +382,12 @@ def shopping_list(
     L'agrégation se fait sur le **libellé**, pas sur l'identifiant Ciqual :
     deux recettes peuvent pointer sur des lignes Ciqual différentes pour ce qui
     est, dans le caddie, le même paquet de riz.
+
+    La conversion en unité d'achat vient **après** l'agrégation, et jamais
+    avant : deux recettes à deux œufs font quatre œufs, alors qu'arrondir
+    chacune d'abord en aurait fait quatre aussi — mais deux recettes à un œuf et
+    demi feraient trois œufs agrégés contre quatre arrondis séparément. On
+    arrondit une fois, à la fin, sur le total.
     """
     totals: dict[str, ShoppingLine] = {}
     for label, quantity_g, group in items:
@@ -317,8 +400,16 @@ def shopping_list(
         else:
             line.quantity_g += quantity_g
 
+    lines = []
+    for line in totals.values():
+        quantity = to_shopping_unit(line.label, line.quantity_g)
+        line.unit = quantity.unit
+        line.quantity = quantity.quantity
+        line.unit_label = quantity.unit_label
+        lines.append(line)
+
     return sorted(
-        totals.values(),
+        lines,
         # Par rayon puis par quantité décroissante : on fait ses courses dans
         # l'ordre des rayons, pas dans l'ordre alphabétique.
         key=lambda line: (line.food_group or "zzz", -line.quantity_g),

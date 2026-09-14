@@ -455,3 +455,34 @@ export function IconSun({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Porte ouverte, flèche vers l'extérieur — « je ne suis pas chez moi ». */
+export function IconAway({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14" />
+      <path d="M17.5 12H10M15 8.5l3.5 3.5-3.5 3.5" />
+    </svg>
+  );
+}
+
+/** Deux flèches qui se croisent — échanger deux créneaux. */
+export function IconSwap({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 8h13M13.5 4.5 17 8l-3.5 3.5" />
+      <path d="M20 16H7M10.5 12.5 7 16l3.5 3.5" />
+    </svg>
+  );
+}
+
+/** Trois points — les autres gestes d'une ligne. */
+export function IconMore({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="5.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="18.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

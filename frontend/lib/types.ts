@@ -878,9 +878,18 @@ export interface DayExpenditureData {
 
 // ── Nutrition ────────────────────────────────────────────────────────────
 
-/** Les quatre repas d'une journée, dans l'ordre où ils se vivent. */
+/** Les quatre repas d'une journée, dans l'ordre où ils se vivent. Ils servent
+ *  au **journal** : on note ce qu'on mange, petit déjeuner et en-cas compris. */
 export const MEALS = ["breakfast", "lunch", "snack", "dinner"] as const;
 export type Meal = (typeof MEALS)[number];
+
+/** Ceux que le **menu** planifie, et c'est tout.
+ *
+ *  Un petit déjeuner ne se choisit pas le dimanche pour le mardi — il se
+ *  répète. Un en-cas planifié est un en-cas qu'on ne mange pas. Les deux
+ *  continuent de se journaliser, ils ne se prévoient plus. */
+export const PLANNED_MEALS = ["lunch", "dinner"] as const;
+export type PlannedMeal = (typeof PLANNED_MEALS)[number];
 
 export const MEAL_LABELS: Record<Meal, string> = {
   breakfast: "Petit déj",
@@ -961,10 +970,18 @@ export interface NutritionTarget {
   reasons: string[];
 }
 
+/** L'unité dans laquelle une chose **s'achète**. Le gramme reste la grandeur
+ *  stockée ; la pièce et le millilitre sont des conversions d'affichage. */
+export type BuyUnit = "g" | "piece" | "ml";
+
 export interface RecipeItem {
   label: string;
   quantity_g: number;
   food_id: number | null;
+  unit: BuyUnit;
+  quantity: number;
+  /** « œufs », « bananes ». Nul pour les grammes et les millilitres. */
+  unit_label: string | null;
 }
 
 export interface Recipe {
@@ -983,19 +1000,58 @@ export interface Recipe {
   carb_g: number | null;
   fat_g: number | null;
   items: RecipeItem[];
+  /** `catalog` (semée par l'app) ou `user` (écrite ou modifiée ici). Modifier
+   *  une recette du catalogue en crée une copie : le semis réécrit les siennes,
+   *  jamais les nôtres. */
+  source: "catalog" | "user";
+  based_on_id: number | null;
+  favorite: boolean;
+  note: string | null;
+  cooked_count: number;
 }
+
+export interface RecipeItemWrite {
+  label: string;
+  quantity_g: number;
+  /** Le nom cherché dans Ciqual. À défaut, on cherche le libellé lui-même. */
+  ciqual_query?: string;
+}
+
+/** Une recette écrite ou modifiée à la main. Tous les champs sont facultatifs :
+ *  on corrige une quantité sans réécrire la recette. Les macros n'y sont
+ *  **jamais** — elles se déduisent des ingrédients, elles ne se saisissent pas. */
+export interface RecipeWrite {
+  name?: string;
+  meals?: Meal[];
+  tags?: string[];
+  servings?: number;
+  prep_min?: number;
+  steps?: string | null;
+  items?: RecipeItemWrite[];
+}
+
+/** `planned` : un plat est prévu · `away` : pas chez soi, rien à prévoir et
+ *  **rien à acheter**. */
+export type SlotStatus = "planned" | "away";
 
 export interface MealPlanItem {
   day_index: number;
-  meal: Meal;
+  meal: PlannedMeal;
   servings: number;
-  recipe: Recipe;
+  /** Nulle quand le créneau est `away`, ou quand il reste à remplir. Un
+   *  créneau vide est un état du menu, pas une anomalie. */
+  recipe: Recipe | null;
+  status: SlotStatus;
 }
 
 export interface ShoppingLine {
   label: string;
+  /** Le total agrégé, toujours — c'est la grandeur vraie. */
   quantity_g: number;
   food_group: string | null;
+  unit: BuyUnit;
+  quantity: number;
+  unit_label: string | null;
 }
 
 export interface MealPlan {

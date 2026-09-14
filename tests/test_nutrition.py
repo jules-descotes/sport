@@ -11,9 +11,12 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
+from app.services.food_units import to_shopping_unit, unit_key
 from app.services.meal_plan import (
-    MEALS,
+    MEAL_SHARE,
+    PLANNED_MEALS,
     Candidate,
+    day_share,
     generate_week,
     regenerate_meal,
     shopping_list,
@@ -257,22 +260,78 @@ def _bank() -> list[Candidate]:
     return bank
 
 
-def test_a_week_fills_every_slot() -> None:
-    plan = generate_week(_bank(), kcal_target=2600, protein_target=140, seed=1)
-    assert len(plan.meals) == 7 * len(MEALS)
-    for day in range(7):
-        assert {item.meal for item in plan.of_day(day)} == set(MEALS)
+def test_a_week_plans_lunch_and_dinner_only() -> None:
+    """Quatorze créneaux, pas vingt-huit.
 
-
-def test_the_week_lands_near_the_target() -> None:
-    """Sous contrainte : à ±20 % de la cible, chaque jour.
-
-    Vingt pour cent et pas cinq : la banque est finie, et un générateur qui
-    tomberait pile tous les jours aurait simplement servi le même menu.
+    Le petit déjeuner et l'en-cas continuent de se journaliser ; ils ne se
+    prévoient plus. Un en-cas planifié est un en-cas qu'on ne mange pas.
     """
+    plan = generate_week(_bank(), kcal_target=2600, protein_target=140, seed=1)
+    assert len(plan.meals) == 7 * len(PLANNED_MEALS)
+    for day in range(7):
+        assert {item.meal for item in plan.of_day(day)} == set(PLANNED_MEALS)
+
+
+def test_the_two_planned_meals_keep_their_share_of_the_day() -> None:
+    """Ils portent leur part de la cible — 65 % — et pas la journée entière.
+
+    C'est ce que vérifie ce test, et c'est le piège du passage à deux repas :
+    en retirant les parts du petit déjeuner et de l'en-cas de la répartition,
+    le générateur aurait proposé des dîners à 900 kcal. Elles restent dans
+    `MEAL_SHARE` exactement pour ça.
+    """
+    share = MEAL_SHARE["lunch"] + MEAL_SHARE["dinner"]
     plan = generate_week(_bank(), kcal_target=2600, protein_target=140, seed=7)
     for day in range(7):
-        assert 0.8 * 2600 <= plan.kcal_of_day(day) <= 1.2 * 2600
+        assert 0.8 * share * 2600 <= plan.kcal_of_day(day) <= 1.2 * share * 2600
+
+
+def test_a_slot_marked_away_gets_no_dish() -> None:
+    """« Jeudi soir je ne suis pas là » se pose **avant** la génération.
+
+    Sans ça, le générateur proposerait un plat pour un repas qu'on ne prendra
+    pas chez soi, et la liste de courses l'achèterait.
+    """
+    plan = generate_week(
+        _bank(),
+        kcal_target=2600,
+        protein_target=140,
+        seed=1,
+        skip=frozenset({(3, "dinner"), (5, "lunch")}),
+    )
+    slots = {(item.day_index, item.meal) for item in plan.meals}
+    assert (3, "dinner") not in slots
+    assert (5, "lunch") not in slots
+    assert len(plan.meals) == 7 * len(PLANNED_MEALS) - 2
+
+
+def test_an_away_dinner_does_not_inflate_the_lunch() -> None:
+    """Dîner dehors n'est pas une raison de prévoir un déjeuner à 900 kcal.
+
+    La part du créneau sauté est **retirée**, pas reversée sur le repas
+    suivant : la cible d'une journée où l'on mange dehors le soir n'est pas la
+    cible d'une journée normale.
+    """
+    normal = generate_week(_bank(), kcal_target=2600, protein_target=140, seed=1)
+    away = generate_week(
+        _bank(),
+        kcal_target=2600,
+        protein_target=140,
+        seed=1,
+        skip=frozenset({(2, "dinner")}),
+    )
+
+    lunches = [item for item in away.of_day(2) if item.meal == "lunch"]
+    assert len(lunches) == 1
+
+    # Le déjeuner d'un jour où l'on dîne dehors n'est pas plus gros que le plus
+    # gros déjeuner d'une semaine normale : il a gardé sa part, il n'a pas
+    # hérité de celle du dîner.
+    biggest_normal_lunch = max(
+        item.kcal for item in normal.meals if item.meal == "lunch"
+    )
+    assert lunches[0].kcal <= biggest_normal_lunch
+    assert away.kcal_of_day(2) < normal.kcal_of_day(2)
 
 
 def test_the_same_seed_gives_the_same_week() -> None:
@@ -310,10 +369,26 @@ def test_a_bank_without_macros_still_produces_a_week() -> None:
             tags=(),
             prep_min=10,
         )
-        for index, meal in enumerate(MEALS * 3, start=1)
+        for index, meal in enumerate(PLANNED_MEALS * 3, start=1)
     ]
     plan = generate_week(bare, kcal_target=2600, protein_target=140, seed=1)
-    assert len(plan.meals) == 7 * len(MEALS)
+    assert len(plan.meals) == 7 * len(PLANNED_MEALS)
+
+
+def test_the_covered_share_never_climbs_back_to_a_whole_day() -> None:
+    """0,65 en temps normal, moins quand on mange dehors — jamais 1.
+
+    C'est la fonction qui accorde la génération et le remplacement. Si le
+    bouton « un autre plat » visait la journée entière alors que la génération
+    vise 65 %, chaque tap proposerait plus gros que ce qu'il remplace, et le
+    menu dériverait vers le haut à mesure qu'on le corrige.
+    """
+    assert day_share() == pytest.approx(
+        MEAL_SHARE["lunch"] + MEAL_SHARE["dinner"]
+    )
+    assert day_share(["dinner"]) == pytest.approx(MEAL_SHARE["lunch"])
+    assert day_share(["lunch", "dinner"]) == 0.0
+    assert day_share() < 1.0
 
 
 def test_regenerating_a_meal_proposes_something_else() -> None:
@@ -369,3 +444,90 @@ def test_the_shopping_list_is_ordered_by_aisle() -> None:
         ]
     )
     assert [line.food_group for line in lines] == ["céréales", "fruits", None]
+
+
+# ── Les unités d'achat ─────────────────────────────────────────────────────
+
+
+def test_eggs_are_counted_not_weighed() -> None:
+    """Personne n'a jamais demandé 165 g d'œufs à la caisse."""
+    quantity = to_shopping_unit("Œufs", 165)
+    assert quantity.unit == "piece"
+    assert quantity.quantity == 3
+    assert quantity.unit_label == "œufs"
+    # La grandeur vraie ne bouge pas : la pièce est un affichage.
+    assert quantity.quantity_g == 165
+
+
+def test_a_piece_is_rounded_up_never_down() -> None:
+    """Deux virgule sept œufs font trois œufs.
+
+    Arrondir au plus proche ferait manquer un ingrédient une fois sur deux, ce
+    qui est la seule façon pour une liste de courses d'être vraiment inutile.
+    """
+    assert to_shopping_unit("Œufs", 150).quantity == 3
+    assert to_shopping_unit("Banane", 80).quantity == 1
+    # Jamais zéro : cinq grammes de quelque chose qui se compte, ça s'achète.
+    assert to_shopping_unit("Carotte", 5).quantity == 1
+
+
+def test_a_whole_piece_stays_a_whole_piece() -> None:
+    """Deux œufs pile font deux œufs, pas trois. L'arrondi ne doit pas mordre
+    sur la valeur exacte à cause d'un flottant."""
+    assert to_shopping_unit("Œufs", 110).quantity == 2
+    assert to_shopping_unit("Courgette", 400).quantity == 2
+
+
+def test_the_singular_is_used_for_one() -> None:
+    """« 1 bananes » se lit comme un bug, parce que c'en est un."""
+    assert to_shopping_unit("Banane", 100).unit_label == "banane"
+    assert to_shopping_unit("Banane", 300).unit_label == "bananes"
+
+
+def test_the_ligature_and_the_plural_find_the_same_entry() -> None:
+    """`NFD` ne décompose pas « œ » : sans substitution explicite, l'ingrédient
+    le plus fréquent du catalogue ne serait jamais reconnu.
+
+    Et le pluriel se cherche en seconde passe plutôt qu'en normalisant : la
+    règle qui fait de « carottes » une « carotte » ferait d'« ananas » un
+    « anana », et l'ananas ne serait plus jamais trouvé le jour où on
+    l'ajouterait à la table.
+    """
+    assert unit_key("Œufs") == "oeufs"
+    assert to_shopping_unit("Œufs", 110).unit == "piece"
+    assert to_shopping_unit("Carottes", 160).quantity == 2
+    assert unit_key("Ananas") == "ananas"
+
+
+def test_milk_is_bought_by_the_litre() -> None:
+    """« 1,8 kg de lait » se lit mal. « 1,8 L » se lit tout seul."""
+    quantity = to_shopping_unit("Lait demi-écrémé", 1750)
+    assert quantity.unit == "ml"
+    assert quantity.quantity == 1700
+
+
+def test_oil_is_not_water() -> None:
+    """Soixante grammes d'huile font 65 ml, pas 60. La densité est dans la
+    table parce qu'elle ne change rien au caddie mais tout à l'honnêteté."""
+    quantity = to_shopping_unit("Huile d'olive", 60)
+    assert quantity.unit == "ml"
+    assert quantity.quantity == 70
+
+
+def test_everything_else_stays_in_grams() -> None:
+    """Le riz, le poulet et le fromage s'achètent au poids. C'est le défaut, et
+    c'est le bon comportement pour les trois quarts des lignes."""
+    for label in ("Riz blanc cuit", "Blanc de poulet", "Feta"):
+        assert to_shopping_unit(label, 300).unit == "g"
+
+
+def test_the_aggregation_happens_before_the_rounding() -> None:
+    """Deux recettes à un œuf et demi font trois œufs, pas quatre.
+
+    On arrondit **une fois**, à la fin, sur le total. Arrondir chaque recette
+    d'abord ajouterait un œuf par recette.
+    """
+    lines = shopping_list([("Œufs", 82.5, None), ("Œufs", 82.5, None)])
+    assert len(lines) == 1
+    assert lines[0].quantity == 3
+    assert lines[0].unit_label == "œufs"

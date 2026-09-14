@@ -30,9 +30,11 @@ import type {
   NutritionGoal,
   NutritionProfile,
   Objective,
+  PlannedMeal,
   ProfileStats,
   Proposal,
   Recipe,
+  RecipeWrite,
   Recommendation,
   SessionJournal,
   SessionSegmentValue,
@@ -590,22 +592,88 @@ export const api = {
   deleteFoodLog: (id: number) =>
     request<void>(`/nutrition/log/${id}`, { method: "DELETE" }),
 
-  recipes: (params: { meal?: Meal; tag?: string } = {}) =>
-    request<Recipe[]>(`/nutrition/recipes${query(params)}`),
+  recipes: (
+    params: { meal?: Meal; tag?: string; q?: string; favorite?: boolean } = {},
+  ) => request<Recipe[]>(`/nutrition/recipes${query(params)}`),
+
+  recipe: (id: number) => request<Recipe>(`/nutrition/recipes/${id}`),
+
+  /** Une recette à soi. Le semis n'y touchera jamais. */
+  createRecipe: (data: RecipeWrite) =>
+    request<Recipe>("/nutrition/recipes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** Modifier une recette du catalogue **la dédouble** : le semis réécrit les
+   *  siennes en bloc, et une correction écrite dessus disparaîtrait sans un
+   *  mot après le prochain import Ciqual. La réponse porte la version perso. */
+  updateRecipe: (id: number, data: RecipeWrite) =>
+    request<Recipe>(`/nutrition/recipes/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRecipe: (id: number) =>
+    request<void>(`/nutrition/recipes/${id}`, { method: "DELETE" }),
+
+  /** Le favori et la note libre — « sans le piment c'est meilleur ». */
+  setRecipeNote: (id: number, data: { favorite?: boolean; note?: string }) =>
+    request<Recipe>(`/nutrition/recipes/${id}/note`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   mealPlan: (week?: string) =>
     request<MealPlan>(`/nutrition/plan${query({ week })}`),
 
-  /** (Re)génère la semaine. Un glouton sous contrainte, pas une IA. */
+  /** (Re)génère la semaine — sept déjeuners, sept dîners. Un glouton sous
+   *  contrainte, pas une IA. Les créneaux « pas là » y survivent. */
   generateMealPlan: (week?: string) =>
     request<MealPlan>(`/nutrition/plan${query({ week })}`, { method: "POST" }),
 
   /** Remplace **un** repas : un menu qu'il faut régénérer en entier pour
    *  corriger un dîner se jette. */
-  regenerateMeal: (day_index: number, meal: Meal, week?: string) =>
+  regenerateMeal: (day_index: number, meal: PlannedMeal, week?: string) =>
     request<MealPlan>(`/nutrition/plan/regenerate${query({ week })}`, {
       method: "POST",
       body: JSON.stringify({ day_index, meal }),
+    }),
+
+  /** Pose **cette** recette sur ce créneau. Le tirage propose, on dispose. */
+  setPlanMeal: (
+    day_index: number,
+    meal: PlannedMeal,
+    recipe_id: number,
+    week?: string,
+  ) =>
+    request<MealPlan>(`/nutrition/plan/set${query({ week })}`, {
+      method: "POST",
+      body: JSON.stringify({ day_index, meal, recipe_id }),
+    }),
+
+  /** Échange deux créneaux — le plat du mercredi soir passe au vendredi. On
+   *  l'avait choisi : le déplacer vaut mieux que le régénérer. */
+  swapPlanMeals: (
+    a: { day_index: number; meal: PlannedMeal },
+    b: { day_index: number; meal: PlannedMeal },
+    week?: string,
+  ) =>
+    request<MealPlan>(`/nutrition/plan/swap${query({ week })}`, {
+      method: "POST",
+      body: JSON.stringify({ a, b }),
+    }),
+
+  /** « Je ne suis pas chez moi » : pas de plat, et **rien à acheter**. */
+  setPlanAway: (
+    day_index: number,
+    meal: PlannedMeal,
+    away: boolean,
+    week?: string,
+  ) =>
+    request<MealPlan>(`/nutrition/plan/away${query({ week })}`, {
+      method: "POST",
+      body: JSON.stringify({ day_index, meal, away }),
     }),
 
   weighIns: () => request<BodyMetric[]>("/nutrition/weight"),
